@@ -1,0 +1,10 @@
+[Unit]
+Description=Socket for Slurm Quota HTTP JSON Service
+
+[Socket]
+ListenStream=0.0.0.0:9911
+# Spawn only one service for all incoming connections.
+Accept=false
+
+[Install]
+WantedBy=sockets.target

@@ -1,0 +1,16 @@
+# Logrotate configuration for Slurm quota charge log
+# Place this file as /etc/logrotate.d/slurm-quota-charge on target systems
+
+/var/log/slurm/charge/slurm-quota-charge.log {
+	daily
+	rotate 14
+	missingok
+	notifempty
+	compress
+	delaycompress
+	dateext
+	copytruncate
+	maxsize 100M
+	su slurm slurm
+	create 0640 slurm slurm
+}

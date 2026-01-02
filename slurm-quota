@@ -1,0 +1,1773 @@
+#!/usr/bin/env python3
+"""
+Slurm Quota Management Tool
+
+Copyright (c) 2025 Rackslab
+SPDX-License-Identifier: MIT
+
+This tool tracks user resource consumption by maintaining a SQLite database.
+
+It has the following subcommands:
+- charge: Update user/account resource consumption. This is designed to be executed by
+  Slurm as a JobCompType=jobcomp/script.
+- stats: Show resource statistics for users and accounts.
+- user-quota: Set quota for a user (restricted to root only).
+- account-quota: Set quota for an account (restricted to root only).
+- prune: Remove orphaned preallocations not tied to jobs present in Slurm (root only).
+- serve: Serve HTTP JSON API for stats (socket-activated by systemd; falls back to host/port).
+"""
+
+import argparse
+import sqlite3
+import sys
+import os
+import logging
+import pwd
+import re
+import subprocess
+import json
+import socket
+import time
+from datetime import datetime, timezone
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.request import urlopen, Request
+from urllib.error import URLError
+from urllib.parse import urlencode, urljoin
+from typing import Tuple, Union, Optional, Any, Dict, List
+
+# Database configuration
+DB_PATH = "/var/lib/state/slurm-quota/slurm-quota.db"
+
+
+# Configure logging
+def setup_logging(debug: bool = False) -> None:
+    """
+    Setup logging configuration.
+
+    Args:
+        debug: If True, set logging level to DEBUG, otherwise INFO
+    """
+    level = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stderr),
+        ],
+    )
+
+
+logger = logging.getLogger(__name__)
+
+
+def load_gpu_factors() -> Dict[str, float]:
+    """
+    Load GPU type charging factors from the SQLite database.
+
+    The factors are stored in the ``gpu_factors`` table with:
+      - gpu_type TEXT PRIMARY KEY
+      - factor   REAL NOT NULL
+
+    A special gpu_type value of ``default`` controls the default factor used
+    when no explicit entry exists for a given GPU type.
+
+    Returns:
+        Dictionary mapping GPU type to factor. The key ``"__default__"`` holds
+        the default factor (1.0 when not configured).
+    """
+    factors: Dict[str, float] = {}
+    default_factor = 1.0
+
+    if not os.path.exists(DB_PATH):
+        # No database yet – use built-in defaults
+        factors["__default__"] = default_factor
+        return factors
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT gpu_type, factor FROM gpu_factors")
+            rows = cursor.fetchall()
+
+            for gpu_type, factor in rows:
+                try:
+                    factor_f = float(factor)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Invalid GPU factor value for type %r: %r; skipping",
+                        gpu_type,
+                        factor,
+                    )
+                    continue
+
+                if gpu_type == "default":
+                    if factor_f < 0:
+                        logger.warning(
+                            "Invalid default GPU factor %r; keeping 1.0", factor_f
+                        )
+                    else:
+                        default_factor = factor_f
+                else:
+                    if factor_f < 0:
+                        logger.warning(
+                            "Invalid GPU factor %r for type %r; skipping",
+                            factor_f,
+                            gpu_type,
+                        )
+                        continue
+                    factors[str(gpu_type)] = factor_f
+    except sqlite3.Error as e:
+        logger.warning("Failed to load GPU factors from database: %s", e)
+
+    factors["__default__"] = default_factor
+    return factors
+
+
+def parse_alloc_tres(alloc_tres: str) -> Dict[str, int]:
+    """
+    Parse AllocTRES field from sacct to extract GPU allocations.
+
+    Args:
+        alloc_tres: AllocTRES string, e.g., "billing=1,cpu=1,gres/gpu:h100=2,gres/gpu:h200=1,mem=512M,node=1"
+
+    Returns:
+        Dictionary mapping GPU type to count (e.g., {"h100": 2, "h200": 1})
+    """
+    gpu_counts: Dict[str, int] = {}
+
+    if not alloc_tres:
+        return gpu_counts
+
+    # Split by comma and look for gres/gpu:TYPE=N patterns
+    for item in alloc_tres.split(","):
+        item = item.strip()
+        # Match pattern: gres/gpu:TYPE=N or gres/gpu:TYPE=N
+        match = re.match(r"gres/gpu:([^=]+)=(\d+)", item)
+        if match:
+            gpu_type = match.group(1).strip()
+            count = int(match.group(2))
+            gpu_counts[gpu_type] = gpu_counts.get(gpu_type, 0) + count
+
+    return gpu_counts
+
+
+def calculate_consumed_gpu_minutes(
+    gpu_counts: Dict[str, int], job_duration_minutes: int, factors: Dict[str, float]
+) -> int:
+    """
+    Calculate consumed GPU minutes based on GPU allocations, duration, and factors.
+
+    Args:
+        gpu_counts: Dictionary mapping GPU type to count
+        job_duration_minutes: Job duration in minutes
+        factors: Dictionary mapping GPU type to factor (from load_gpu_factors)
+
+    Returns:
+        Total GPU minutes consumed (integer)
+    """
+    default_factor = factors.get("__default__", 1.0)
+    total_gpu_minutes = 0.0
+
+    for gpu_type, count in gpu_counts.items():
+        factor = factors.get(gpu_type, default_factor)
+        total_gpu_minutes += count * job_duration_minutes * factor
+
+    return int(total_gpu_minutes)
+
+
+def format_timestamp_with_timezone(timestamp_str: str) -> str:
+    """
+    Format a timestamp string to display with local timezone.
+
+    Args:
+        timestamp_str: UTC timestamp string from REST API in ISO format
+
+    Returns:
+        Formatted timestamp string with local timezone, or "N/A" if invalid
+    """
+    if not timestamp_str:
+        return "N/A"
+
+    try:
+        # ISO format from API without timezone - assume UTC
+        dt = datetime.fromisoformat(timestamp_str)
+        # Replace timezone info to treat as UTC
+        dt = dt.replace(tzinfo=timezone.utc)
+
+        # Convert to local timezone
+        local_dt = dt.astimezone()
+        # Format as YYYY-MM-DD HH:MM:SS TZ
+        return local_dt.strftime("%Y-%m-%d %H:%M:%S %Z")
+    except (ValueError, TypeError) as e:
+        logger.debug(f"Failed to parse timestamp '{timestamp_str}': {e}")
+        return "N/A"
+
+
+def parse_slurm_time_format(time_str: str) -> Union[int, None]:
+    """
+    Parse Slurm time format string and convert to minutes.
+
+    Slurm formats time as:
+    - "UNLIMITED" for infinite time
+    - "INVALID" for invalid time
+    - "DD-HH:MM:SS" for durations with days
+    - "HH:MM:SS" for durations without days
+
+    Args:
+        time_str: Time string from Slurm LIMIT environment variable
+
+    Returns:
+        Number of minutes, or None for UNLIMITED/INVALID cases
+
+    Raises:
+        ValueError: If the time format is invalid
+    """
+    if not time_str:
+        return 0
+
+    time_str = time_str.strip()
+
+    # Handle empty string after stripping
+    if not time_str:
+        return 0
+
+    # Handle special cases
+    if time_str == "UNLIMITED":
+        return None  # None represents unlimited
+    elif time_str == "INVALID":
+        raise ValueError("Invalid time format")
+
+    # Pattern for DD-HH:MM:SS format
+    days_pattern = r"^(\d+)-(\d{2}):(\d{2}):(\d{2})$"
+    # Pattern for HH:MM:SS format
+    hours_pattern = r"^(\d{2}):(\d{2}):(\d{2})$"
+
+    days_match = re.match(days_pattern, time_str)
+    if days_match:
+        days, hours, minutes, seconds = map(int, days_match.groups())
+        if days < 0 or hours < 0 or minutes < 0 or seconds < 0:
+            raise ValueError("Negative time values not allowed")
+        if hours >= 24 or minutes >= 60 or seconds >= 60:
+            raise ValueError(
+                "Invalid time values: hours must be < 24, minutes and seconds must be < 60"
+            )
+        return days * 1440 + hours * 60 + minutes
+
+    hours_match = re.match(hours_pattern, time_str)
+    if hours_match:
+        hours, minutes, seconds = map(int, hours_match.groups())
+        if hours < 0 or minutes < 0 or seconds < 0:
+            raise ValueError("Negative time values not allowed")
+        if hours >= 24 or minutes >= 60 or seconds >= 60:
+            raise ValueError(
+                "Invalid time values: hours must be < 24, minutes and seconds must be < 60"
+            )
+        return hours * 60 + minutes
+
+    # If no pattern matches, try to parse as integer (fallback for backward compatibility)
+    try:
+        return int(time_str)
+    except ValueError:
+        raise ValueError(f"Unrecognized time format: {time_str}")
+
+
+def get_current_user() -> str:
+    """
+    Get the current user name based on the process UID.
+
+    Returns:
+        The username of the current process owner
+    """
+    current_uid = os.getuid()
+    try:
+        return pwd.getpwuid(current_uid).pw_name
+    except KeyError:
+        logger.error(f"Unable to get user name for UID {current_uid}")
+        raise
+
+
+# Unfortunately, Slurm does not provide a way to get the admin_comment field in
+# jobcomp script environment variables for a job, so we need to use sacct to get it.
+def get_job_info_from_sacct(job_id: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Get the admin_comment and AllocTRES fields for a Slurm job.
+
+    Args:
+        job_id: The Slurm job ID
+
+    Returns:
+        Tuple of (admin_comment, alloc_tres) or (None, None) if not found/error
+    """
+    try:
+        result = subprocess.run(
+            [
+                "sacct",
+                "--noheader",
+                "--allocations",
+                "--job",
+                job_id,
+                "--parsable2",
+                "--format",
+                "admincomment,alloctres",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        output = result.stdout.strip()
+        if not output:
+            return None, None
+
+        # Parsable2 format uses | as delimiter
+        parts = output.split("|", 1)
+        admin_comment = parts[0].strip() if len(parts) > 0 else ""
+        alloc_tres = parts[1].strip() if len(parts) > 1 else ""
+
+        # Handle (null) case
+        if admin_comment == "(null)" or not admin_comment:
+            admin_comment = None
+        if alloc_tres == "(null)" or not alloc_tres:
+            alloc_tres = None
+
+        return admin_comment, alloc_tres
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.warning(f"Failed to get job info from sacct for job {job_id}: {e}")
+        return None, None
+
+
+def get_user_accounts(username: str) -> set[str]:
+    """
+    Return the set of Slurm accounts the given user belongs to using sacctmgr.
+
+    Args:
+        username: The Slurm username
+
+    Returns:
+        A set of account names (may be empty when none or on error)
+    """
+    try:
+        result = subprocess.run(
+            [
+                "sacctmgr",
+                "list",
+                "associations",
+                "where",
+                f"user={username}",
+                "format=account",
+                "-P",
+                "-n",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        accounts = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+        logger.debug(f"User {username} belongs to accounts: {accounts}")
+        return accounts
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.warning(f"Failed to get accounts for user {username} via sacctmgr: {e}")
+        return set()
+
+
+def init_database() -> None:
+    """
+    Initialize the SQLite database only if it doesn't exist yet. Set permissions on
+    first creation.
+    """
+    try:
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+        # If the database file already exists, do nothing
+        if os.path.exists(DB_PATH):
+            return
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            # Create users table to track resource usage
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    username TEXT PRIMARY KEY,
+                    total_consumed_cpu_minutes INTEGER DEFAULT 0,
+                    quota_cpu_minutes INTEGER DEFAULT -1,
+                    total_consumed_gpu_minutes INTEGER DEFAULT 0,
+                    quota_gpu_minutes INTEGER DEFAULT -1,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Create accounts table to track resource usage
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS accounts (
+                    account TEXT PRIMARY KEY,
+                    total_consumed_cpu_minutes INTEGER DEFAULT 0,
+                    quota_cpu_minutes INTEGER DEFAULT -1,
+                    total_consumed_gpu_minutes INTEGER DEFAULT 0,
+                    quota_gpu_minutes INTEGER DEFAULT -1,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Create jobs_preallocations table to track preallocated resources per job
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS jobs_preallocations (
+                    job_uuid TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    account TEXT NOT NULL,
+                    preallocated_cpu_minutes INTEGER NOT NULL,
+                    preallocated_gpu_minutes INTEGER DEFAULT 0,
+                    array_size INTEGER DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (username) REFERENCES users (username),
+                    FOREIGN KEY (account) REFERENCES accounts (account)
+                )
+            """)
+
+            # Create gpu_factors table to store GPU charging factors
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS gpu_factors (
+                    gpu_type TEXT PRIMARY KEY,
+                    factor REAL NOT NULL
+                )
+            """)
+
+            conn.commit()
+            logger.info("Database initialized successfully")
+
+        # Set permissions on the database file
+        set_database_permissions()
+
+    except sqlite3.Error as e:
+        logger.error(f"Database initialization failed: {e}")
+        raise
+    except OSError as e:
+        logger.error(f"Failed to create database directory: {e}")
+        raise
+
+
+def set_database_permissions() -> None:
+    """
+    Set database file permissions to allow root and slurm users to modify it and
+    others to read it.
+    """
+    try:
+        # If root, give database file to slurm user
+        if get_current_user() == "root":
+            logger.info(f"Giving database file to slurm user for {DB_PATH}")
+            slurm_pw = pwd.getpwnam("slurm")
+            os.chown(DB_PATH, slurm_pw.pw_uid, slurm_pw.pw_gid)
+        # Set permissions: owner (slurm) can read/write, others can read
+        os.chmod(DB_PATH, 0o644)
+        logger.info(f"Database permissions set for {DB_PATH}")
+    except OSError as e:
+        logger.error(f"Failed to set database permissions: {e}")
+        raise
+
+
+def collect_active_job_uuids() -> set[str]:
+    """
+    Collect active Slurm job UUIDs from squeue admin_comment field.
+
+    Returns:
+        A set of admin_comment values (UUIDs) for all jobs visible in the queue.
+    """
+    uuids: set[str] = set()
+    try:
+        result = subprocess.run(
+            ["squeue", "--noheader", "--Format", "jobid,admin_comment:50"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            # squeeze whitespaces to get a single space between jobid and comment
+            line = re.sub(r"\s+", " ", line)
+            if not line:
+                continue
+            # Split on first whitespace to separate jobid and comment
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                _jobid, comment = parts
+                comment = comment.strip()
+                if comment:
+                    uuids.add(comment)
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.warning(f"Failed to collect active job UUIDs via squeue: {e}")
+    return uuids
+
+
+def prune_orphan_preallocations() -> int:
+    """
+    Remove preallocations from database that are not tied to active Slurm jobs.
+
+    Returns:
+        Number of deleted preallocation rows.
+    """
+    if not os.path.exists(DB_PATH):
+        logger.info("Database not found; nothing to prune")
+        return 0
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            active = collect_active_job_uuids()
+
+            cursor.execute("SELECT job_uuid FROM jobs_preallocations")
+            rows = cursor.fetchall()
+
+            to_delete = [
+                row[0] for row in rows if row and row[0] and row[0] not in active
+            ]
+
+            deleted = 0
+            if to_delete:
+                cursor.executemany(
+                    "DELETE FROM jobs_preallocations WHERE job_uuid = ?",
+                    [(uuid,) for uuid in to_delete],
+                )
+                deleted = cursor.rowcount if cursor.rowcount is not None else 0
+                conn.commit()
+
+            return deleted
+    except sqlite3.Error as e:
+        logger.error(f"Failed to prune orphan preallocations: {e}")
+        raise
+
+
+def get_job_info_from_environment() -> Tuple[str, str, int, str, Optional[str], int]:
+    """
+    Extract job information from Slurm environment variables.
+
+    Returns:
+        Tuple of (username, job_id, consumed_cpu_minutes, account, job_uuid, consumed_gpu_minutes)
+
+    Raises:
+        ValueError: If the job ID or username is not found
+        ValueError: If the start or end time is not found
+    """
+    try:
+        # Get job ID
+        job_id = os.environ.get("JOBID", "unknown")
+
+        # Check job is member of an array. If yes, compute the job ID as
+        # ARRAYJOBID_ARRAYTASKID.
+        array_job_id = int(os.environ.get("ARRAYJOBID", "0"))
+        array_task_id = int(os.environ.get("ARRAYTASKID", "0"))
+        if array_job_id != 0:
+            job_id = f"{array_job_id}_{array_task_id}"
+
+        # Get username from Slurm environment
+        username = os.environ.get("USERNAME")
+        if not username:
+            raise ValueError(
+                "USERNAME environment variable not found for job %s", job_id
+            )
+
+        # Get account from Slurm environment
+        account = os.environ.get("ACCOUNT")
+        if not account:
+            raise ValueError(
+                "ACCOUNT environment variable not found for job %s", job_id
+            )
+
+        # Calculate consumed CPU minutes
+        # PROCS * (END - START) / 60
+        job_procs = int(os.environ.get("PROCS", 1))
+        job_start_time = int(os.environ.get("START", 0))
+        job_end_time = int(os.environ.get("END", 0))
+        # If START or END is not found, consider the job ran for 0 minutes
+        if not job_start_time or not job_end_time:
+            job_duration_minutes = 0
+        else:
+            job_duration_minutes = (job_end_time - job_start_time) // 60
+
+        consumed_cpu_minutes = job_procs * job_duration_minutes
+
+        # Get job UUID and AllocTRES from sacct
+        job_uuid, alloc_tres = get_job_info_from_sacct(job_id)
+        if not job_uuid:
+            logger.warning(f"No job UUID found in admin_comment for job {job_id}")
+
+        # Calculate consumed GPU minutes
+        consumed_gpu_minutes = 0
+        if alloc_tres:
+            gpu_factors = load_gpu_factors()
+            gpu_counts = parse_alloc_tres(alloc_tres)
+            if gpu_counts:
+                consumed_gpu_minutes = calculate_consumed_gpu_minutes(
+                    gpu_counts, job_duration_minutes, gpu_factors
+                )
+
+        return (
+            username,
+            job_id,
+            consumed_cpu_minutes,
+            account,
+            job_uuid,
+            consumed_gpu_minutes,
+        )
+
+    except (ValueError, KeyError) as e:
+        logger.error(f"Failed to extract job information: {e}")
+        raise
+
+
+def update_user_and_account_resources(
+    username: str,
+    account: str,
+    consumed_cpu_minutes: int,
+    job_uuid: Optional[str],
+    consumed_gpu_minutes: int = 0,
+) -> str:
+    """
+    Update user and account resource consumption in the database and adjust any
+    preallocation associated with the job UUID.
+
+    Args:
+        username: The username of the job owner
+        account: The account of the job
+        consumed_cpu_minutes: Actual CPU minutes consumed by the job
+        job_uuid: The job UUID from admin_comment
+        consumed_gpu_minutes: Actual GPU minutes consumed by the job
+    Returns:
+        One of:
+        - "removed": a preallocation row was fully removed
+        - "decremented": array_size was decremented but row kept
+        - "none": no preallocation was changed (including when job_uuid is None)
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            # Update consumed CPU and GPU minutes for user
+            cursor.execute(
+                """
+                INSERT INTO users (username, total_consumed_cpu_minutes, total_consumed_gpu_minutes, last_updated)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (username) DO
+                UPDATE SET total_consumed_cpu_minutes = total_consumed_cpu_minutes + ?,
+                           total_consumed_gpu_minutes = total_consumed_gpu_minutes + ?,
+                           last_updated = CURRENT_TIMESTAMP
+                """,
+                (
+                    username,
+                    consumed_cpu_minutes,
+                    consumed_gpu_minutes,
+                    consumed_cpu_minutes,
+                    consumed_gpu_minutes,
+                ),
+            )
+
+            # Update consumed CPU and GPU minutes for account
+            cursor.execute(
+                """
+                INSERT INTO accounts (account, total_consumed_cpu_minutes, total_consumed_gpu_minutes, last_updated)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (account) DO
+                UPDATE SET total_consumed_cpu_minutes = total_consumed_cpu_minutes + ?,
+                           total_consumed_gpu_minutes = total_consumed_gpu_minutes + ?,
+                            last_updated = CURRENT_TIMESTAMP
+                """,
+                (
+                    account,
+                    consumed_cpu_minutes,
+                    consumed_gpu_minutes,
+                    consumed_cpu_minutes,
+                    consumed_gpu_minutes,
+                ),
+            )
+
+            # Update or remove preallocation if job_uuid exists
+            if job_uuid:
+                prealloc_status = "none"
+                # Fetch current array_size for this job_uuid
+                cursor.execute(
+                    "SELECT array_size FROM jobs_preallocations WHERE job_uuid = ?",
+                    (job_uuid,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    logger.warning(
+                        f"No preallocated resources found for job UUID: {job_uuid}"
+                    )
+                else:
+                    current_array_size = int(row[0] or 0)
+                    if current_array_size <= 1:
+                        # Last element of the array: remove preallocation entirely
+                        cursor.execute(
+                            "DELETE FROM jobs_preallocations WHERE job_uuid = ?",
+                            (job_uuid,),
+                        )
+                        if (cursor.rowcount or 0) > 0:
+                            logger.debug(
+                                "Removed preallocated resources for job UUID: %s",
+                                job_uuid,
+                            )
+                            prealloc_status = "removed"
+                    else:
+                        # Decrement remaining array_size
+                        new_array_size = current_array_size - 1
+                        cursor.execute(
+                            """
+                            UPDATE jobs_preallocations
+                            SET array_size = ?
+                            WHERE job_uuid = ?
+                            """,
+                            (new_array_size, job_uuid),
+                        )
+                        logger.debug(
+                            "Decremented preallocation array_size for job UUID %s: %d -> %d",
+                            job_uuid,
+                            current_array_size,
+                            new_array_size,
+                        )
+                        prealloc_status = "decremented"
+            else:
+                prealloc_status = "none"
+
+            conn.commit()
+
+            return prealloc_status
+
+    except sqlite3.Error as e:
+        logger.error(f"Failed to update user resources: {e}")
+        raise
+
+
+def charge_command() -> None:
+    """
+    Execute the charge command to update user resource consumption.
+    This command can only be executed by the slurm system user.
+    """
+    try:
+        # Check if running as slurm user
+        current_user = get_current_user()
+        if current_user != "slurm":
+            logger.error(
+                f"Charge command can only be executed by slurm user, not by "
+                f"{current_user}"
+            )
+            sys.exit(1)
+
+        # Initialize database only if missing
+        init_database()
+
+        # Get job information from environment
+        (
+            username,
+            job_id,
+            consumed_cpu_minutes,
+            account,
+            job_uuid,
+            consumed_gpu_minutes,
+        ) = get_job_info_from_environment()
+
+        # Update user and account resources (and any related preallocation)
+        prealloc_status = update_user_and_account_resources(
+            username, account, consumed_cpu_minutes, job_uuid, consumed_gpu_minutes
+        )
+
+        # Single summary info log on success
+        logger.info(
+            (
+                f"charge: user={username} account={account} job_id={job_id} "
+                f"+{consumed_cpu_minutes} CPUmins +{consumed_gpu_minutes} GPUmins "
+                f"uuid={job_uuid or 'none'} prealloc_status={prealloc_status}"
+            )
+        )
+
+    except Exception as e:
+        logger.error(f"Charge command failed: {e}")
+        sys.exit(1)
+
+
+def set_user_quota(username: str, quota_cpu_minutes: int) -> None:
+    """
+    Set quota for a user in the database.
+
+    Args:
+        username: The username to set quota for
+        quota_cpu_minutes: The quota in CPU minutes (-1 for unlimited)
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            # Insert or update user with quota
+            cursor.execute(
+                """
+                INSERT INTO users (username, quota_cpu_minutes, last_updated)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (username) DO
+                UPDATE SET quota_cpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
+                """,
+                (username, quota_cpu_minutes, quota_cpu_minutes),
+            )
+
+            conn.commit()
+
+    except sqlite3.Error as e:
+        logger.error(f"Failed to set user quota: {e}")
+        raise
+
+
+def set_account_quota(account: str, quota_cpu_minutes: int) -> None:
+    """
+    Set quota for an account in the database.
+
+    Args:
+        account: The account to set quota for
+        quota_cpu_minutes: The quota in CPU minutes (-1 for unlimited)
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                INSERT INTO accounts (account, quota_cpu_minutes, last_updated)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (account) DO
+                UPDATE SET quota_cpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
+                """,
+                (account, quota_cpu_minutes, quota_cpu_minutes),
+            )
+
+            conn.commit()
+
+    except sqlite3.Error as e:
+        logger.error(f"Failed to set account quota: {e}")
+        raise
+
+
+def set_gpu_factor(gpu_type: str, factor: float) -> None:
+    """
+    Set charging factor for a GPU type in the database.
+
+    Args:
+        gpu_type: GPU type name (use "default" for the default factor)
+        factor: Charging factor (float, must be non-negative)
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                INSERT INTO gpu_factors (gpu_type, factor)
+                VALUES (?, ?)
+                ON CONFLICT(gpu_type) DO UPDATE SET factor = excluded.factor
+                """,
+                (gpu_type, float(factor)),
+            )
+
+            conn.commit()
+
+    except sqlite3.Error as e:
+        logger.error(f"Failed to set GPU factor: {e}")
+        raise
+
+
+def set_user_gpu_quota(username: str, quota_gpu_minutes: int) -> None:
+    """
+    Set GPU quota for a user in the database.
+
+    Args:
+        username: The username to set GPU quota for
+        quota_gpu_minutes: The quota in GPU minutes (-1 for unlimited)
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            # Insert or update user with GPU quota
+            cursor.execute(
+                """
+                INSERT INTO users (username, quota_gpu_minutes, last_updated)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (username) DO
+                UPDATE SET quota_gpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
+                """,
+                (username, quota_gpu_minutes, quota_gpu_minutes),
+            )
+
+            conn.commit()
+
+    except sqlite3.Error as e:
+        logger.error(f"Failed to set user GPU quota: {e}")
+        raise
+
+
+def set_account_gpu_quota(account: str, quota_gpu_minutes: int) -> None:
+    """
+    Set GPU quota for an account in the database.
+
+    Args:
+        account: The account to set GPU quota for
+        quota_gpu_minutes: The quota in GPU minutes (-1 for unlimited)
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                INSERT INTO accounts (account, quota_gpu_minutes, last_updated)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (account) DO
+                UPDATE SET quota_gpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
+                """,
+                (account, quota_gpu_minutes, quota_gpu_minutes),
+            )
+
+            conn.commit()
+
+    except sqlite3.Error as e:
+        logger.error(f"Failed to set account GPU quota: {e}")
+        raise
+
+
+def create_status_bar(used: int, total: int, width: int = 20) -> str:
+    """
+    Create a visual status bar representing quota usage.
+
+    Args:
+        used: Used amount
+        total: Total quota amount
+        width: Width of the status bar in characters
+
+    Returns:
+        String representation of the status bar
+    """
+    if total <= 0:
+        return " " * width
+
+    percentage = min(used / total, 1.0)
+    filled = int(percentage * width)
+    bar = "█" * filled + "░" * (width - filled)
+
+    # Apply color based on thresholds unless NO_COLOR is set
+    if os.environ.get("NO_COLOR") is None:
+        # >95% -> red, >80% -> orange/yellow, else green
+        if percentage > 0.95:
+            color_start = "\033[31m"  # red
+        elif percentage > 0.80:
+            # Use 256-color orange when supported; many terminals treat as orange
+            color_start = "\033[38;5;208m"  # orange
+        else:
+            color_start = "\033[32m"  # green
+        color_end = "\033[0m"
+        colored_bar = f"{color_start}{bar}{color_end}"
+    else:
+        colored_bar = bar
+
+    return f"[{colored_bar}] {percentage:6.1%}"
+
+
+def show_user_stats(username: str = None, show_all: bool = False) -> None:
+    """
+    Display resource statistics for users in table format.
+
+    Args:
+        username: The username to query (if None and not show_all, shows all)
+        show_all: If True, show all users
+    """
+    # HTTP JSON service location
+    base_url = os.environ.get("SLURM_QUOTA_URL", "http://127.0.0.1:9911/")
+
+    # Determine target username
+    selected_username = username
+    if not show_all and not selected_username:
+        try:
+            selected_username = get_current_user()
+        except KeyError:
+            sys.exit(1)
+
+    # Fetch stats (users and accounts)
+    try:
+        # Build stats URL with optional username parameter
+        stats_params: Dict[str, str] = {}
+        if selected_username and not show_all:
+            stats_params["username"] = selected_username
+        stats_url = urljoin(base_url, "stats")
+        if stats_params:
+            stats_url = f"{stats_url}?{urlencode(stats_params)}"
+
+        # Fetch stats from HTTP JSON service
+        with urlopen(
+            Request(stats_url, headers={"Accept": "application/json"})
+        ) as resp:
+            if resp.status != HTTPStatus.OK:
+                logger.error(f"Failed to fetch stats: HTTP {resp.status}")
+                sys.exit(1)
+            stats_payload: Dict[str, Any] = json.load(resp)
+
+        users_data: List[Dict[str, Any]] = list(stats_payload.get("users", []))
+        accounts_data: List[Dict[str, Any]] = list(stats_payload.get("accounts", []))
+
+        if not users_data:
+            if username:
+                print(f"No data found for user: {username}")
+            else:
+                print("No users found in service")
+            return
+
+        # Print users table
+        header = (
+            f"{'':<25} | {'CPU':^66} | {'GPU':^66} |\n"
+            f"{'USER':<25} | {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} "
+            f"| {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} | {'LAST UPDATED':<25}"
+        )
+        print(header)
+        print("-" * int(len(header) / 2))
+
+        for item in users_data:
+            uname = item.get("username", "?")
+            job_count = int(item.get("job_count", 0))
+            last_updated = item.get("last_updated")
+            last_updated_str = format_timestamp_with_timezone(last_updated)
+
+            # CPU data
+            cpu_consumed = int(item.get("total_consumed_cpu_minutes", 0))
+            cpu_preallocated = int(item.get("total_preallocated_cpu_minutes", 0))
+            cpu_quota = int(item.get("quota_cpu_minutes", -1))
+            cpu_total_used = cpu_consumed + cpu_preallocated
+            if cpu_quota == -1:
+                cpu_quota_str = "∞"
+                cpu_status_bar = ""
+            else:
+                cpu_quota_str = f"{cpu_quota}"
+                cpu_status_bar = create_status_bar(cpu_total_used, cpu_quota)
+            cpu_preallocated_str = f"{cpu_preallocated}({job_count})"
+
+            # GPU data
+            gpu_consumed = int(item.get("total_consumed_gpu_minutes", 0))
+            gpu_preallocated = int(item.get("total_preallocated_gpu_minutes", 0))
+            gpu_quota = int(item.get("quota_gpu_minutes", -1))
+            gpu_total_used = gpu_consumed + gpu_preallocated
+            if gpu_quota == -1:
+                gpu_quota_str = "∞"
+                gpu_status_bar = ""
+            else:
+                gpu_quota_str = f"{gpu_quota}"
+                gpu_status_bar = create_status_bar(gpu_total_used, gpu_quota)
+            gpu_preallocated_str = f"{gpu_preallocated}({job_count})"
+
+            print(
+                f"{uname:<25} | {cpu_consumed:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
+                f"| {gpu_consumed:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
+            )
+
+        # Accounts table
+        print()
+        header = (
+            f"{'':<25} | {'CPU':^66} | {'GPU':^66} |\n"
+            f"{'ACCOUNT':<25} | {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} "
+            f"| {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} | {'LAST UPDATED':<25}"
+        )
+        print(header)
+        print("-" * int(len(header) / 2))
+
+        for item in accounts_data:
+            account = item.get("account", "?")
+            job_count = int(item.get("job_count", 0))
+            last_updated = item.get("last_updated")
+            last_updated_str = format_timestamp_with_timezone(last_updated)
+
+            # CPU data
+            cpu_consumed = int(item.get("total_consumed_cpu_minutes", 0))
+            cpu_preallocated = int(item.get("total_preallocated_cpu_minutes", 0))
+            cpu_quota = int(item.get("quota_cpu_minutes", -1))
+            cpu_total_used = cpu_consumed + cpu_preallocated
+            if cpu_quota == -1:
+                cpu_quota_str = "∞"
+                cpu_status_bar = " " * 25
+            else:
+                cpu_quota_str = f"{cpu_quota}"
+                cpu_status_bar = create_status_bar(cpu_total_used, cpu_quota)
+            cpu_preallocated_str = f"{cpu_preallocated}({job_count})"
+
+            # GPU data
+            gpu_consumed = int(item.get("total_consumed_gpu_minutes", 0))
+            gpu_preallocated = int(item.get("total_preallocated_gpu_minutes", 0))
+            gpu_quota = int(item.get("quota_gpu_minutes", -1))
+            gpu_total_used = gpu_consumed + gpu_preallocated
+            if gpu_quota == -1:
+                gpu_quota_str = "∞"
+                gpu_status_bar = " " * 25
+            else:
+                gpu_quota_str = f"{gpu_quota}"
+                gpu_status_bar = create_status_bar(gpu_total_used, gpu_quota)
+            gpu_preallocated_str = f"{gpu_preallocated}({job_count})"
+
+            print(
+                f"{account:<25} | {cpu_consumed:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
+                f"| {gpu_consumed:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
+            )
+    except URLError as e:
+        logger.error(f"Failed to contact slurm-quota service: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Failed to retrieve stats from service: {e}")
+        sys.exit(1)
+
+
+def query_users_aggregate(
+    conn: sqlite3.Connection, username: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    cursor = conn.cursor()
+    if username:
+        cursor.execute(
+            """
+            SELECT u.username, u.total_consumed_cpu_minutes,
+                   COALESCE(SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_cpu_minutes,
+                   u.quota_cpu_minutes, u.total_consumed_gpu_minutes,
+                   COALESCE(SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_gpu_minutes,
+                   u.quota_gpu_minutes, u.last_updated,
+                   COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
+            FROM users u
+            LEFT JOIN jobs_preallocations j ON u.username = j.username
+            WHERE u.username = ?
+            GROUP BY u.username, u.total_consumed_cpu_minutes, u.quota_cpu_minutes,
+                     u.total_consumed_gpu_minutes, u.quota_gpu_minutes, u.last_updated
+            ORDER BY u.username
+            """,
+            (username,),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT u.username, u.total_consumed_cpu_minutes,
+                   COALESCE(SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_cpu_minutes,
+                   u.quota_cpu_minutes, u.total_consumed_gpu_minutes,
+                   COALESCE(SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_gpu_minutes,
+                   u.quota_gpu_minutes, u.last_updated,
+                   COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
+            FROM users u
+            LEFT JOIN jobs_preallocations j ON u.username = j.username
+            GROUP BY u.username, u.total_consumed_cpu_minutes, u.quota_cpu_minutes,
+                     u.total_consumed_gpu_minutes, u.quota_gpu_minutes, u.last_updated
+            ORDER BY u.username
+            """
+        )
+    rows = cursor.fetchall()
+    results: List[Dict[str, Any]] = []
+    for row in rows:
+        (
+            uname,
+            consumed_cpu,
+            prealloc_cpu,
+            quota_cpu,
+            consumed_gpu,
+            prealloc_gpu,
+            quota_gpu,
+            last_updated,
+            job_count,
+        ) = row
+        results.append(
+            {
+                "username": uname,
+                "total_consumed_cpu_minutes": int(consumed_cpu or 0),
+                "total_preallocated_cpu_minutes": int(prealloc_cpu or 0),
+                "quota_cpu_minutes": int(quota_cpu if quota_cpu is not None else -1),
+                "total_consumed_gpu_minutes": int(consumed_gpu or 0),
+                "total_preallocated_gpu_minutes": int(prealloc_gpu or 0),
+                "quota_gpu_minutes": int(quota_gpu if quota_gpu is not None else -1),
+                "last_updated": last_updated,
+                "job_count": int(job_count or 0),
+            }
+        )
+    return results
+
+
+def query_accounts_aggregate(
+    conn: sqlite3.Connection, accounts_filter: Optional[set[str]] = None
+) -> List[Dict[str, Any]]:
+    cursor = conn.cursor()
+    if accounts_filter is not None:
+        if len(accounts_filter) == 0:
+            return []
+        placeholders = ",".join(["?"] * len(accounts_filter))
+        cursor.execute(
+            f"""
+            SELECT a.account, a.total_consumed_cpu_minutes,
+                   COALESCE(SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_cpu_minutes,
+                   a.quota_cpu_minutes, a.total_consumed_gpu_minutes,
+                   COALESCE(SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_gpu_minutes,
+                   a.quota_gpu_minutes, a.last_updated,
+                   COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
+            FROM accounts a
+            LEFT JOIN jobs_preallocations j ON a.account = j.account
+            WHERE a.account IN ({placeholders})
+            GROUP BY a.account, a.total_consumed_cpu_minutes, a.quota_cpu_minutes,
+                     a.total_consumed_gpu_minutes, a.quota_gpu_minutes, a.last_updated
+            ORDER BY a.account
+            """,
+            tuple(accounts_filter),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT a.account, a.total_consumed_cpu_minutes,
+                   COALESCE(SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_cpu_minutes,
+                   a.quota_cpu_minutes, a.total_consumed_gpu_minutes,
+                   COALESCE(SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_gpu_minutes,
+                   a.quota_gpu_minutes, a.last_updated,
+                   COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
+            FROM accounts a
+            LEFT JOIN jobs_preallocations j ON a.account = j.account
+            GROUP BY a.account, a.total_consumed_cpu_minutes, a.quota_cpu_minutes,
+                     a.total_consumed_gpu_minutes, a.quota_gpu_minutes, a.last_updated
+            ORDER BY a.account
+            """
+        )
+    rows = cursor.fetchall()
+    results: List[Dict[str, Any]] = []
+    for row in rows:
+        (
+            account,
+            consumed_cpu,
+            prealloc_cpu,
+            quota_cpu,
+            consumed_gpu,
+            prealloc_gpu,
+            quota_gpu,
+            last_updated,
+            job_count,
+        ) = row
+        results.append(
+            {
+                "account": account,
+                "total_consumed_cpu_minutes": int(consumed_cpu or 0),
+                "total_preallocated_cpu_minutes": int(prealloc_cpu or 0),
+                "quota_cpu_minutes": int(quota_cpu if quota_cpu is not None else -1),
+                "total_consumed_gpu_minutes": int(consumed_gpu or 0),
+                "total_preallocated_gpu_minutes": int(prealloc_gpu or 0),
+                "quota_gpu_minutes": int(quota_gpu if quota_gpu is not None else -1),
+                "last_updated": last_updated,
+                "job_count": int(job_count or 0),
+            }
+        )
+    return results
+
+
+class _RequestHandler(BaseHTTPRequestHandler):
+    server_version = "slurm-quota-http/1.0"
+
+    def _send_json(self, payload: Any, status: int = 200) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: Any) -> None:
+        logger.info("%s - - %s", self.address_string(), format % args)
+
+    def do_GET(self) -> None:
+        # Mark last activity
+        if hasattr(self.server, "touch_activity"):
+            try:
+                self.server.touch_activity()
+            except Exception:
+                pass
+
+        if self.path.startswith("/health"):
+            self._send_json({"status": "ok"})
+            return
+
+        if self.path.startswith("/stats"):
+            # Parse simple query param ?username=...
+            username_param: Optional[str] = None
+            if "?" in self.path:
+                query = self.path.split("?", 1)[1]
+                for kv in query.split("&"):
+                    if not kv:
+                        continue
+                    k, v = (kv.split("=", 1) + [""])[:2]
+                    if k == "username":
+                        username_param = v
+                        break
+            try:
+                if not os.path.exists(DB_PATH):
+                    self._send_json({"users": [], "accounts": []}, status=200)
+                    return
+                with sqlite3.connect(DB_PATH) as conn:
+                    users = query_users_aggregate(conn, username_param or None)
+                    # When a username is provided, filter accounts to that user's associations
+                    accounts_filter: Optional[set[str]] = None
+                    if username_param:
+                        try:
+                            accounts_filter = get_user_accounts(username_param)
+                        except Exception:
+                            accounts_filter = set()
+                    accounts = query_accounts_aggregate(conn, accounts_filter)
+                self._send_json({"users": users, "accounts": accounts}, status=200)
+            except sqlite3.Error as e:
+                logger.error("/stats query failed: %s", e)
+                self._send_json({"error": "db_error"}, status=500)
+            return
+
+        # Default 404
+        self._send_json({"error": "not_found"}, status=404)
+
+
+class InactivityHTTPServer(HTTPServer):
+    def __init__(self, server_address, RequestHandlerClass, idle_timeout: int = 600):
+        super().__init__(server_address, RequestHandlerClass)
+        self._idle_timeout = max(1, int(idle_timeout))
+        self._last_activity = time.monotonic()
+
+    def touch_activity(self) -> None:
+        self._last_activity = time.monotonic()
+
+    def serve_until_idle(self) -> None:
+        self.timeout = 1.0  # seconds
+        while True:
+            # handle_request() blocks up to self.timeout
+            self.handle_request()
+            if time.monotonic() - self._last_activity > self._idle_timeout:
+                logger.info("Idle timeout reached; exiting")
+                break
+
+
+def _systemd_listen_socket() -> Optional[socket.socket]:
+    try:
+        listen_pid = int(os.environ.get("LISTEN_PID", "0"))
+        listen_fds = int(os.environ.get("LISTEN_FDS", "0"))
+    except ValueError:
+        return None
+    if listen_pid != os.getpid() or listen_fds < 1:
+        return None
+    fd = 3  # per systemd convention
+    try:
+        # Try AF_INET first; if fails, fallback to generic
+        s = socket.fromfd(fd, socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s
+    except OSError:
+        try:
+            s = socket.fromfd(fd, socket.AF_UNIX, socket.SOCK_STREAM)
+            return s
+        except OSError:
+            return None
+
+
+def run_serve_command(host: str, port: int, idle_timeout: int) -> None:
+    # Check if database file exists or exit with error
+    if not os.path.exists(DB_PATH):
+        logger.error("Database file not found: %s", DB_PATH)
+        sys.exit(1)
+
+    # Prefer systemd-provided socket
+    sd_sock = _systemd_listen_socket()
+    if sd_sock is not None:
+        logger.info("Starting HTTP JSON service on systemd socket")
+        httpd = InactivityHTTPServer(("0.0.0.0", 0), _RequestHandler, idle_timeout)
+        httpd.socket = sd_sock
+        # essential: prevent server from closing sd_sock on shutdown duplication issues
+        httpd.server_bind = lambda: None  # type: ignore[assignment]
+        httpd.server_activate = lambda: None  # type: ignore[assignment]
+        try:
+            httpd.serve_until_idle()
+        finally:
+            try:
+                sd_sock.close()
+            except Exception:
+                pass
+        return
+
+    # Fallback: bind our own TCP socket (useful for manual runs)
+    addr = (host, int(port))
+    logger.info("Starting HTTP JSON service on %s:%s", host, port)
+    httpd = InactivityHTTPServer(addr, _RequestHandler, idle_timeout)
+    try:
+        httpd.serve_until_idle()
+    finally:
+        try:
+            httpd.server_close()
+        except Exception:
+            pass
+
+
+def set_user_quota_command(username: str, quota: int) -> None:
+    """
+    Execute the set-quota command to set user quota.
+    This command can only be executed by root user.
+    """
+    try:
+        # Check if running as root user
+        current_user = get_current_user()
+        if current_user != "root":
+            logger.error(
+                f"Set-quota command can only be executed by root user, not by "
+                f"{current_user}"
+            )
+            sys.exit(1)
+
+        # Initialize database only if missing
+        init_database()
+
+        # Set user quota
+        set_user_quota(username, quota)
+
+        print(f"Successfully set quota for user {username}: {quota} CPU minutes")
+
+    except Exception as e:
+        logger.error(f"User-quota command failed: {e}")
+        sys.exit(1)
+
+
+def set_account_quota_command(account: str, quota: int) -> None:
+    """
+    Execute the account-quota command to set account quota.
+    This command can only be executed by root user.
+    """
+    try:
+        # Check if running as root user
+        current_user = get_current_user()
+        if current_user != "root":
+            logger.error(
+                f"Account-quota command can only be executed by root user, not by "
+                f"{current_user}"
+            )
+            sys.exit(1)
+
+        # Initialize database only if missing
+        init_database()
+
+        # Set account quota
+        set_account_quota(account, quota)
+
+        print(f"Successfully set quota for account {account}: {quota} CPU minutes")
+
+    except Exception as e:
+        logger.error(f"Account-quota command failed: {e}")
+        sys.exit(1)
+
+
+def set_user_gpu_quota_command(username: str, quota: int) -> None:
+    """
+    Execute the user-gpu-quota command to set user GPU quota.
+    This command can only be executed by root user.
+    """
+    try:
+        # Check if running as root user
+        current_user = get_current_user()
+        if current_user != "root":
+            logger.error(
+                f"User-gpu-quota command can only be executed by root user, not by "
+                f"{current_user}"
+            )
+            sys.exit(1)
+
+        # Initialize database only if missing
+        init_database()
+
+        # Set user GPU quota
+        set_user_gpu_quota(username, quota)
+
+        print(f"Successfully set GPU quota for user {username}: {quota} GPU minutes")
+
+    except Exception as e:
+        logger.error(f"User-gpu-quota command failed: {e}")
+        sys.exit(1)
+
+
+def set_account_gpu_quota_command(account: str, quota: int) -> None:
+    """
+    Execute the account-gpu-quota command to set account GPU quota.
+    This command can only be executed by root user.
+    """
+    try:
+        # Check if running as root user
+        current_user = get_current_user()
+        if current_user != "root":
+            logger.error(
+                f"Account-gpu-quota command can only be executed by root user, not by "
+                f"{current_user}"
+            )
+            sys.exit(1)
+
+        # Initialize database only if missing
+        init_database()
+
+        # Set account GPU quota
+        set_account_gpu_quota(account, quota)
+
+        print(f"Successfully set GPU quota for account {account}: {quota} GPU minutes")
+
+    except Exception as e:
+        logger.error(f"Account-gpu-quota command failed: {e}")
+        sys.exit(1)
+
+
+def show_gpu_factors_command() -> None:
+    """
+    Execute the gpu-factors command to display current GPU charging factors.
+    """
+    try:
+        if not os.path.exists(DB_PATH):
+            print("Database not found. No GPU factors configured.")
+            return
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT gpu_type, factor FROM gpu_factors ORDER BY gpu_type")
+            rows = cursor.fetchall()
+
+            if not rows:
+                print("No GPU factors configured. Default factor: 1.0")
+                return
+
+            # Separate default factor from type-specific factors
+            default_factor = None
+            type_factors: List[Tuple[str, float]] = []
+
+            for gpu_type, factor in rows:
+                try:
+                    factor_f = float(factor)
+                    if gpu_type == "default":
+                        default_factor = factor_f
+                    else:
+                        type_factors.append((gpu_type, factor_f))
+                except (TypeError, ValueError):
+                    logger.warning(f"Invalid factor for GPU type {gpu_type}: {factor}")
+
+            # Display results
+            print("GPU Charging Factors")
+            print("-" * 40)
+
+            # Show default factor
+            if default_factor is not None:
+                print(f"{'default':<20} {default_factor:.3f}")
+            else:
+                print(f"{'default':<20} 1.000 (not configured)")
+
+            # Show type-specific factors
+            if type_factors:
+                for gpu_type, factor in sorted(type_factors):
+                    print(f"{gpu_type:<20} {factor:.3f}")
+
+    except sqlite3.Error as e:
+        logger.error(f"Failed to query GPU factors: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"gpu-factors command failed: {e}")
+        sys.exit(1)
+
+
+def set_gpu_factor_command(gpu_type: str, factor: float) -> None:
+    """
+    Execute the set-gpu-factor command to set GPU charging factors.
+    This command can only be executed by root user.
+    """
+    try:
+        # Check if running as root user
+        current_user = get_current_user()
+        if current_user != "root":
+            logger.error(
+                f"set-gpu-factor command can only be executed by root user, not by "
+                f"{current_user}"
+            )
+            sys.exit(1)
+
+        if factor <= 0:
+            logger.error(f"Factor must be positive, got: {factor}")
+            sys.exit(1)
+
+        # Initialize database only if missing
+        init_database()
+
+        # Set GPU factor
+        set_gpu_factor(gpu_type, factor)
+
+        print(f"Successfully set GPU factor for type {gpu_type}: {factor}")
+
+    except Exception as e:
+        logger.error(f"set-gpu-factor command failed: {e}")
+        sys.exit(1)
+
+
+def prune_command() -> None:
+    """
+    Execute the prune command to remove orphaned preallocations.
+    This command can only be executed by root user.
+    """
+    try:
+        current_user = get_current_user()
+        if current_user != "root":
+            logger.error(
+                f"Prune command can only be executed by root user, not by {current_user}"
+            )
+            sys.exit(1)
+
+        deleted = prune_orphan_preallocations()
+        if deleted == 0:
+            print("No orphan preallocations found")
+            return
+        print(f"Removed {deleted} orphan preallocation(s)")
+    except Exception as e:
+        logger.error(f"Prune command failed: {e}")
+        sys.exit(1)
+
+
+def main():
+    """
+    Main entry point for the slurm-quota script.
+    """
+    parser = argparse.ArgumentParser(
+        description="Slurm Quota Management Tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    # Add global debug option
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # Charge command
+    subparsers.add_parser(
+        "charge", help="Update user resource consumption (for Slurm job completion)"
+    )
+
+    # Stats command
+    stats_parser = subparsers.add_parser(
+        "stats", help="Show resource statistics for users"
+    )
+    stats_parser.add_argument(
+        "username",
+        nargs="?",
+        help="Username to query (optional, shows all users if not specified)",
+    )
+    stats_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Show all users (same as not specifying username)",
+    )
+
+    # User-quota command
+    user_quota_parser = subparsers.add_parser(
+        "user-quota", help="Set quota for a user (root only)"
+    )
+    user_quota_parser.add_argument("username", help="Username to set quota for")
+    user_quota_parser.add_argument(
+        "quota", type=int, help="Quota in CPU minutes (-1 for unlimited)"
+    )
+
+    # Account-quota command
+    account_quota_parser = subparsers.add_parser(
+        "account-quota", help="Set quota for an account (root only)"
+    )
+    account_quota_parser.add_argument("account", help="Account to set quota for")
+    account_quota_parser.add_argument(
+        "quota", type=int, help="Quota in CPU minutes (-1 for unlimited)"
+    )
+
+    # User-gpu-quota command
+    user_gpu_quota_parser = subparsers.add_parser(
+        "user-gpu-quota", help="Set GPU quota for a user (root only)"
+    )
+    user_gpu_quota_parser.add_argument("username", help="Username to set GPU quota for")
+    user_gpu_quota_parser.add_argument(
+        "quota", type=int, help="Quota in GPU minutes (-1 for unlimited)"
+    )
+
+    # Account-gpu-quota command
+    account_gpu_quota_parser = subparsers.add_parser(
+        "account-gpu-quota", help="Set GPU quota for an account (root only)"
+    )
+    account_gpu_quota_parser.add_argument(
+        "account", help="Account to set GPU quota for"
+    )
+    account_gpu_quota_parser.add_argument(
+        "quota", type=int, help="Quota in GPU minutes (-1 for unlimited)"
+    )
+
+    # GPU factors command (show)
+    subparsers.add_parser("gpu-factors", help="Show current GPU charging factors")
+
+    # GPU factor command (set)
+    gpu_factor_parser = subparsers.add_parser(
+        "set-gpu-factor", help="Set GPU charging factor for a GPU type (root only)"
+    )
+    gpu_factor_parser.add_argument(
+        "gpu_type",
+        help="GPU type to set factor for (use 'default' for the default factor)",
+    )
+    gpu_factor_parser.add_argument(
+        "factor",
+        type=float,
+        help="Charging factor (positive float, e.g. 0.5)",
+    )
+
+    # Prune command
+    subparsers.add_parser(
+        "prune",
+        help="Remove orphan preallocations not tied to active Slurm jobs (root only)",
+    )
+
+    # Serve command (HTTP JSON API for stats, designed for systemd socket activation)
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Serve HTTP JSON API (socket-activated by systemd; falls back to host/port)",
+    )
+    serve_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind if not socket-activated (default: 127.0.0.1)",
+    )
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=9911,
+        help="Port to bind if not socket-activated (default: 9911)",
+    )
+    serve_parser.add_argument(
+        "--idle-timeout",
+        type=int,
+        default=600,
+        help="Exit after N seconds of inactivity (default: 600)",
+    )
+
+    args = parser.parse_args()
+
+    # Setup logging with debug level if requested
+    setup_logging(debug=args.debug)
+
+    if args.command == "charge":
+        charge_command()
+    elif args.command == "stats":
+        show_user_stats(args.username, args.all)
+    elif args.command == "user-quota":
+        set_user_quota_command(args.username, args.quota)
+    elif args.command == "account-quota":
+        set_account_quota_command(args.account, args.quota)
+    elif args.command == "user-gpu-quota":
+        set_user_gpu_quota_command(args.username, args.quota)
+    elif args.command == "account-gpu-quota":
+        set_account_gpu_quota_command(args.account, args.quota)
+    elif args.command == "gpu-factors":
+        show_gpu_factors_command()
+    elif args.command == "set-gpu-factor":
+        set_gpu_factor_command(args.gpu_type, args.factor)
+    elif args.command == "prune":
+        prune_command()
+    elif args.command == "serve":
+        run_serve_command(args.host, args.port, args.idle_timeout)
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

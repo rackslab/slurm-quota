@@ -1,0 +1,32 @@
+[Unit]
+Description=Slurm Quota HTTP JSON Service
+Requires=slurm-quota.socket
+After=network.target
+PartOf=slurm-quota.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/slurm-quota serve --idle-timeout=600
+DynamicUser=yes
+NoNewPrivileges=yes
+LockPersonality=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+MemoryDenyWriteExecute=yes
+IPAccounting=yes
+KillMode=process
+TimeoutStopSec=5s
+AmbientCapabilities=
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
