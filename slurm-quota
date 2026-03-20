@@ -1318,7 +1318,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
 class InactivityHTTPServer(HTTPServer):
     def __init__(self, server_address, RequestHandlerClass, idle_timeout: int = 600):
         super().__init__(server_address, RequestHandlerClass)
-        self._idle_timeout = max(1, int(idle_timeout))
+        # Get idle timeout from command line or environment variable. Special value 0
+        # disables idle shutdown (infinite timeout).
+        self._idle_timeout = max(0, int(idle_timeout))
         self._last_activity = time.monotonic()
 
     def touch_activity(self) -> None:
@@ -1329,6 +1331,10 @@ class InactivityHTTPServer(HTTPServer):
         while True:
             # handle_request() blocks up to self.timeout
             self.handle_request()
+            # If idle timeout is disabled, continue to the next iteration.
+            if self._idle_timeout == 0:
+                continue
+            # If idle timeout is enabled, check if the last activity was too long ago.
             if time.monotonic() - self._last_activity > self._idle_timeout:
                 logger.info("Idle timeout reached; exiting")
                 break
@@ -1734,7 +1740,7 @@ def main():
         "--idle-timeout",
         type=int,
         default=600,
-        help="Exit after N seconds of inactivity (default: 600)",
+        help="Exit after N seconds of inactivity (0 disables idle timeout; default: 600)",
     )
 
     args = parser.parse_args()
