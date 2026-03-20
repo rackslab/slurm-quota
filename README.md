@@ -180,9 +180,11 @@ Examples:
 slurm-quota stats                 # displays the current user and their accounts
 slurm-quota stats alice           # details for user alice and their accounts
 slurm-quota stats --all           # lists all users and all accounts
+slurm-quota stats --hours         # same stats displayed in hours
 ```
 
 Color display of the status bar can be disabled by setting the `NO_COLOR` environment variable.
+The `--hours` option changes only the displayed unit in the `stats` output; stored values and API values remain in minutes.
 
 - `serve`: Launches an HTTP JSON server to expose statistics via a REST API. Designed to work with systemd socket activation.
 

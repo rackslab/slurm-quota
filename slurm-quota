@@ -968,7 +968,9 @@ def create_status_bar(used: int, total: int, width: int = 20) -> str:
     return f"[{colored_bar}] {percentage:6.1%}"
 
 
-def show_user_stats(username: Optional[str] = None, show_all: bool = False) -> None:
+def show_user_stats(
+    username: Optional[str] = None, show_all: bool = False, display_hours: bool = False
+) -> None:
     """
     Display resource statistics for users in table format.
 
@@ -1016,6 +1018,11 @@ def show_user_stats(username: Optional[str] = None, show_all: bool = False) -> N
                 print("No users found in service")
             return
 
+        def format_value(value_minutes: int) -> str:
+            if display_hours:
+                return f"{value_minutes / 60:.2f}"
+            return f"{value_minutes}"
+
         # Print users table
         header = (
             f"{'':<25} | {'CPU':^66} | {'GPU':^66} |\n"
@@ -1040,9 +1047,10 @@ def show_user_stats(username: Optional[str] = None, show_all: bool = False) -> N
                 cpu_quota_str = "∞"
                 cpu_status_bar = ""
             else:
-                cpu_quota_str = f"{cpu_quota}"
+                cpu_quota_str = format_value(cpu_quota)
                 cpu_status_bar = create_status_bar(cpu_total_used, cpu_quota)
-            cpu_preallocated_str = f"{cpu_preallocated}({job_count})"
+            cpu_consumed_str = format_value(cpu_consumed)
+            cpu_preallocated_str = f"{format_value(cpu_preallocated)}({job_count})"
 
             # GPU data
             gpu_consumed = int(item.get("total_consumed_gpu_minutes", 0))
@@ -1053,13 +1061,14 @@ def show_user_stats(username: Optional[str] = None, show_all: bool = False) -> N
                 gpu_quota_str = "∞"
                 gpu_status_bar = ""
             else:
-                gpu_quota_str = f"{gpu_quota}"
+                gpu_quota_str = format_value(gpu_quota)
                 gpu_status_bar = create_status_bar(gpu_total_used, gpu_quota)
-            gpu_preallocated_str = f"{gpu_preallocated}({job_count})"
+            gpu_consumed_str = format_value(gpu_consumed)
+            gpu_preallocated_str = f"{format_value(gpu_preallocated)}({job_count})"
 
             print(
-                f"{uname:<25} | {cpu_consumed:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
-                f"| {gpu_consumed:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
+                f"{uname:<25} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
+                f"| {gpu_consumed_str:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
             )
 
         # Accounts table
@@ -1087,9 +1096,10 @@ def show_user_stats(username: Optional[str] = None, show_all: bool = False) -> N
                 cpu_quota_str = "∞"
                 cpu_status_bar = " " * 25
             else:
-                cpu_quota_str = f"{cpu_quota}"
+                cpu_quota_str = format_value(cpu_quota)
                 cpu_status_bar = create_status_bar(cpu_total_used, cpu_quota)
-            cpu_preallocated_str = f"{cpu_preallocated}({job_count})"
+            cpu_consumed_str = format_value(cpu_consumed)
+            cpu_preallocated_str = f"{format_value(cpu_preallocated)}({job_count})"
 
             # GPU data
             gpu_consumed = int(item.get("total_consumed_gpu_minutes", 0))
@@ -1100,13 +1110,14 @@ def show_user_stats(username: Optional[str] = None, show_all: bool = False) -> N
                 gpu_quota_str = "∞"
                 gpu_status_bar = " " * 25
             else:
-                gpu_quota_str = f"{gpu_quota}"
+                gpu_quota_str = format_value(gpu_quota)
                 gpu_status_bar = create_status_bar(gpu_total_used, gpu_quota)
-            gpu_preallocated_str = f"{gpu_preallocated}({job_count})"
+            gpu_consumed_str = format_value(gpu_consumed)
+            gpu_preallocated_str = f"{format_value(gpu_preallocated)}({job_count})"
 
             print(
-                f"{account:<25} | {cpu_consumed:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
-                f"| {gpu_consumed:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
+                f"{account:<25} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
+                f"| {gpu_consumed_str:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
             )
     except URLError as e:
         logger.error(f"Failed to contact slurm-quota service: {e}")
@@ -1658,6 +1669,11 @@ def main():
         action="store_true",
         help="Show all users (same as not specifying username)",
     )
+    stats_parser.add_argument(
+        "--hours",
+        action="store_true",
+        help="Display stats values in hours instead of minutes",
+    )
 
     # User-quota command
     user_quota_parser = subparsers.add_parser(
@@ -1751,7 +1767,7 @@ def main():
     if args.command == "charge":
         charge_command()
     elif args.command == "stats":
-        show_user_stats(args.username, args.all)
+        show_user_stats(args.username, args.all, args.hours)
     elif args.command == "user-quota":
         set_user_quota_command(args.username, args.quota)
     elif args.command == "account-quota":
