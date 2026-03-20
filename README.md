@@ -49,7 +49,7 @@ The solution allows setting GPU load factors. This is a multiplicative coefficie
 
 The `slurm-quota set-gpu-factor` command allows configuring load factors by GPU type (restricted to root). The `slurm-quota gpu-factors` command displays the currently configured GPU load factors.
 
-The `slurm-quota serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes a single `/stats` route that returns a JSON object of the form `{ users: [...], accounts: [...] }`. When the `username` parameter is provided (e.g. `/stats?username=alice`), the server filters accounts server-side to only the Slurm associations of this user.
+The `slurm-quota serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes a single `/stats` route that returns a JSON object of the form `{ users: [...], accounts: [...] }`. When the `username` parameter is provided (e.g. `/stats?username=alice`), the server filters accounts server-side to only the Slurm associations of this user.
 
 The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a username or the `--all` option, the command transmits the appropriate filters to the service. If the service is not available or in case of connection failure to the server, execution fails with an error message.
 
@@ -107,7 +107,7 @@ sudo systemctl status slurm-quota.socket
 curl http://127.0.0.1:9911/health
 ```
 
-The service automatically stops after 10 minutes of inactivity (configurable via `--idle-timeout`).
+The service automatically stops after 10 minutes of inactivity (configurable via `--idle-timeout` in `slurm-quota.service`, with `0` meaning no idle timeout).
 
 5) Installation of the wrapper script
 
@@ -191,6 +191,7 @@ Examples:
 ```bash
 # Manual launch (testing)
 slurm-quota serve --host 127.0.0.1 --port 9911 --idle-timeout 600
+slurm-quota serve --host 127.0.0.1 --port 9911 --idle-timeout 0    # no idle timeout
 
 # Via systemd (recommended)
 sudo systemctl start slurm-quota.socket
@@ -199,7 +200,7 @@ curl http://127.0.0.1:9911/stats
 curl http://127.0.0.1:9911/stats?username=alice
 ```
 
-The service automatically stops after a period of inactivity (10 minutes by default). The `stats` command queries this HTTP service (URL configurable via the `SLURM_QUOTA_URL` environment variable).
+The service automatically stops after a period of inactivity (600 seconds, ie. 10 minutes by default). This can be disabled with `--idle-timeout 0` argument. The `stats` command queries this HTTP service (URL configurable via the `SLURM_QUOTA_URL` environment variable).
 
 - `user-quota` (restricted to root): Sets a CPU quota for a user.
 
