@@ -13,6 +13,13 @@ It has the following subcommands:
 - stats: Show resource statistics for users and accounts.
 - user-quota: Set quota for a user (restricted to root only).
 - account-quota: Set quota for an account (restricted to root only).
+- user-gpu-quota: Set GPU quota for a user (restricted to root only).
+- account-gpu-quota: Set GPU quota for an account (restricted to root only).
+- default-quotas: Show default quotas for newly auto-created users/accounts.
+- set-default-quotas: Set default quotas for newly auto-created users/accounts
+  (restricted to root only).
+- gpu-factors: Show configured GPU charging factors.
+- set-gpu-factor: Set charging factor for a GPU type (restricted to root only).
 - prune: Remove orphaned preallocations not tied to jobs present in Slurm (root only).
 - serve: Serve HTTP JSON API for stats (socket-activated by systemd; falls back to host/port).
 """
@@ -38,6 +45,12 @@ from typing import Tuple, Union, Optional, Any, Dict, List
 
 # Database configuration
 DB_PATH = "/var/lib/state/slurm-quota/slurm-quota.db"
+DEFAULT_QUOTA_SETTINGS = {
+    "default_user_quota_cpu_minutes": -1,
+    "default_user_quota_gpu_minutes": -1,
+    "default_account_quota_cpu_minutes": -1,
+    "default_account_quota_gpu_minutes": -1,
+}
 
 
 # Configure logging
@@ -59,6 +72,76 @@ def setup_logging(debug: bool = False) -> None:
 
 
 logger = logging.getLogger(__name__)
+
+
+def get_default_quota_settings() -> Dict[str, int]:
+    """
+    Return configured default quotas used for new users/accounts.
+
+    Missing or invalid values fall back to -1 (unlimited) for robustness.
+    """
+    defaults = dict(DEFAULT_QUOTA_SETTINGS)
+
+    if not os.path.exists(DB_PATH):
+        return defaults
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?)",
+                tuple(DEFAULT_QUOTA_SETTINGS.keys()),
+            )
+            for key, value in cursor.fetchall():
+                if key in defaults:
+                    try:
+                        defaults[key] = int(value)
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "Invalid default quota setting for %s=%r; using %d",
+                            key,
+                            value,
+                            DEFAULT_QUOTA_SETTINGS[key],
+                        )
+    except sqlite3.Error as e:
+        logger.warning("Failed to load default quota settings from database: %s", e)
+
+    return defaults
+
+
+def set_default_quota_settings(
+    default_user_cpu: Optional[int],
+    default_user_gpu: Optional[int],
+    default_account_cpu: Optional[int],
+    default_account_gpu: Optional[int],
+) -> None:
+    """
+    Set one or more default quotas used for newly auto-created entities.
+    """
+    updates: Dict[str, int] = {}
+    if default_user_cpu is not None:
+        updates["default_user_quota_cpu_minutes"] = default_user_cpu
+    if default_user_gpu is not None:
+        updates["default_user_quota_gpu_minutes"] = default_user_gpu
+    if default_account_cpu is not None:
+        updates["default_account_quota_cpu_minutes"] = default_account_cpu
+    if default_account_gpu is not None:
+        updates["default_account_quota_gpu_minutes"] = default_account_gpu
+
+    if not updates:
+        raise ValueError("No default quotas provided")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.executemany(
+            """
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            [(key, str(value)) for key, value in updates.items()],
+        )
+        conn.commit()
 
 
 def load_gpu_factors() -> Dict[str, float]:
@@ -433,6 +516,22 @@ def init_database() -> None:
                 )
             """)
 
+            # Create settings table for runtime configuration values
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            """)
+            cursor.executemany(
+                """
+                INSERT INTO settings (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO NOTHING
+                """,
+                [(key, str(value)) for key, value in DEFAULT_QUOTA_SETTINGS.items()],
+            )
+
             conn.commit()
             logger.info("Database initialized successfully")
 
@@ -642,12 +741,18 @@ def update_user_and_account_resources(
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
+            dq = get_default_quota_settings()
+            default_user_cpu = dq["default_user_quota_cpu_minutes"]
+            default_user_gpu = dq["default_user_quota_gpu_minutes"]
+            default_account_cpu = dq["default_account_quota_cpu_minutes"]
+            default_account_gpu = dq["default_account_quota_gpu_minutes"]
 
             # Update consumed CPU and GPU minutes for user
             cursor.execute(
                 """
-                INSERT INTO users (username, total_consumed_cpu_minutes, total_consumed_gpu_minutes, last_updated)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO users (username, total_consumed_cpu_minutes, quota_cpu_minutes,
+                    total_consumed_gpu_minutes, quota_gpu_minutes, last_updated)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (username) DO
                 UPDATE SET total_consumed_cpu_minutes = total_consumed_cpu_minutes + ?,
                            total_consumed_gpu_minutes = total_consumed_gpu_minutes + ?,
@@ -656,7 +761,9 @@ def update_user_and_account_resources(
                 (
                     username,
                     consumed_cpu_minutes,
+                    default_user_cpu,
                     consumed_gpu_minutes,
+                    default_user_gpu,
                     consumed_cpu_minutes,
                     consumed_gpu_minutes,
                 ),
@@ -665,8 +772,9 @@ def update_user_and_account_resources(
             # Update consumed CPU and GPU minutes for account
             cursor.execute(
                 """
-                INSERT INTO accounts (account, total_consumed_cpu_minutes, total_consumed_gpu_minutes, last_updated)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO accounts (account, total_consumed_cpu_minutes, quota_cpu_minutes,
+                    total_consumed_gpu_minutes, quota_gpu_minutes, last_updated)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (account) DO
                 UPDATE SET total_consumed_cpu_minutes = total_consumed_cpu_minutes + ?,
                            total_consumed_gpu_minutes = total_consumed_gpu_minutes + ?,
@@ -675,7 +783,9 @@ def update_user_and_account_resources(
                 (
                     account,
                     consumed_cpu_minutes,
+                    default_account_cpu,
                     consumed_gpu_minutes,
+                    default_account_gpu,
                     consumed_cpu_minutes,
                     consumed_gpu_minutes,
                 ),
@@ -796,16 +906,18 @@ def set_user_quota(username: str, quota_cpu_minutes: int) -> None:
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
+            dq = get_default_quota_settings()
+            default_gpu = dq["default_user_quota_gpu_minutes"]
 
             # Insert or update user with quota
             cursor.execute(
                 """
-                INSERT INTO users (username, quota_cpu_minutes, last_updated)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO users (username, quota_cpu_minutes, quota_gpu_minutes, last_updated)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (username) DO
                 UPDATE SET quota_cpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
                 """,
-                (username, quota_cpu_minutes, quota_cpu_minutes),
+                (username, quota_cpu_minutes, default_gpu, quota_cpu_minutes),
             )
 
             conn.commit()
@@ -826,15 +938,17 @@ def set_account_quota(account: str, quota_cpu_minutes: int) -> None:
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
+            dq = get_default_quota_settings()
+            default_gpu = dq["default_account_quota_gpu_minutes"]
 
             cursor.execute(
                 """
-                INSERT INTO accounts (account, quota_cpu_minutes, last_updated)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO accounts (account, quota_cpu_minutes, quota_gpu_minutes, last_updated)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (account) DO
                 UPDATE SET quota_cpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
                 """,
-                (account, quota_cpu_minutes, quota_cpu_minutes),
+                (account, quota_cpu_minutes, default_gpu, quota_cpu_minutes),
             )
 
             conn.commit()
@@ -883,16 +997,18 @@ def set_user_gpu_quota(username: str, quota_gpu_minutes: int) -> None:
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
+            dq = get_default_quota_settings()
+            default_cpu = dq["default_user_quota_cpu_minutes"]
 
             # Insert or update user with GPU quota
             cursor.execute(
                 """
-                INSERT INTO users (username, quota_gpu_minutes, last_updated)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO users (username, quota_cpu_minutes, quota_gpu_minutes, last_updated)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (username) DO
                 UPDATE SET quota_gpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
                 """,
-                (username, quota_gpu_minutes, quota_gpu_minutes),
+                (username, default_cpu, quota_gpu_minutes, quota_gpu_minutes),
             )
 
             conn.commit()
@@ -913,15 +1029,17 @@ def set_account_gpu_quota(account: str, quota_gpu_minutes: int) -> None:
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
+            dq = get_default_quota_settings()
+            default_cpu = dq["default_account_quota_cpu_minutes"]
 
             cursor.execute(
                 """
-                INSERT INTO accounts (account, quota_gpu_minutes, last_updated)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO accounts (account, quota_cpu_minutes, quota_gpu_minutes, last_updated)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (account) DO
                 UPDATE SET quota_gpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
                 """,
-                (account, quota_gpu_minutes, quota_gpu_minutes),
+                (account, default_cpu, quota_gpu_minutes, quota_gpu_minutes),
             )
 
             conn.commit()
@@ -1638,6 +1756,77 @@ def set_gpu_factor_command(gpu_type: str, factor: float) -> None:
         sys.exit(1)
 
 
+def set_default_quotas_command(
+    user_cpu: Optional[int],
+    user_gpu: Optional[int],
+    account_cpu: Optional[int],
+    account_gpu: Optional[int],
+) -> None:
+    """
+    Set default quotas used when new users/accounts are auto-created.
+    This command can only be executed by root user.
+    """
+    try:
+        current_user = get_current_user()
+        if current_user != "root":
+            logger.error(
+                "set-default-quotas command can only be executed by root user, "
+                "not by %s",
+                current_user,
+            )
+            sys.exit(1)
+
+        if all(
+            value is None for value in (user_cpu, user_gpu, account_cpu, account_gpu)
+        ):
+            logger.error(
+                "At least one option must be provided: --user-cpu, --user-gpu, "
+                "--account-cpu, --account-gpu"
+            )
+            sys.exit(1)
+
+        init_database()
+        set_default_quota_settings(user_cpu, user_gpu, account_cpu, account_gpu)
+        print("Successfully updated default quotas")
+    except Exception as e:
+        logger.error(f"set-default-quotas command failed: {e}")
+        sys.exit(1)
+
+
+def show_default_quotas_command() -> None:
+    """
+    Display current default quotas for newly auto-created users/accounts.
+    """
+
+    def fmt(m: int) -> str:
+        return "∞" if m == -1 else str(m)
+
+    try:
+        init_database()
+        settings = get_default_quota_settings()
+        print("Default Quotas For New Entities")
+        print("-" * 40)
+        print(
+            f"{'user_cpu_minutes':<24} "
+            f"{fmt(settings['default_user_quota_cpu_minutes'])}"
+        )
+        print(
+            f"{'user_gpu_minutes':<24} "
+            f"{fmt(settings['default_user_quota_gpu_minutes'])}"
+        )
+        print(
+            f"{'account_cpu_minutes':<24} "
+            f"{fmt(settings['default_account_quota_cpu_minutes'])}"
+        )
+        print(
+            f"{'account_gpu_minutes':<24} "
+            f"{fmt(settings['default_account_quota_gpu_minutes'])}"
+        )
+    except Exception as e:
+        logger.error(f"default-quotas command failed: {e}")
+        sys.exit(1)
+
+
 def prune_command() -> None:
     """
     Execute the prune command to remove orphaned preallocations.
@@ -1759,6 +1948,38 @@ def main():
         help="Charging factor (positive float, e.g. 0.5)",
     )
 
+    # Default quotas commands (show)
+    subparsers.add_parser(
+        "default-quotas",
+        help="Show default quotas used for new users/accounts",
+    )
+
+    # Default quotas commands (set)
+    set_default_quotas_parser = subparsers.add_parser(
+        "set-default-quotas",
+        help="Set default quotas used for new users/accounts (root only)",
+    )
+    set_default_quotas_parser.add_argument(
+        "--user-cpu",
+        type=int,
+        help="Default CPU quota for new users in minutes (-1 for unlimited)",
+    )
+    set_default_quotas_parser.add_argument(
+        "--user-gpu",
+        type=int,
+        help="Default GPU quota for new users in minutes (-1 for unlimited)",
+    )
+    set_default_quotas_parser.add_argument(
+        "--account-cpu",
+        type=int,
+        help="Default CPU quota for new accounts in minutes (-1 for unlimited)",
+    )
+    set_default_quotas_parser.add_argument(
+        "--account-gpu",
+        type=int,
+        help="Default GPU quota for new accounts in minutes (-1 for unlimited)",
+    )
+
     # Prune command
     subparsers.add_parser(
         "prune",
@@ -1809,6 +2030,12 @@ def main():
         show_gpu_factors_command()
     elif args.command == "set-gpu-factor":
         set_gpu_factor_command(args.gpu_type, args.factor)
+    elif args.command == "default-quotas":
+        show_default_quotas_command()
+    elif args.command == "set-default-quotas":
+        set_default_quotas_command(
+            args.user_cpu, args.user_gpu, args.account_cpu, args.account_gpu
+        )
     elif args.command == "prune":
         prune_command()
     elif args.command == "serve":

@@ -45,6 +45,8 @@ The SQLite database file must have the system user `slurm` as owner, with mode `
 
 The commands `slurm-quota user-quota`, `slurm-quota account-quota`, `slurm-quota user-gpu-quota`, and `slurm-quota account-gpu-quota` respectively allow assigning CPU and GPU quotas to users and accounts.
 
+Default quotas used when the solution auto-creates a user or account can be displayed with `slurm-quota default-quotas` and updated with `slurm-quota set-default-quotas`. These defaults are applied only to newly auto-created entries and do not modify existing users/accounts.
+
 The solution allows setting GPU load factors. This is a multiplicative coefficient applied to the calculation of consumed GPU minutes based on the GPU type used. This factor allows adjusting, for each GPU type, the actual consumption weighting, taking into account the different value or computing power of the models (for example, assigning a factor of 0.5 to an h100 GPU amounts to counting 10 minutes of usage as only 5 minutes consumed). The default factor is 1.0 if no specific factor is configured for a given type. Thus, administrators can finely adapt GPU billing based on GPU models.
 
 The `slurm-quota set-gpu-factor` command allows configuring load factors by GPU type (restricted to root). The `slurm-quota gpu-factors` command displays the currently configured GPU load factors.
@@ -238,6 +240,24 @@ Examples:
 ```bash
 sudo slurm-quota account-gpu-quota projX 50000 # 50k GPU minutes
 sudo slurm-quota account-gpu-quota projY -1   # unlimited GPU
+```
+
+- `default-quotas`: Displays the default CPU/GPU quotas applied to newly auto-created users/accounts.
+
+Example:
+
+```bash
+slurm-quota default-quotas
+```
+
+- `set-default-quotas` (restricted to root): Sets one or more default quotas applied when a user/account is auto-created by the submission plugin. Existing users/accounts are not modified.
+
+Examples:
+
+```bash
+sudo slurm-quota set-default-quotas --user-cpu 50000 --account-cpu 200000
+sudo slurm-quota set-default-quotas --user-gpu 10000 --account-gpu 50000
+sudo slurm-quota set-default-quotas --user-cpu -1 --user-gpu -1 --account-cpu -1 --account-gpu -1
 ```
 
 - `gpu-factors`: Displays the currently configured GPU load factors.
