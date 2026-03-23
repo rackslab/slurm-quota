@@ -180,6 +180,12 @@ end
 -- Retry helpers for transient SQLite lock/busy errors
 local MAX_DB_RETRIES = 5
 local INITIAL_BACKOFF_SEC = 1
+local DEFAULT_QUOTA_SETTINGS = {
+    default_user_quota_cpu_minutes = -1,
+    default_user_quota_gpu_minutes = -1,
+    default_account_quota_cpu_minutes = -1,
+    default_account_quota_gpu_minutes = -1
+}
 
 local function sleep_seconds(seconds)
     -- Sleep using Lua POSIX to avoid spawning a shell
@@ -215,6 +221,68 @@ local function execute_with_retry(stmt, ...)
     return nil, "database is locked"
 end
 
+-- Load default quotas used for newly created users/accounts
+local function load_default_quota_settings(conn)
+    if not conn then
+        slurm.log_error("slurm_job_submit: load_default_quota_settings called with nil connection")
+        return {
+            user_cpu = DEFAULT_QUOTA_SETTINGS.default_user_quota_cpu_minutes,
+            user_gpu = DEFAULT_QUOTA_SETTINGS.default_user_quota_gpu_minutes,
+            account_cpu = DEFAULT_QUOTA_SETTINGS.default_account_quota_cpu_minutes,
+            account_gpu = DEFAULT_QUOTA_SETTINGS.default_account_quota_gpu_minutes
+        }
+    end
+
+    local defaults = {
+        user_cpu = DEFAULT_QUOTA_SETTINGS.default_user_quota_cpu_minutes,
+        user_gpu = DEFAULT_QUOTA_SETTINGS.default_user_quota_gpu_minutes,
+        account_cpu = DEFAULT_QUOTA_SETTINGS.default_account_quota_cpu_minutes,
+        account_gpu = DEFAULT_QUOTA_SETTINGS.default_account_quota_gpu_minutes
+    }
+
+    local stmt, perr = conn:prepare("SELECT key AS key, value AS value FROM settings WHERE key IN (?, ?, ?, ?)")
+    if not stmt then
+        slurm.log_error("slurm_job_submit: failed to prepare default settings query: " .. tostring(perr))
+        return defaults
+    end
+
+    local ok, exerr = execute_with_retry(
+        stmt,
+        "default_user_quota_cpu_minutes",
+        "default_user_quota_gpu_minutes",
+        "default_account_quota_cpu_minutes",
+        "default_account_quota_gpu_minutes"
+    )
+    if not ok then
+        slurm.log_error("slurm_job_submit: failed to execute default settings query: " .. tostring(exerr))
+        stmt:close()
+        return defaults
+    end
+
+    while true do
+        local row = stmt:fetch(true)
+        if not row then
+            break
+        end
+        local key = row.key
+        local value = tonumber(row.value)
+        if value ~= nil then
+            if key == "default_user_quota_cpu_minutes" then
+                defaults.user_cpu = value
+            elseif key == "default_user_quota_gpu_minutes" then
+                defaults.user_gpu = value
+            elseif key == "default_account_quota_cpu_minutes" then
+                defaults.account_cpu = value
+            elseif key == "default_account_quota_gpu_minutes" then
+                defaults.account_gpu = value
+            end
+        end
+    end
+
+    stmt:close()
+    return defaults
+end
+
 -- Get or create user in database
 local function get_or_create_user(conn, username)
     if not conn then
@@ -247,14 +315,17 @@ local function get_or_create_user(conn, username)
             quota_gpu = row.quota_gpu or -1
         }
     else
+        local default_quotas = load_default_quota_settings(conn)
         -- User doesn't exist, create it
-        local insert_stmt, ierr = conn:prepare("INSERT INTO users (username, total_consumed_cpu_minutes, quota_cpu_minutes, total_consumed_gpu_minutes, quota_gpu_minutes) VALUES (?, 0, -1, 0, -1)")
+        local insert_stmt, ierr = conn:prepare("INSERT INTO users (username, total_consumed_cpu_minutes, quota_cpu_minutes, total_consumed_gpu_minutes, quota_gpu_minutes) VALUES (?, 0, ?, 0, ?)")
         if not insert_stmt then
             slurm.log_error("slurm_job_submit: failed to prepare insert statement: " .. tostring(ierr))
             return nil
         end
 
-        local ok2, exerr2 = execute_with_retry(insert_stmt, username)
+        local default_user_cpu = (default_quotas and default_quotas.user_cpu) or -1
+        local default_user_gpu = (default_quotas and default_quotas.user_gpu) or -1
+        local ok2, exerr2 = execute_with_retry(insert_stmt, username, default_user_cpu, default_user_gpu)
         if not ok2 then
             slurm.log_error("slurm_job_submit: failed to create user: " .. tostring(exerr2))
             insert_stmt:close()
@@ -266,9 +337,9 @@ local function get_or_create_user(conn, username)
         slurm.log_info("slurm_job_submit: created new user: " .. username)
         return {
             consumed = 0,
-            quota = -1,
+            quota = default_user_cpu,
             consumed_gpu = 0,
-            quota_gpu = -1
+            quota_gpu = default_user_gpu
         }
     end
 end
@@ -304,12 +375,15 @@ local function get_or_create_account(conn, account)
             quota_gpu = row.quota_gpu or -1
         }
     else
-        local insert_stmt, ierr = conn:prepare("INSERT INTO accounts (account, total_consumed_cpu_minutes, quota_cpu_minutes, total_consumed_gpu_minutes, quota_gpu_minutes) VALUES (?, 0, -1, 0, -1)")
+        local default_quotas = load_default_quota_settings(conn)
+        local insert_stmt, ierr = conn:prepare("INSERT INTO accounts (account, total_consumed_cpu_minutes, quota_cpu_minutes, total_consumed_gpu_minutes, quota_gpu_minutes) VALUES (?, 0, ?, 0, ?)")
         if not insert_stmt then
             slurm.log_error("slurm_job_submit: failed to prepare insert statement: " .. tostring(ierr))
             return nil
         end
-        local ok2, exerr2 = execute_with_retry(insert_stmt, account)
+        local default_account_cpu = (default_quotas and default_quotas.account_cpu) or -1
+        local default_account_gpu = (default_quotas and default_quotas.account_gpu) or -1
+        local ok2, exerr2 = execute_with_retry(insert_stmt, account, default_account_cpu, default_account_gpu)
         if not ok2 then
             slurm.log_error("slurm_job_submit: failed to create account: " .. tostring(exerr2))
             insert_stmt:close()
@@ -319,9 +393,9 @@ local function get_or_create_account(conn, account)
         slurm.log_info("slurm_job_submit: created new account: " .. account)
         return {
             consumed = 0,
-            quota = -1,
+            quota = default_account_cpu,
             consumed_gpu = 0,
-            quota_gpu = -1
+            quota_gpu = default_account_gpu
         }
     end
 end
