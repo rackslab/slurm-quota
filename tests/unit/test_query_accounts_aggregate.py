@@ -6,7 +6,7 @@ from tests.test_support import SlurmQuotaTestCase
 class TestQueryAccountsAggregate(SlurmQuotaTestCase):
     def test_query_accounts_aggregate(self):
         self.init_db()
-        with self.db_connect() as conn:
+        with self.db_connection() as conn:
             conn.execute(
                 "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
                 ("u1", 10),

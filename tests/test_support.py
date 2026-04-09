@@ -6,6 +6,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing, contextmanager
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from typing import Dict
@@ -30,6 +31,8 @@ def load_module():
 
 
 class SlurmQuotaTestCase(unittest.TestCase):
+    """Use ``with self.db_connection() as conn:`` for any direct SQLite access in tests."""
+
     @classmethod
     def setUpClass(cls):
         cls.sq = load_module()
@@ -39,14 +42,21 @@ class SlurmQuotaTestCase(unittest.TestCase):
         self.db_path = str(Path(self._tmp.name) / "slurm-quota.db")
         self._patch_db = patch.object(self.sq, "DB_PATH", self.db_path)
         self._patch_db.start()
-        self.addCleanup(self._patch_db.stop)
-        self.addCleanup(self._tmp.cleanup)
+
+    def tearDown(self):
+        try:
+            self._patch_db.stop()
+        finally:
+            self._tmp.cleanup()
 
     def init_db(self):
         self.sq.init_database()
 
-    def db_connect(self):
-        return sqlite3.connect(self.db_path)
+    @contextmanager
+    def db_connection(self):
+        # sqlite3.Connection.__exit__ commits/rolls back but does not close; use closing().
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            yield conn
 
     def env(self, updates: Dict[str, str]):
         p = patch.dict(os.environ, updates, clear=False)

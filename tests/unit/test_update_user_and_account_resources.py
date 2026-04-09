@@ -8,7 +8,7 @@ class TestUpdateUserAndAccountResources(SlurmQuotaTestCase):
         self.init_db()
         status = self.sq.update_user_and_account_resources("u1", "a1", 10, None, 2)
         self.assertEqual(status, "none")
-        with self.db_connect() as conn:
+        with self.db_connection() as conn:
             conn.execute(
                 "INSERT INTO jobs_preallocations (job_uuid, username, account, preallocated_cpu_minutes, array_size) VALUES (?, ?, ?, ?, ?)",
                 ("uuid1", "u1", "a1", 5, 1),
