@@ -968,6 +968,52 @@ def create_status_bar(used: int, total: int, width: int = 20) -> str:
     return f"[{colored_bar}] {percentage:6.1%}"
 
 
+class StatsHTTPError(Exception):
+    """Raised when the stats HTTP endpoint returns a non-success status."""
+
+    def __init__(self, status: int):
+        self.status = status
+        super().__init__(f"HTTP {status}")
+
+
+def fetch_stats_from_service(
+    selected_username: Optional[str], show_all: bool
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Request /stats from the slurm-quota HTTP service and return user and account rows.
+
+    Uses environment variable SLURM_QUOTA_URL as the service root, defaulting to
+    http://127.0.0.1:9911/.
+
+    Args:
+        selected_username: User filter when not show_all (may be None if show_all).
+        show_all: If True, do not add a username query parameter.
+
+    Returns:
+        (users_data, accounts_data) lists from the JSON payload.
+
+    Raises:
+        StatsHTTPError: Response status was not HTTP OK.
+        URLError: Network or URL handling failure from urlopen.
+    """
+    base_url = os.environ.get("SLURM_QUOTA_URL", "http://127.0.0.1:9911/")
+    stats_params: Dict[str, str] = {}
+    if selected_username and not show_all:
+        stats_params["username"] = selected_username
+    stats_url = urljoin(base_url, "stats")
+    if stats_params:
+        stats_url = f"{stats_url}?{urlencode(stats_params)}"
+
+    with urlopen(Request(stats_url, headers={"Accept": "application/json"})) as resp:
+        if resp.status != HTTPStatus.OK:
+            raise StatsHTTPError(resp.status)
+        stats_payload: Dict[str, Any] = json.load(resp)
+
+    users_data: List[Dict[str, Any]] = list(stats_payload.get("users", []))
+    accounts_data: List[Dict[str, Any]] = list(stats_payload.get("accounts", []))
+    return users_data, accounts_data
+
+
 def show_user_stats(
     username: Optional[str] = None, show_all: bool = False, display_hours: bool = False
 ) -> None:
@@ -978,9 +1024,6 @@ def show_user_stats(
         username: The username to query (if None and not show_all, shows all)
         show_all: If True, show all users
     """
-    # HTTP JSON service location
-    base_url = os.environ.get("SLURM_QUOTA_URL", "http://127.0.0.1:9911/")
-
     # Determine target username
     selected_username = username
     if not show_all and not selected_username:
@@ -989,27 +1032,10 @@ def show_user_stats(
         except KeyError:
             sys.exit(1)
 
-    # Fetch stats (users and accounts)
     try:
-        # Build stats URL with optional username parameter
-        stats_params: Dict[str, str] = {}
-        if selected_username and not show_all:
-            stats_params["username"] = selected_username
-        stats_url = urljoin(base_url, "stats")
-        if stats_params:
-            stats_url = f"{stats_url}?{urlencode(stats_params)}"
-
-        # Fetch stats from HTTP JSON service
-        with urlopen(
-            Request(stats_url, headers={"Accept": "application/json"})
-        ) as resp:
-            if resp.status != HTTPStatus.OK:
-                logger.error(f"Failed to fetch stats: HTTP {resp.status}")
-                sys.exit(1)
-            stats_payload: Dict[str, Any] = json.load(resp)
-
-        users_data: List[Dict[str, Any]] = list(stats_payload.get("users", []))
-        accounts_data: List[Dict[str, Any]] = list(stats_payload.get("accounts", []))
+        users_data, accounts_data = fetch_stats_from_service(
+            selected_username, show_all
+        )
 
         if not users_data:
             if username:
@@ -1119,6 +1145,9 @@ def show_user_stats(
                 f"{account:<25} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
                 f"| {gpu_consumed_str:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
             )
+    except StatsHTTPError as e:
+        logger.error(f"Failed to fetch stats: HTTP {e.status}")
+        sys.exit(1)
     except URLError as e:
         logger.error(f"Failed to contact slurm-quota service: {e}")
         sys.exit(1)
