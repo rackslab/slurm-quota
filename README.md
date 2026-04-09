@@ -278,6 +278,25 @@ When updating `slurm-quota`, the database migration script must first be execute
 
 Then, the other components (`job_submit.lua`, `slurm-quota`, etc.) must be updated.
 
+## Tests (development)
+
+The repository includes unit tests under `tests/unit/` (one module per function under test) and functional CLI tests under `tests/functional/` (one module per `slurm-quota` subcommand). They are standard `unittest.TestCase` classes; the recommended runner is **pytest** (as in CI), with optional coverage reports configured in `pyproject.toml`.
+
+From the repository root, use a virtual environment (recommended on distributions that restrict system-wide `pip`, e.g. PEP 668):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m pip install -U pip
+python -m pip install ".[dev]"
+```
+
+Run the full suite (quiet mode, coverage for the loaded `slurm-quota` module, terminal + `coverage.xml`):
+
+```bash
+python -m pytest
+```
+
 ## Acknowledgements
 
 The development of this project was funded by [**ISDM-Meso**](https://isdm.umontpellier.fr/), part of the [University of Montpellier](https://www.umontpellier.fr/en/).

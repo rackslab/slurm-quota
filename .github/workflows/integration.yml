@@ -1,0 +1,26 @@
+name: integration
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux:9
+    steps:
+      - name: Install git
+        run: dnf -y install git
+      - uses: actions/checkout@v5
+      - name: Install Python 3.9 and pip
+        run: dnf -y install python3.9 python3.9-pip
+      - name: Install dev dependencies
+        run: |
+          python3.9 -m pip install -U pip
+          python3.9 -m pip install ".[dev]"
+      - name: Run all tests
+        run: python3.9 -m pytest
