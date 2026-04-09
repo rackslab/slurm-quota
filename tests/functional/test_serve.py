@@ -2,26 +2,206 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+import http.client
+import json
+import os
+import socket
+import threading
+import time
 
 from tests.functional.functional_base import FunctionalCLIBase
 
 
 class TestServeCommand(FunctionalCLIBase):
-    def test_serve_passes_host_port_idle_timeout(self):
-        self.init_db()
-        mock_run = MagicMock()
-        with patch.object(self.sq, "run_serve_command", mock_run):
-            self.run_main(
+    def _free_tcp_port(self) -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return int(s.getsockname()[1])
+
+    def _start_serve_thread(
+        self, host: str, port: int, idle_timeout: int = 1
+    ) -> threading.Thread:
+        thread = threading.Thread(
+            target=self.run_main,
+            args=(
                 [
                     "slurm-quota",
                     "serve",
                     "--host",
-                    "0.0.0.0",
+                    host,
                     "--port",
-                    "12345",
+                    str(port),
                     "--idle-timeout",
-                    "42",
-                ]
+                    str(idle_timeout),
+                ],
+            ),
+            daemon=True,
+        )
+        thread.start()
+        return thread
+
+    def _wait_until_ready(self, host: str, port: int) -> None:
+        deadline = time.monotonic() + 2.0
+        while True:
+            conn = None
+            try:
+                conn = http.client.HTTPConnection(host, port, timeout=1)
+                conn.request("GET", "/health")
+                resp = conn.getresponse()
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(
+                    json.loads(resp.read().decode("utf-8")),
+                    {"status": "ok"},
+                )
+                return
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.05)
+            finally:
+                try:
+                    if conn is not None:
+                        conn.close()
+                except Exception:
+                    pass
+
+    def _join_after_idle(self, thread: threading.Thread) -> None:
+        thread.join(timeout=3)
+        self.assertFalse(thread.is_alive())
+
+    def test_serve_get_health_returns_ok(self):
+        self.init_db()
+        host = "127.0.0.1"
+        port = self._free_tcp_port()
+        thread = self._start_serve_thread(host, port)
+        self._wait_until_ready(host, port)
+
+        conn = http.client.HTTPConnection(host, port, timeout=2)
+        try:
+            conn.request("GET", "/health")
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(
+                json.loads(resp.read().decode("utf-8")),
+                {"status": "ok"},
             )
-        mock_run.assert_called_once_with("0.0.0.0", 12345, 42)
+        finally:
+            conn.close()
+
+        self._join_after_idle(thread)
+
+    def test_serve_get_stats_returns_users_and_accounts(self):
+        self.init_db()
+        host = "127.0.0.1"
+        port = self._free_tcp_port()
+        thread = self._start_serve_thread(host, port)
+        self._wait_until_ready(host, port)
+
+        conn = http.client.HTTPConnection(host, port, timeout=2)
+        try:
+            conn.request("GET", "/stats")
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            body = json.loads(resp.read().decode("utf-8"))
+            self.assertIn("users", body)
+            self.assertIn("accounts", body)
+        finally:
+            conn.close()
+
+        self._join_after_idle(thread)
+
+    def test_serve_get_unknown_path_returns_not_found(self):
+        self.init_db()
+        host = "127.0.0.1"
+        port = self._free_tcp_port()
+        thread = self._start_serve_thread(host, port)
+        self._wait_until_ready(host, port)
+
+        conn = http.client.HTTPConnection(host, port, timeout=2)
+        try:
+            conn.request("GET", "/does-not-exist")
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 404)
+            self.assertEqual(
+                json.loads(resp.read().decode("utf-8")),
+                {"error": "not_found"},
+            )
+        finally:
+            conn.close()
+
+        self._join_after_idle(thread)
+
+    def test_serve_uses_systemd_socket_activation_env(self):
+        self.init_db()
+        host = "127.0.0.1"
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind((host, 0))
+        listener.listen(16)
+        port = int(listener.getsockname()[1])
+
+        fd3_backup = None
+        had_fd3 = True
+        try:
+            try:
+                os.fstat(3)
+            except OSError:
+                had_fd3 = False
+            if had_fd3:
+                fd3_backup = os.dup(3)
+
+            os.dup2(listener.fileno(), 3)
+            self.env({"LISTEN_PID": str(os.getpid()), "LISTEN_FDS": "1"})
+
+            thread = self._start_serve_thread("0.0.0.0", 1, idle_timeout=1)
+            self._wait_until_ready(host, port)
+
+            conn = http.client.HTTPConnection(host, port, timeout=2)
+            try:
+                conn.request("GET", "/health")
+                resp = conn.getresponse()
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(
+                    json.loads(resp.read().decode("utf-8")),
+                    {"status": "ok"},
+                )
+            finally:
+                conn.close()
+
+            self._join_after_idle(thread)
+        finally:
+            listener.close()
+            if fd3_backup is not None:
+                os.dup2(fd3_backup, 3)
+                os.close(fd3_backup)
+            elif not had_fd3:
+                try:
+                    os.close(3)
+                except OSError:
+                    pass
+
+    def test_serve_idle_timeout_zero_disables_shutdown(self):
+        self.init_db()
+        host = "127.0.0.1"
+        port = self._free_tcp_port()
+        thread = threading.Thread(
+            target=self.run_main,
+            args=(
+                [
+                    "slurm-quota",
+                    "serve",
+                    "--host",
+                    host,
+                    "--port",
+                    str(port),
+                    "--idle-timeout",
+                    "0",
+                ],
+            ),
+            daemon=True,
+        )
+        thread.start()
+
+        self._wait_until_ready(host, port)
+        time.sleep(1.2)
+        self.assertTrue(thread.is_alive())
