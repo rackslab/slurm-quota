@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from unittest.mock import patch
 
 from tests.functional.functional_base import FunctionalCLIBase
@@ -18,7 +17,7 @@ class TestChargeCommand(FunctionalCLIBase):
                 return_value=("u1", "9", 30, "a1", None, 0),
             ):
                 self.run_main(["slurm-quota", "charge"])
-        with sqlite3.connect(self.db_path) as conn:
+        with self.db_connection() as conn:
             u = conn.execute(
                 "SELECT total_consumed_cpu_minutes FROM users WHERE username=?",
                 ("u1",),

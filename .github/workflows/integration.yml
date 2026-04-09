@@ -18,9 +18,13 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install Python 3.9 and pip
         run: dnf -y install python3.9 python3.9-pip
-      - name: Install dev dependencies
+      - name: Create non-root test user
         run: |
-          python3.9 -m pip install -U pip
-          python3.9 -m pip install ".[dev]"
-      - name: Run all tests
-        run: python3.9 -m pytest
+          useradd -m -u 1001 ciuser
+          chown -R ciuser:ciuser "$GITHUB_WORKSPACE"
+      - name: Install dev dependencies as non-root
+        run: |
+          su -s /bin/bash ciuser -c "cd \"$GITHUB_WORKSPACE\" && python3.9 -m pip install --user -U pip"
+          su -s /bin/bash ciuser -c "cd \"$GITHUB_WORKSPACE\" && python3.9 -m pip install --user \".[dev]\""
+      - name: Run all tests as non-root
+        run: su -s /bin/bash ciuser -c "cd \"$GITHUB_WORKSPACE\" && python3.9 -m pytest"
