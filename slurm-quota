@@ -176,7 +176,7 @@ def calculate_consumed_gpu_minutes(
     return int(total_gpu_minutes)
 
 
-def format_timestamp_with_timezone(timestamp_str: str) -> str:
+def format_timestamp_with_timezone(timestamp_str: Optional[str]) -> str:
     """
     Format a timestamp string to display with local timezone.
 
@@ -968,7 +968,7 @@ def create_status_bar(used: int, total: int, width: int = 20) -> str:
     return f"[{colored_bar}] {percentage:6.1%}"
 
 
-def show_user_stats(username: str = None, show_all: bool = False) -> None:
+def show_user_stats(username: Optional[str] = None, show_all: bool = False) -> None:
     """
     Display resource statistics for users in table format.
 
@@ -1270,12 +1270,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
         logger.info("%s - - %s", self.address_string(), format % args)
 
     def do_GET(self) -> None:
+        # Make sure self.server is InactivityHTTPServer with touch_activity method
+        assert isinstance(self.server, InactivityHTTPServer)
         # Mark last activity
-        if hasattr(self.server, "touch_activity"):
-            try:
-                self.server.touch_activity()
-            except Exception:
-                pass
+        self.server.touch_activity()
 
         if self.path.startswith("/health"):
             self._send_json({"status": "ok"})
@@ -1371,8 +1369,8 @@ def run_serve_command(host: str, port: int, idle_timeout: int) -> None:
         httpd = InactivityHTTPServer(("0.0.0.0", 0), _RequestHandler, idle_timeout)
         httpd.socket = sd_sock
         # essential: prevent server from closing sd_sock on shutdown duplication issues
-        httpd.server_bind = lambda: None  # type: ignore[assignment]
-        httpd.server_activate = lambda: None  # type: ignore[assignment]
+        httpd.server_bind = lambda: None  # ty: ignore[invalid-assignment]
+        httpd.server_activate = lambda: None  # ty: ignore[invalid-assignment]
         try:
             httpd.serve_until_idle()
         finally:
