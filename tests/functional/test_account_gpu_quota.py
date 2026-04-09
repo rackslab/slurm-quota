@@ -12,7 +12,5 @@ class TestAccountGpuQuotaCommand(FunctionalCLIBase):
         with patch.object(self.sq, "get_current_user", return_value="root"):
             with patch.object(self.sq, "set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(
-                        ["slurm-quota", "account-gpu-quota", "acctY", "200"]
-                    )
+                    self.run_main(["slurm-quota", "account-gpu-quota", "acctY", "200"])
                 self.assertIn("acctY", out.getvalue())

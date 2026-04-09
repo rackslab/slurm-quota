@@ -12,9 +12,7 @@ class TestSetGpuFactorCommand(FunctionalCLIBase):
         with patch.object(self.sq, "get_current_user", return_value="root"):
             with patch.object(self.sq, "set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(
-                        ["slurm-quota", "set-gpu-factor", "h100", "0.25"]
-                    )
+                    self.run_main(["slurm-quota", "set-gpu-factor", "h100", "0.25"])
                 self.assertIn("h100", out.getvalue())
 
     def test_set_gpu_factor_non_positive_exits(self):
