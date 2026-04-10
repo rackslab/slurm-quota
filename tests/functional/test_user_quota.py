@@ -12,47 +12,64 @@ class TestUserQuotaCommand(FunctionalCLIBase):
         with patch.object(self.sq, "get_current_user", return_value="root"):
             with patch.object(self.sq, "set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(["slurm-quota", "user-quota", "userNew", "500"])
+                    self.run_main(["slurm-quota", "user-quota", "elena", "500"])
         self.assertEqual(
             out.getvalue(),
-            "Successfully set quota for user userNew: 500 CPU minutes\n",
+            "Successfully set quota for user elena: 500 CPU minutes\n",
         )
         with self.db_connection() as conn:
             row = conn.execute(
                 "SELECT quota_cpu_minutes FROM users WHERE username = ?",
-                ("userNew",),
+                ("elena",),
             ).fetchone()
         self.assertIsNotNone(row)
         self.assertEqual(row[0], 500)
 
+    def test_user_quota_applies_default_gpu_from_settings_on_create(self):
+        self.init_db()
+        self.update_settings(default_user_quota_gpu_minutes=4242)
+        with patch.object(self.sq, "get_current_user", return_value="root"):
+            with patch.object(self.sq, "set_database_permissions"):
+                self.run_main(["slurm-quota", "user-quota", "marcus", "500"])
+        with self.db_connection() as conn:
+            row = conn.execute(
+                "SELECT quota_cpu_minutes, quota_gpu_minutes FROM users WHERE username = ?",
+                ("marcus",),
+            ).fetchone()
+        self.assertEqual(row, (500, 4242))
+
     def test_user_quota_updates_existing_user(self):
         self.init_db()
+        self.update_settings(default_user_quota_gpu_minutes=99999)
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, quota_cpu_minutes) VALUES (?, ?)",
-                ("userUp", 10),
+                """
+                INSERT INTO users (username, quota_cpu_minutes, quota_gpu_minutes)
+                VALUES (?, ?, ?)
+                """,
+                ("sofia", 10, 8888),
             )
             conn.commit()
         with patch.object(self.sq, "get_current_user", return_value="root"):
             with patch.object(self.sq, "set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(["slurm-quota", "user-quota", "userUp", "500"])
+                    self.run_main(["slurm-quota", "user-quota", "sofia", "500"])
         self.assertEqual(
             out.getvalue(),
-            "Successfully set quota for user userUp: 500 CPU minutes\n",
+            "Successfully set quota for user sofia: 500 CPU minutes\n",
         )
         with self.db_connection() as conn:
             row = conn.execute(
-                "SELECT quota_cpu_minutes FROM users WHERE username = ?",
-                ("userUp",),
+                "SELECT quota_cpu_minutes, quota_gpu_minutes FROM users WHERE username = ?",
+                ("sofia",),
             ).fetchone()
-        self.assertEqual(row[0], 500)
+        self.assertEqual(row, (500, 8888))
 
     def test_user_quota_rejects_non_root(self):
         with patch.object(self.sq, "get_current_user", return_value="nobody"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    self.run_main(["slurm-quota", "user-quota", "x", "1"])
+                    self.run_main(["slurm-quota", "user-quota", "taylor", "1"])
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,
