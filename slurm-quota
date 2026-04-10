@@ -11,6 +11,7 @@ It has the following subcommands:
 - charge: Update user/account resource consumption. This is designed to be executed by
   Slurm as a JobCompType=jobcomp/script.
 - stats: Show resource statistics for users and accounts.
+- adjust: Adjust consumed CPU/GPU minutes on a user/account (restricted to root only).
 - user-quota: Set quota for a user (restricted to root only).
 - account-quota: Set quota for an account (restricted to root only).
 - user-gpu-quota: Set GPU quota for a user (restricted to root only).
@@ -353,6 +354,26 @@ def parse_slurm_time_format(time_str: str) -> Union[int, None]:
         return int(time_str)
     except ValueError:
         raise ValueError(f"Unrecognized time format: {time_str}")
+
+
+def parse_signed_int(value: str) -> int:
+    """
+    Parse an explicitly signed integer for CLI arguments.
+
+    Args:
+        value: Raw argument value
+
+    Returns:
+        Parsed integer value
+
+    Raises:
+        argparse.ArgumentTypeError: If value does not include an explicit sign
+    """
+    if not re.fullmatch(r"[+-]\d+", value):
+        raise argparse.ArgumentTypeError(
+            "must be an explicitly signed integer (for example: +30 or -30)"
+        )
+    return int(value)
 
 
 def get_current_user() -> str:
@@ -1049,6 +1070,64 @@ def set_account_gpu_quota(account: str, quota_gpu_minutes: int) -> None:
         raise
 
 
+def adjust_consumed_minutes(
+    target_type: str, target_name: str, resource: str, delta_minutes: int
+) -> int:
+    """
+    Adjust consumed CPU/GPU minutes for a user or account.
+
+    Args:
+        target_type: "user" or "account"
+        target_name: Username or account name
+        resource: "cpu" or "gpu"
+        delta_minutes: Signed minutes to add/subtract
+
+    Returns:
+        New consumed minutes value after update
+
+    Raises:
+        ValueError: If target type/resource is invalid or target row is missing
+    """
+    target_mapping = {
+        "user": ("users", "username", "User"),
+        "account": ("accounts", "account", "Account"),
+    }
+    resource_mapping = {
+        "cpu": "total_consumed_cpu_minutes",
+        "gpu": "total_consumed_gpu_minutes",
+    }
+    if target_type not in target_mapping:
+        raise ValueError(f"Invalid target type: {target_type}")
+    if resource not in resource_mapping:
+        raise ValueError(f"Invalid resource type: {resource}")
+
+    table_name, id_column, target_label = target_mapping[target_type]
+    consumed_column = resource_mapping[resource]
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT {consumed_column} FROM {table_name} WHERE {id_column} = ?",
+            (target_name,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError(f"{target_label} not found: {target_name}")
+
+        current_value = int(row[0] or 0)
+        updated_value = max(0, current_value + delta_minutes)
+        cursor.execute(
+            (
+                f"UPDATE {table_name} "
+                f"SET {consumed_column} = ?, last_updated = CURRENT_TIMESTAMP "
+                f"WHERE {id_column} = ?"
+            ),
+            (updated_value, target_name),
+        )
+        conn.commit()
+        return updated_value
+
+
 def create_status_bar(used: int, total: int, width: int = 20) -> str:
     """
     Create a visual status bar representing quota usage.
@@ -1691,6 +1770,64 @@ def set_account_gpu_quota_command(account: str, quota: int) -> None:
         sys.exit(1)
 
 
+def adjust_command(
+    username: Optional[str],
+    account: Optional[str],
+    cpu: bool,
+    gpu: bool,
+    minutes: Optional[int],
+    hours: Optional[int],
+) -> None:
+    """
+    Adjust consumed CPU/GPU time for a user or account.
+    This command can only be executed by root user.
+    """
+    try:
+        current_user = get_current_user()
+        if current_user != "root":
+            logger.error(
+                "adjust command can only be executed by root user, not by %s",
+                current_user,
+            )
+            sys.exit(1)
+
+        target_type = "user" if username is not None else "account"
+        target_name = username if username is not None else account
+        if target_name is None:
+            logger.error("adjust command requires --user or --account")
+            sys.exit(1)
+
+        resource = "cpu" if cpu else "gpu"
+        if minutes is not None:
+            delta_minutes = minutes
+            unit_label = "minutes"
+        else:
+            if hours is None:
+                logger.error("adjust command requires --minutes or --hours")
+                sys.exit(1)
+            delta_minutes = hours * 60
+            unit_label = "hours"
+
+        init_database()
+        new_total = adjust_consumed_minutes(
+            target_type, target_name, resource, delta_minutes
+        )
+
+        delta_source = minutes if minutes is not None else hours
+        target_label = "user" if target_type == "user" else "account"
+        print(
+            (
+                f"Successfully adjusted {resource.upper()} consumed time "
+                f"for {target_label} {target_name}: "
+                f"{delta_source:+d} {unit_label} (new total: {new_total} minutes)"
+            )
+        )
+
+    except Exception as e:
+        logger.error(f"adjust command failed: {e}")
+        sys.exit(1)
+
+
 def show_gpu_factors_command() -> None:
     """
     Execute the gpu-factors command to display current GPU charging factors.
@@ -1925,6 +2062,33 @@ def main():
         help="Display stats values in hours instead of minutes",
     )
 
+    # Adjust command
+    adjust_parser = subparsers.add_parser(
+        "adjust",
+        help="Adjust consumed CPU/GPU time for a user/account (root only)",
+    )
+    adjust_target_group = adjust_parser.add_mutually_exclusive_group(required=True)
+    adjust_target_group.add_argument("--user", help="Username to adjust")
+    adjust_target_group.add_argument("--account", help="Account to adjust")
+    adjust_resource_group = adjust_parser.add_mutually_exclusive_group(required=True)
+    adjust_resource_group.add_argument(
+        "--cpu", action="store_true", help="Adjust consumed CPU minutes"
+    )
+    adjust_resource_group.add_argument(
+        "--gpu", action="store_true", help="Adjust consumed GPU minutes"
+    )
+    adjust_delta_group = adjust_parser.add_mutually_exclusive_group(required=True)
+    adjust_delta_group.add_argument(
+        "--minutes",
+        type=parse_signed_int,
+        help="Signed delta in minutes (must include + or - sign)",
+    )
+    adjust_delta_group.add_argument(
+        "--hours",
+        type=parse_signed_int,
+        help="Signed delta in hours (must include + or - sign)",
+    )
+
     # User-quota command
     user_quota_parser = subparsers.add_parser(
         "user-quota", help="Set quota for a user (root only)"
@@ -2055,6 +2219,15 @@ def main():
         if selected_username and args.account:
             parser.error("stats: user selection and --account are mutually exclusive")
         show_user_stats(selected_username, args.account, args.all, args.hours)
+    elif args.command == "adjust":
+        adjust_command(
+            args.user,
+            args.account,
+            args.cpu,
+            args.gpu,
+            args.minutes,
+            args.hours,
+        )
     elif args.command == "user-quota":
         set_user_quota_command(args.username, args.quota)
     elif args.command == "account-quota":
