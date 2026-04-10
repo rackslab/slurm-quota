@@ -1300,6 +1300,25 @@ def show_user_stats(
         except KeyError:
             sys.exit(1)
 
+    def format_value(value_minutes: int) -> str:
+        if display_hours:
+            return f"{value_minutes / 60:.2f}"
+        return f"{value_minutes}"
+
+    def compute_first_column_width(
+        users: List[Dict[str, Any]],
+        accounts: List[Dict[str, Any]],
+        max_width: int = 30,
+    ) -> int:
+        labels = [
+            "USER",
+            "ACCOUNT",
+            *[str(item.get("username", "?")) for item in users],
+            *[str(item.get("account", "?")) for item in accounts],
+        ]
+        longest_label = max(len(label) for label in labels)
+        return min(longest_label, max_width)
+
     try:
         users_data, accounts_data = fetch_stats_from_service(
             selected_username, account, show_all
@@ -1314,16 +1333,22 @@ def show_user_stats(
                 print("No users found in service")
             return
 
-        def format_value(value_minutes: int) -> str:
-            if display_hours:
-                return f"{value_minutes / 60:.2f}"
-            return f"{value_minutes}"
+        first_column_width = compute_first_column_width(users_data, accounts_data)
+
+        def format_first_column(value: str) -> str:
+            value_str = str(value)
+            if len(value_str) > first_column_width:
+                if first_column_width <= 1:
+                    value_str = "…" * first_column_width
+                else:
+                    value_str = f"{value_str[: first_column_width - 1]}…"
+            return f"{value_str:<{first_column_width}}"
 
         # Print users table
         if users_data:
             header = (
-                f"{'':<25} | {'CPU':^66} | {'GPU':^66} |\n"
-                f"{'USER':<25} | {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} "
+                f"{'':<{first_column_width}} | {'CPU':^66} | {'GPU':^66} |\n"
+                f"{format_first_column('USER')} | {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} "
                 f"| {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} | {'LAST UPDATED':<25}"
             )
             print(header)
@@ -1364,15 +1389,15 @@ def show_user_stats(
                 gpu_preallocated_str = f"{format_value(gpu_preallocated)}({job_count})"
 
                 print(
-                    f"{uname:<25} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
+                    f"{format_first_column(uname)} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
                     f"| {gpu_consumed_str:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
                 )
             print()
 
         # Accounts table
         header = (
-            f"{'':<25} | {'CPU':^66} | {'GPU':^66} |\n"
-            f"{'ACCOUNT':<25} | {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} "
+            f"{'':<{first_column_width}} | {'CPU':^66} | {'GPU':^66} |\n"
+            f"{format_first_column('ACCOUNT')} | {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} "
             f"| {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} | {'LAST UPDATED':<25}"
         )
         print(header)
@@ -1413,7 +1438,7 @@ def show_user_stats(
             gpu_preallocated_str = f"{format_value(gpu_preallocated)}({job_count})"
 
             print(
-                f"{account:<25} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
+                f"{format_first_column(account)} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
                 f"| {gpu_consumed_str:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
             )
     except StatsHTTPError as e:
