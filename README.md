@@ -44,6 +44,7 @@ We record the amount of preallocated time per job rather than a global value per
 The SQLite database file must have the system user `slurm` as owner, with mode `0644` to restrict modification permission to the `slurm` user (used by `slurmctld` for the Lua script and the jobcomp script) and to administrators with the `root` account. Other users only have read-only access to the database. The `slurm-quota` script automatically creates the database with the `charge`, `user-quota`, and `account-quota` commands (intended for Slurm and administrators), setting the correct permissions on the file.
 
 The commands `slurm-quota user-quota`, `slurm-quota account-quota`, `slurm-quota user-gpu-quota`, and `slurm-quota account-gpu-quota` respectively allow assigning CPU and GPU quotas to users and accounts.
+The `slurm-quota adjust` command (restricted to root) allows manually adjusting consumed CPU/GPU time for one user or account with an explicitly signed delta.
 
 Default quotas used when the solution auto-creates a user or account can be displayed with `slurm-quota default-quotas` and updated with `slurm-quota set-default-quotas`. These defaults are applied only to newly auto-created entries and do not modify existing users/accounts.
 
@@ -246,6 +247,21 @@ Examples:
 sudo slurm-quota account-gpu-quota projX 50000 # 50k GPU minutes
 sudo slurm-quota account-gpu-quota projY -1   # unlimited GPU
 ```
+
+- `adjust` (restricted to root): Adjusts consumed CPU/GPU time for one user or one account.
+
+Examples:
+
+```bash
+sudo slurm-quota adjust --user alice --cpu --minutes=+30     # add 30 consumed CPU minutes
+sudo slurm-quota adjust --user alice --gpu --minutes=-120    # subtract 120 consumed GPU minutes
+sudo slurm-quota adjust --account projX --cpu --hours=+2     # add 2 consumed CPU hours (120 minutes)
+sudo slurm-quota adjust --account projX --gpu --hours=-1     # subtract 1 consumed GPU hour (60 minutes)
+```
+
+Notes:
+- The delta must be explicitly signed (`+` or `-`), for example `+30` or `-30`.
+- Subtractions are clamped to zero: consumed time never becomes negative.
 
 - `default-quotas`: Displays the default CPU/GPU quotas applied to newly auto-created users/accounts.
 
