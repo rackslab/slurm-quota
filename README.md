@@ -90,6 +90,13 @@ sudo cp slurm-quota /usr/local/bin/slurm-quota
 sudo chmod 0755 /usr/local/bin/slurm-quota
 ```
 
+Optional: install Bash completion for `slurm-quota`:
+
+```bash
+sudo cp slurm-quota.bash-completion /etc/bash_completion.d/slurm-quota
+sudo chmod 0644 /etc/bash_completion.d/slurm-quota
+```
+
 4) Installation of the HTTP JSON service (optional)
 
 The HTTP JSON service allows exposing statistics via a REST API to facilitate integration with other tools. It is designed to work with systemd socket activation.
@@ -161,6 +168,13 @@ On the other nodes of the cluster, here are the steps to follow:
 ```bash
 sudo cp slurm-quota /usr/local/bin/slurm-quota
 sudo chmod 0755 /usr/local/bin/slurm-quota
+```
+
+Optional: install Bash completion for `slurm-quota`:
+
+```bash
+sudo cp slurm-quota.bash-completion /etc/bash_completion.d/slurm-quota
+sudo chmod 0644 /etc/bash_completion.d/slurm-quota
 ```
 
 2) Set the `SLURM_QUOTA_URL` variable in the user environment
