@@ -21,7 +21,7 @@ It has the following subcommands:
   (restricted to root only).
 - gpu-factors: Show configured GPU charging factors.
 - set-gpu-factor: Set charging factor for a GPU type (restricted to root only).
-- prune: Remove orphaned preallocations not tied to jobs present in Slurm (root only).
+- prune: Prune selected preallocs/users/accounts records (root only).
 - serve: Serve HTTP JSON API for stats (socket-activated by systemd; falls back to host/port).
 """
 
@@ -619,43 +619,107 @@ def collect_active_job_uuids() -> set[str]:
     return uuids
 
 
-def prune_orphan_preallocations() -> int:
+def prune_resources(targets: set[str], dry_run: bool = False) -> Dict[str, int]:
     """
-    Remove preallocations from database that are not tied to active Slurm jobs.
+    Prune selected resource records from the database.
+
+    Args:
+        targets: Set of prune targets among {"preallocs", "users", "accounts"}.
+        dry_run: If True, report counts without deleting rows.
 
     Returns:
-        Number of deleted preallocation rows.
+        Mapping with deleted (or deletable in dry-run) rows per target.
     """
+    counts = {"preallocs": 0, "users": 0, "accounts": 0}
     if not os.path.exists(DB_PATH):
         logger.info("Database not found; nothing to prune")
-        return 0
+        return counts
 
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        cursor = conn.cursor()
 
-            active = collect_active_job_uuids()
-
-            cursor.execute("SELECT job_uuid FROM jobs_preallocations")
-            rows = cursor.fetchall()
-
-            to_delete = [
-                row[0] for row in rows if row and row[0] and row[0] not in active
+        prealloc_rows: List[Tuple[Optional[str], Optional[str], Optional[str]]] = []
+        orphan_prealloc_uuids: List[str] = []
+        if "preallocs" in targets:
+            cursor.execute(
+                "SELECT job_uuid, username, account FROM jobs_preallocations"
+            )
+            prealloc_rows = cursor.fetchall()
+            active_job_uuids = collect_active_job_uuids()
+            orphan_prealloc_uuids = [
+                str(job_uuid)
+                for job_uuid, _username, _account in prealloc_rows
+                if job_uuid and job_uuid not in active_job_uuids
             ]
+            counts["preallocs"] = len(orphan_prealloc_uuids)
 
-            deleted = 0
-            if to_delete:
+        users_to_delete: List[str] = []
+        if "users" in targets:
+            cursor.execute(
+                """
+                SELECT username
+                FROM users
+                WHERE total_consumed_cpu_minutes = 0
+                  AND total_consumed_gpu_minutes = 0
+                """
+            )
+            users_to_delete = [
+                str(username) for (username,) in cursor.fetchall() if username
+            ]
+            counts["users"] = len(users_to_delete)
+
+        accounts_to_delete: List[str] = []
+        if "accounts" in targets:
+            cursor.execute(
+                """
+                SELECT account
+                FROM accounts
+                WHERE total_consumed_cpu_minutes = 0
+                  AND total_consumed_gpu_minutes = 0
+                """
+            )
+            accounts_to_delete = [
+                str(account) for (account,) in cursor.fetchall() if account
+            ]
+            counts["accounts"] = len(accounts_to_delete)
+
+        if dry_run:
+            return counts
+
+        # Delete preallocations first so users/accounts can become eligible in the same run.
+        if orphan_prealloc_uuids:
+            cursor.executemany(
+                "DELETE FROM jobs_preallocations WHERE job_uuid = ?",
+                [(job_uuid,) for job_uuid in orphan_prealloc_uuids],
+            )
+
+        if users_to_delete:
+            try:
                 cursor.executemany(
-                    "DELETE FROM jobs_preallocations WHERE job_uuid = ?",
-                    [(uuid,) for uuid in to_delete],
+                    "DELETE FROM users WHERE username = ?",
+                    [(username,) for username in users_to_delete],
                 )
-                deleted = cursor.rowcount if cursor.rowcount is not None else 0
-                conn.commit()
+            except sqlite3.IntegrityError as e:
+                raise sqlite3.IntegrityError(
+                    "Failed to prune users: one or more users are still referenced "
+                    "by jobs preallocations"
+                ) from e
 
-            return deleted
-    except sqlite3.Error as e:
-        logger.error(f"Failed to prune orphan preallocations: {e}")
-        raise
+        if accounts_to_delete:
+            try:
+                cursor.executemany(
+                    "DELETE FROM accounts WHERE account = ?",
+                    [(account,) for account in accounts_to_delete],
+                )
+            except sqlite3.IntegrityError as e:
+                raise sqlite3.IntegrityError(
+                    "Failed to prune accounts: one or more accounts are still "
+                    "referenced by jobs preallocations"
+                ) from e
+
+        conn.commit()
+        return counts
 
 
 def get_job_info_from_environment() -> Tuple[str, str, int, str, Optional[str], int]:
@@ -1986,9 +2050,15 @@ def show_default_quotas_command() -> None:
         sys.exit(1)
 
 
-def prune_command() -> None:
+def prune_command(
+    preallocs: bool = False,
+    users: bool = False,
+    accounts: bool = False,
+    all_targets: bool = False,
+    dry_run: bool = False,
+) -> None:
     """
-    Execute the prune command to remove orphaned preallocations.
+    Execute the prune command to remove selected orphan/unused entries.
     This command can only be executed by root user.
     """
     try:
@@ -1999,11 +2069,38 @@ def prune_command() -> None:
             )
             sys.exit(1)
 
-        deleted = prune_orphan_preallocations()
-        if deleted == 0:
-            print("No orphan preallocations found")
+        if all_targets or not any((preallocs, users, accounts)):
+            targets = {"preallocs", "users", "accounts"}
+        else:
+            targets: set[str] = set()
+            if preallocs:
+                targets.add("preallocs")
+            if users:
+                targets.add("users")
+            if accounts:
+                targets.add("accounts")
+        counts = prune_resources(targets, dry_run=dry_run)
+        selected_counts = {target: counts[target] for target in sorted(targets)}
+
+        if dry_run:
+            print(
+                "Dry-run: would remove "
+                f"{selected_counts.get('preallocs', 0)} orphan preallocation(s), "
+                f"{selected_counts.get('users', 0)} user(s), "
+                f"{selected_counts.get('accounts', 0)} account(s)"
+            )
             return
-        print(f"Removed {deleted} orphan preallocation(s)")
+
+        if all(count == 0 for count in selected_counts.values()):
+            print("Nothing to prune")
+            return
+
+        print(
+            "Removed "
+            f"{selected_counts.get('preallocs', 0)} orphan preallocation(s), "
+            f"{selected_counts.get('users', 0)} user(s), "
+            f"{selected_counts.get('accounts', 0)} account(s)"
+        )
     except Exception as e:
         logger.error(f"Prune command failed: {e}")
         sys.exit(1)
@@ -2177,9 +2274,35 @@ def main():
     )
 
     # Prune command
-    subparsers.add_parser(
+    prune_parser = subparsers.add_parser(
         "prune",
-        help="Remove orphan preallocations not tied to active Slurm jobs (root only)",
+        help=("Prune orphaned data from the database (root only)"),
+    )
+    prune_target_group = prune_parser.add_mutually_exclusive_group()
+    prune_target_group.add_argument(
+        "--preallocs",
+        action="store_true",
+        help="Prune orphan preallocations not tied to any active job",
+    )
+    prune_target_group.add_argument(
+        "--users",
+        action="store_true",
+        help="Prune users with no resource consumption",
+    )
+    prune_target_group.add_argument(
+        "--accounts",
+        action="store_true",
+        help="Prune accounts with no resource consumption",
+    )
+    prune_target_group.add_argument(
+        "--all",
+        action="store_true",
+        help="Prune preallocations, users and accounts (default if no selector)",
+    )
+    prune_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show how many entries would be removed without deleting anything",
     )
 
     # Serve command (HTTP JSON API for stats, designed for systemd socket activation)
@@ -2247,7 +2370,13 @@ def main():
             args.user_cpu, args.user_gpu, args.account_cpu, args.account_gpu
         )
     elif args.command == "prune":
-        prune_command()
+        prune_command(
+            preallocs=args.preallocs,
+            users=args.users,
+            accounts=args.accounts,
+            all_targets=args.all,
+            dry_run=args.dry_run,
+        )
     elif args.command == "serve":
         run_serve_command(args.host, args.port, args.idle_timeout)
     else:
