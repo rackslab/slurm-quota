@@ -8,6 +8,7 @@ import os
 import socket
 import threading
 import time
+from unittest.mock import patch
 
 from tests.functional.functional_base import FunctionalCLIBase
 
@@ -105,6 +106,108 @@ class TestServeCommand(FunctionalCLIBase):
             body = json.loads(resp.read().decode("utf-8"))
             self.assertIn("users", body)
             self.assertIn("accounts", body)
+        finally:
+            conn.close()
+
+        self._join_after_idle(thread)
+
+    def test_serve_get_stats_supports_username_query_filter(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("alice", 120),
+            )
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 30),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("hpc", 100),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("dev", 40),
+            )
+            conn.commit()
+
+        host = "127.0.0.1"
+        port = self._free_tcp_port()
+        with patch.object(self.sq, "get_user_accounts", return_value={"hpc"}):
+            thread = self._start_serve_thread(host, port)
+            self._wait_until_ready(host, port)
+
+            conn = http.client.HTTPConnection(host, port, timeout=2)
+            try:
+                conn.request("GET", "/stats?username=alice")
+                resp = conn.getresponse()
+                self.assertEqual(resp.status, 200)
+                body = json.loads(resp.read().decode("utf-8"))
+                self.assertEqual(len(body["users"]), 1)
+                self.assertEqual(body["users"][0]["username"], "alice")
+                self.assertEqual(len(body["accounts"]), 1)
+                self.assertEqual(body["accounts"][0]["account"], "hpc")
+            finally:
+                conn.close()
+
+            self._join_after_idle(thread)
+
+    def test_serve_get_stats_supports_account_query_filter(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("alice", 120),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("hpc", 100),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("dev", 40),
+            )
+            conn.commit()
+
+        host = "127.0.0.1"
+        port = self._free_tcp_port()
+        thread = self._start_serve_thread(host, port)
+        self._wait_until_ready(host, port)
+
+        conn = http.client.HTTPConnection(host, port, timeout=2)
+        try:
+            conn.request("GET", "/stats?account=hpc")
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            body = json.loads(resp.read().decode("utf-8"))
+            self.assertEqual(body["users"], [])
+            self.assertEqual(len(body["accounts"]), 1)
+            self.assertEqual(body["accounts"][0]["account"], "hpc")
+        finally:
+            conn.close()
+
+        self._join_after_idle(thread)
+
+    def test_serve_get_stats_rejects_username_and_account_filters(self):
+        self.init_db()
+        host = "127.0.0.1"
+        port = self._free_tcp_port()
+        thread = self._start_serve_thread(host, port)
+        self._wait_until_ready(host, port)
+
+        conn = http.client.HTTPConnection(host, port, timeout=2)
+        try:
+            conn.request("GET", "/stats?username=alice&account=hpc")
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 400)
+            self.assertEqual(
+                json.loads(resp.read().decode("utf-8")),
+                {
+                    "error": "bad_request",
+                    "message": "username and account are mutually exclusive",
+                },
+            )
         finally:
             conn.close()
 
