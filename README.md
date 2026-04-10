@@ -331,6 +331,28 @@ When updating `slurm-quota`, the database migration script must first be execute
 
 Then, the other components (`job_submit.lua`, `slurm-quota`, etc.) must be updated.
 
+## Manpage
+
+Manpage for `slurm-quota` command is maintained in file located at `man/slurm-quota.1.adoc` in AsciiDoc format.
+
+To generate a roff manpage from this file, use this command:
+
+```bash
+asciidoctor -b manpage -o slurm-quota.1 man/slurm-quota.1.adoc
+```
+
+To preview the generated file locally:
+
+```bash
+man -l ./slurm-quota.1
+```
+
+Optional user-local installation:
+
+```bash
+install -Dm644 slurm-quota.1 ~/.local/share/man/man1/slurm-quota.1
+```
+
 ## Tests (development)
 
 The repository includes unit tests under `tests/unit/` (one module per function under test) and functional CLI tests under `tests/functional/` (one module per `slurm-quota` subcommand). They are standard `unittest.TestCase` classes; the recommended runner is **pytest** (as in CI), with optional coverage reports configured in `pyproject.toml`.

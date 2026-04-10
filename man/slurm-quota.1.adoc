@@ -1,0 +1,308 @@
+= slurm-quota(1)
+:doctype: manpage
+:manmanual: Slurm Quota Commands
+:mansource: slurm-quota
+:revdate: 2026-04-10
+
+== Name
+
+slurm-quota - manage Slurm CPU/GPU quota accounting, limits, and stats
+
+== Synopsis
+
+*slurm-quota* [*-h*] [*--debug*] <command> [<args>...]
+
+== Description
+
+*slurm-quota* manages CPU and GPU minute quotas for Slurm users and accounts.
+It updates consumed resources, configures quota and GPU charging settings, prunes
+unused data, and can expose a JSON API used by the `stats` command.
+
+The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
+
+== Global Options
+
+*-h*, *--help*::
+  Show help and exit.
+
+*--debug*::
+  Enable debug logging.
+
+== Commands
+
+=== charge
+
+*slurm-quota charge*
+
+Update consumed CPU/GPU minutes for a completed job using Slurm job completion
+environment variables and `sacct`. This command is designed to be executed by
+Slurm as a JobCompType=jobcomp/script with `slurm` system user.
+
+=== stats
+
+*slurm-quota stats* [<username>] [*--user* <username>] [*--account* <account>] [*--all*] [*--hours*]
+
+Display quota statistics (consumed, preallocated, quota, and status) for users
+and/or accounts using the HTTP service (`/stats`).
+
+Options:
+
+*<username>*::
+  Optional positional user selector.
+
+*--user* <username>::
+  User selector equivalent to positional `<username>`.
+
+*--account* <account>::
+  Account selector.
+
+*--all*::
+  Show all users/accounts (no username filter).
+
+*--hours*::
+  Display values in hours instead of minutes.
+
+Notes:
+
+- Positional `<username>` and `--user` are mutually exclusive.
+- User selection (`<username>` or `--user`) and `--account` are mutually exclusive.
+- If no selector is provided, the current OS user is used.
+
+Examples:
+
+....
+slurm-quota stats
+slurm-quota stats alice
+slurm-quota stats --account hpc
+slurm-quota stats --all --hours
+....
+
+=== adjust
+
+*slurm-quota adjust* (*--user* <username> | *--account* <account>) (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int>)
+
+Adjust consumed CPU/GPU time for one user or one account.
+This command must run as `root`.
+
+Options:
+
+*--user* <username>::
+  Target user.
+
+*--account* <account>::
+  Target account.
+
+*--cpu*::
+  Adjust consumed CPU minutes.
+
+*--gpu*::
+  Adjust consumed GPU minutes.
+
+*--minutes* <signed_int>::
+  Signed delta in minutes, must include `+` or `-` (example: `+30`, `-120`).
+
+*--hours* <signed_int>::
+  Signed delta in hours, must include `+` or `-`. Converted to minutes internally.
+
+Notes:
+
+- Negative adjustments are clamped at zero (consumed time never becomes negative).
+
+Examples:
+
+....
+sudo slurm-quota adjust --user alice --cpu --minutes=+30
+sudo slurm-quota adjust --account projX --gpu --hours=-1
+....
+
+=== user-quota
+
+*slurm-quota user-quota* <username> <quota_minutes>
+
+Set user CPU quota in minutes (`-1` means unlimited).
+This command must run as `root`.
+
+Example:
+
+....
+sudo slurm-quota user-quota alice 50000
+....
+
+=== account-quota
+
+*slurm-quota account-quota* <account> <quota_minutes>
+
+Set account CPU quota in minutes (`-1` means unlimited).
+This command must run as `root`.
+
+Example:
+
+....
+sudo slurm-quota account-quota projX 200000
+....
+
+=== user-gpu-quota
+
+*slurm-quota user-gpu-quota* <username> <quota_gpu_minutes>
+
+Set user GPU quota in minutes (`-1` means unlimited).
+This command must run as `root`.
+
+Example:
+
+....
+sudo slurm-quota user-gpu-quota alice 10000
+....
+
+=== account-gpu-quota
+
+*slurm-quota account-gpu-quota* <account> <quota_gpu_minutes>
+
+Set account GPU quota in minutes (`-1` means unlimited).
+This command must run as `root`.
+
+Example:
+
+....
+sudo slurm-quota account-gpu-quota projX 50000
+....
+
+=== gpu-factors
+
+*slurm-quota gpu-factors*
+
+Show configured GPU charging factors.
+
+=== set-gpu-factor
+
+*slurm-quota set-gpu-factor* <gpu_type> <factor>
+
+Set GPU charging factor for a GPU type (`default` is accepted as fallback type). Argument _factor_ must be a positive float (> 0).
+This command must run as `root`.
+
+Example:
+
+....
+sudo slurm-quota set-gpu-factor h100 0.5
+....
+
+=== default-quotas
+
+*slurm-quota default-quotas*
+
+Show default quotas used for newly auto-created users/accounts.
+
+
+=== set-default-quotas
+
+*slurm-quota set-default-quotas* [*--user-cpu* <minutes>] [*--user-gpu* <minutes>] [*--account-cpu* <minutes>] [*--account-gpu* <minutes>]
+
+Set one or more default quotas for newly auto-created users/accounts.
+At least one option is required at runtime. Argument _minutes_ must be a positive integer or `-1` means unlimited.
+This command must run as `root`.
+
+Example:
+
+....
+sudo slurm-quota set-default-quotas --user-cpu 50000 --account-cpu 200000
+....
+
+=== prune
+
+*slurm-quota prune* [*--preallocs* | *--users* | *--accounts* | *--all*] [*--dry-run*]
+
+Prune orphaned/unused records from the database.
+This command must run as `root`.
+
+Selectors (mutually exclusive):
+
+*--preallocs*::
+  Remove preallocations not tied to active jobs.
+
+*--users*::
+  Remove users with zero consumed CPU and GPU.
+
+*--accounts*::
+  Remove accounts with zero consumed CPU and GPU.
+
+*--all*::
+  Prune all categories above. This is also the default behavior when no selector is provided.
+
+*--dry-run*::
+  Report what would be removed, without deleting anything.
+
+Examples:
+
+....
+sudo slurm-quota prune
+sudo slurm-quota prune --dry-run
+sudo slurm-quota prune --preallocs
+sudo slurm-quota prune --users
+sudo slurm-quota prune --accounts
+sudo slurm-quota prune --all
+....
+
+=== serve
+
+*slurm-quota serve* [*--host* <host>] [*--port* <port>] [*--idle-timeout* <seconds>]
+
+Run an HTTP JSON service exposing `/health` and `/stats`.
+
+Options:
+
+*--host* <host>::
+  Bind host when not socket-activated (default: `127.0.0.1`).
+
+*--port* <port>::
+  Bind port when not socket-activated (default: `9911`).
+
+*--idle-timeout* <seconds>::
+  Exit after inactivity (default: `600`). `0` disables idle shutdown.
+
+Notes:
+
+- If systemd socket activation is active (`LISTEN_PID`/`LISTEN_FDS`), inherited FD 3 is used and `--host`/`--port` are ignored.
+- The command exits with error if the database file does not exist.
+
+Examples:
+
+....
+slurm-quota serve --host 127.0.0.1 --port 9911 --idle-timeout 600
+curl http://127.0.0.1:9911/health
+curl http://127.0.0.1:9911/stats?username=alice
+....
+
+== Environment
+
+*SLURM_QUOTA_URL*::
+  Base URL used by `stats` when querying the HTTP API.
+  Default: `http://127.0.0.1:9911/`
+
+*NO_COLOR*::
+  If set, disables colored status bars in `stats` output.
+
+*LISTEN_PID*, *LISTEN_FDS*::
+  Used by `serve` to detect systemd socket activation.
+
+*JOBID*, *ARRAYJOBID*, *ARRAYTASKID*, *USERNAME*, *ACCOUNT*, *PROCS*, *START*, *END*::
+  Used by `charge` to compute job identity and consumed CPU minutes.
+
+== Files
+
+`/var/lib/state/slurm-quota/slurm-quota.db`::
+  SQLite database for quotas, consumed/preallocated counters, GPU factors, and default settings.
+
+== Exit Status
+
+*0*::
+  Success.
+
+*1*::
+  Runtime/permission/operational error, or no subcommand provided.
+
+*2*::
+  Command-line parsing error (for example, mutually exclusive options used together).
+
+== See Also
+
+`sacct(1)`, `sacctmgr(1)`, `sbatch(1)`, `srun(1)`, `slurmctld(8)`, `systemd.socket(5)`
