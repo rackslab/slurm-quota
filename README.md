@@ -51,9 +51,9 @@ The solution allows setting GPU load factors. This is a multiplicative coefficie
 
 The `slurm-quota set-gpu-factor` command allows configuring load factors by GPU type (restricted to root). The `slurm-quota gpu-factors` command displays the currently configured GPU load factors.
 
-The `slurm-quota serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes a single `/stats` route that returns a JSON object of the form `{ users: [...], accounts: [...] }`. When the `username` parameter is provided (e.g. `/stats?username=alice`), the server filters accounts server-side to only the Slurm associations of this user.
+The `slurm-quota serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes a single `/stats` route that returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters can be used to filter responses: `username` filters users and limits accounts to this user's Slurm associations (e.g. `/stats?username=alice`), while `account` returns only the requested account stats in the `accounts` array (e.g. `/stats?account=hpc`).
 
-The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a username or the `--all` option, the command transmits the appropriate filters to the service. If the service is not available or in case of connection failure to the server, execution fails with an error message.
+The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a user (`--user` or positional username), an account (`--account`), or the `--all` option, the command transmits the appropriate filters to the service. User and account selectors are mutually exclusive. If the service is not available or in case of connection failure to the server, execution fails with an error message.
 
 Additionally, a logrotate configuration file is provided (`slurm-quota-charge.logrotate`) to prevent the log file fed by the `slurm-quota-charge-wrapper` wrapper from growing too large over time.
 
@@ -181,9 +181,13 @@ Examples:
 ```bash
 slurm-quota stats                 # displays the current user and their accounts
 slurm-quota stats alice           # details for user alice and their accounts
+slurm-quota stats --user alice    # same as positional username
+slurm-quota stats --account hpc   # only stats for account hpc
 slurm-quota stats --all           # lists all users and all accounts
 slurm-quota stats --hours         # same stats displayed in hours
 ```
+
+Note: `--account` is mutually exclusive with user selection (`--user` or positional username).
 
 Color display of the status bar can be disabled by setting the `NO_COLOR` environment variable.
 The `--hours` option changes only the displayed unit in the `stats` output; stored values and API values remain in minutes.
@@ -202,6 +206,7 @@ sudo systemctl start slurm-quota.socket
 curl http://127.0.0.1:9911/health
 curl http://127.0.0.1:9911/stats
 curl http://127.0.0.1:9911/stats?username=alice
+curl http://127.0.0.1:9911/stats?account=hpc
 ```
 
 The service automatically stops after a period of inactivity (600 seconds, ie. 10 minutes by default). This can be disabled with `--idle-timeout 0` argument. The `stats` command queries this HTTP service (URL configurable via the `SLURM_QUOTA_URL` environment variable).
