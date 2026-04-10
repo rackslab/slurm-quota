@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+
+# Bash completion for slurm-quota
+
+_slurm_quota_list_accounts() {
+    if command -v sacctmgr >/dev/null 2>&1; then
+        sacctmgr -nP show account format=account 2>/dev/null \
+            | cut -d'|' -f1 \
+            | sort -u
+    fi
+}
+
+_slurm_quota_complete_users() {
+    compgen -u -- "$1"
+}
+
+_slurm_quota_complete_accounts() {
+    local cur="$1"
+    local accounts
+    accounts="$(_slurm_quota_list_accounts)"
+    if [[ -n "$accounts" ]]; then
+        compgen -W "$accounts" -- "$cur"
+    fi
+}
+
+_slurm_quota() {
+    local cur prev cword
+    local -a words
+
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev=""
+    if (( COMP_CWORD > 0 )); then
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+    fi
+    cword="$COMP_CWORD"
+    words=("${COMP_WORDS[@]}")
+
+    local -a subcommands
+    subcommands=(
+        charge
+        stats
+        adjust
+        user-quota
+        account-quota
+        user-gpu-quota
+        account-gpu-quota
+        gpu-factors
+        set-gpu-factor
+        default-quotas
+        set-default-quotas
+        prune
+        serve
+    )
+
+    local subcmd=""
+    local subcmd_idx=-1
+    local i
+    for (( i=1; i<=cword; i++ )); do
+        if [[ "${words[i]}" == --debug || "${words[i]}" == -h || "${words[i]}" == --help ]]; then
+            continue
+        fi
+        if [[ "${words[i]}" != -* ]]; then
+            subcmd="${words[i]}"
+            subcmd_idx="$i"
+            break
+        fi
+    done
+
+    if [[ -z "$subcmd" ]]; then
+        COMPREPLY=($(compgen -W "--debug -h --help ${subcommands[*]}" -- "$cur"))
+        return 0
+    fi
+
+    case "$prev" in
+        --user)
+            COMPREPLY=($(_slurm_quota_complete_users "$cur"))
+            return 0
+            ;;
+        --account)
+            COMPREPLY=($(_slurm_quota_complete_accounts "$cur"))
+            return 0
+            ;;
+        --minutes|--hours|--port|--idle-timeout|--host|--user-cpu|--user-gpu|--account-cpu|--account-gpu)
+            return 0
+            ;;
+    esac
+
+    local base_opts="-h --help"
+    case "$subcmd" in
+        charge|gpu-factors|default-quotas)
+            COMPREPLY=($(compgen -W "$base_opts" -- "$cur"))
+            ;;
+        stats)
+            COMPREPLY=($(compgen -W "$base_opts --user --account --all --hours" -- "$cur"))
+            COMPREPLY+=($(_slurm_quota_complete_users "$cur"))
+            ;;
+        adjust)
+            COMPREPLY=($(compgen -W "$base_opts --user --account --cpu --gpu --minutes --hours" -- "$cur"))
+            ;;
+        user-quota|user-gpu-quota)
+            if (( cword == subcmd_idx + 1 )); then
+                COMPREPLY=($(_slurm_quota_complete_users "$cur"))
+            elif (( cword == subcmd_idx + 2 )); then
+                COMPREPLY=($(compgen -W "-1" -- "$cur"))
+            fi
+            ;;
+        account-quota|account-gpu-quota)
+            if (( cword == subcmd_idx + 1 )); then
+                COMPREPLY=($(_slurm_quota_complete_accounts "$cur"))
+            elif (( cword == subcmd_idx + 2 )); then
+                COMPREPLY=($(compgen -W "-1" -- "$cur"))
+            fi
+            ;;
+        set-gpu-factor)
+            if (( cword == subcmd_idx + 1 )); then
+                COMPREPLY=($(compgen -W "default" -- "$cur"))
+            fi
+            ;;
+        set-default-quotas)
+            COMPREPLY=($(compgen -W "$base_opts --user-cpu --user-gpu --account-cpu --account-gpu" -- "$cur"))
+            ;;
+        prune)
+            COMPREPLY=($(compgen -W "$base_opts --preallocs --users --accounts --all --dry-run" -- "$cur"))
+            ;;
+        serve)
+            COMPREPLY=($(compgen -W "$base_opts --host --port --idle-timeout" -- "$cur"))
+            ;;
+    esac
+
+    return 0
+}
+
+complete -F _slurm_quota slurm-quota
