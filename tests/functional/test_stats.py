@@ -73,6 +73,22 @@ class TestStatsCommand(FunctionalCLIBase):
             ),
         )
 
+    def test_stats_with_user_option(self):
+        self._run_stats(
+            ["slurm-quota", "stats", "--user", "alice"],
+            expected=dedent_lines(
+                "                          |                                CPU                                 |                                GPU                                 |",
+                "USER                      |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+                "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                "alice                     |         120           60(2)      600 [██████░░░░░░░░░░░░░░]  30.0% |           0            0(2)        ∞                               | TS_FIXED                 ",
+                "",
+                "                          |                                CPU                                 |                                GPU                                 |",
+                "ACCOUNT                   |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+                "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                "hpc                       |         100            0(3)      500 [████░░░░░░░░░░░░░░░░]  20.0% |           0            0(3)        ∞                               | TS_FIXED                 ",
+            ),
+        )
+
     def test_stats_with_explicit_username_bob(self):
         self._run_stats(
             ["slurm-quota", "stats", "bob"],
@@ -104,6 +120,17 @@ class TestStatsCommand(FunctionalCLIBase):
                 "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
                 "hpc                       |         100            0(3)      500 [████░░░░░░░░░░░░░░░░]  20.0% |           0            0(3)        ∞                               | TS_FIXED                 ",
                 "dev                       |          40            0(0)        ∞                               |           0            0(0)        ∞                               | TS_FIXED                 ",
+            ),
+        )
+
+    def test_stats_with_account_option(self):
+        self._run_stats(
+            ["slurm-quota", "stats", "--account", "hpc"],
+            expected=dedent_lines(
+                "                          |                                CPU                                 |                                GPU                                 |",
+                "ACCOUNT                   |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+                "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                "hpc                       |         100            0(3)      500 [████░░░░░░░░░░░░░░░░]  20.0% |           0            0(3)        ∞                               | TS_FIXED                 ",
             ),
         )
 
@@ -176,3 +203,14 @@ class TestStatsCommand(FunctionalCLIBase):
                 "dev                       |        0.67         0.00(0)        ∞                               |        0.00         0.00(0)        ∞                               | TS_FIXED                 ",
             ),
         )
+
+    def test_stats_rejects_positional_and_user_option(self):
+        self.run_main_exit(["slurm-quota", "stats", "alice", "--user", "bob"], 2)
+
+    def test_stats_rejects_user_and_account_options(self):
+        self.run_main_exit(
+            ["slurm-quota", "stats", "--user", "alice", "--account", "hpc"], 2
+        )
+
+    def test_stats_rejects_positional_and_account_options(self):
+        self.run_main_exit(["slurm-quota", "stats", "alice", "--account", "hpc"], 2)

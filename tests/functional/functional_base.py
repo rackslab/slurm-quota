@@ -67,15 +67,14 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
         """
         Return JSON like the real ``/stats`` handler: full list without query param,
         or users/accounts filtered from ``_STATS_REST_PAYLOAD`` when
-        ``?username=`` is present (mirrors association-based account filtering).
+        ``?username=`` and/or ``?account=`` are present.
         """
         qs = parse_qs(urlparse(request.full_url).query)
-        raw = qs.get("username", [None])[0]
-        username: Optional[str] = unquote(raw) if raw else None
-        if username is None:
-            payload = _STATS_REST_PAYLOAD
-        else:
-            payload = _stats_payload_filtered_for_user(username)
+        raw_username = qs.get("username", [None])[0]
+        raw_account = qs.get("account", [None])[0]
+        username: Optional[str] = unquote(raw_username) if raw_username else None
+        account: Optional[str] = unquote(raw_account) if raw_account else None
+        payload = _stats_payload_filtered(username, account)
         return FakeJsonUrlopenResponse(payload)
 
 
@@ -152,6 +151,44 @@ def _stats_payload_filtered_for_user(username: str) -> Dict[str, List[Dict[str, 
         return {"users": [], "accounts": []}
     users = [u for u in _STATS_REST_PAYLOAD["users"] if u["username"] == username]
     accounts = [a for a in _STATS_REST_PAYLOAD["accounts"] if a["account"] in names]
+    return {"users": users, "accounts": accounts}
+
+
+def _stats_payload_filtered(
+    username: Optional[str], account: Optional[str]
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Return the shared multi-user / multi-account stats body (filtered) by mimicking the real
+    ``/stats`` handler.
+    """
+    if username is None and account is None:
+        return _STATS_REST_PAYLOAD
+
+    users: List[Dict[str, Any]]
+    accounts_filter: Optional[set[str]] = None
+    if username is None:
+        users = _STATS_REST_PAYLOAD["users"]
+    else:
+        by_user = _stats_payload_filtered_for_user(username)
+        users = by_user["users"]
+        accounts_filter = {item["account"] for item in by_user["accounts"]}
+
+    if account:
+        requested = {account}
+        if accounts_filter is None:
+            accounts_filter = requested
+        else:
+            accounts_filter = accounts_filter.intersection(requested)
+        users = []
+
+    if accounts_filter is None:
+        accounts = _STATS_REST_PAYLOAD["accounts"]
+    else:
+        accounts = [
+            item
+            for item in _STATS_REST_PAYLOAD["accounts"]
+            if item["account"] in accounts_filter
+        ]
     return {"users": users, "accounts": accounts}
 
 

@@ -43,10 +43,10 @@ def _sample_users_and_accounts():
 
 
 class TestShowUserStats(SlurmQuotaTestCase):
-    def _run_show(self, *args, **kwargs):
+    def _run_show(self, **kwargs):
         buf = io.StringIO()
         with redirect_stdout(buf):
-            self.sq.show_user_stats(*args, **kwargs)
+            self.sq.show_user_stats(**kwargs)
         return buf.getvalue()
 
     def test_no_data_for_explicit_username(self):
@@ -55,8 +55,18 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "fetch_stats_from_service",
             return_value=([], []),
         ):
-            out = self._run_show("bob", False)
+            out = self._run_show(username="bob", show_all=False)
         expected = dedent_lines("No data found for user: bob")
+        self.assertEqual(out, expected)
+
+    def test_no_data_for_explicit_account(self):
+        with patch.object(
+            self.sq,
+            "fetch_stats_from_service",
+            return_value=([], []),
+        ):
+            out = self._run_show(account="projX", show_all=False)
+        expected = dedent_lines("No data found for account: projX")
         self.assertEqual(out, expected)
 
     def test_no_users_when_show_all_empty(self):
@@ -65,7 +75,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "fetch_stats_from_service",
             return_value=([], []),
         ):
-            out = self._run_show(None, True)
+            out = self._run_show(show_all=True)
         expected = dedent_lines("No users found in service")
         self.assertEqual(out, expected)
 
@@ -84,13 +94,38 @@ class TestShowUserStats(SlurmQuotaTestCase):
                 return_value="TS_FIXED",
             ),
         ):
-            out = self._run_show("alice", False)
+            out = self._run_show(username="alice", show_all=False)
         expected = dedent_lines(
             "                          |                                CPU                                 |                                GPU                                 |",
             "USER                      |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
             "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
             "alice                     |         120           60(2)      600 [██████░░░░░░░░░░░░░░]  30.0% |           0            0(2)        ∞                               | TS_FIXED                 ",
             "",
+            "                          |                                CPU                                 |                                GPU                                 |",
+            "ACCOUNT                   |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+            "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "acct1                     |           1            0(0)        ∞                               |           0            0(0)        ∞                               | TS_FIXED                 ",
+        )
+        self.assertEqual(out, expected)
+
+    def test_prints_accounts_only_when_users_empty_for_account_scope(self):
+        """Account-filtered responses omit user rows; only the accounts table is printed."""
+        self.env({"NO_COLOR": "1"})
+        _, accounts = _sample_users_and_accounts()
+        with (
+            patch.object(
+                self.sq,
+                "fetch_stats_from_service",
+                return_value=([], accounts),
+            ),
+            patch.object(
+                self.sq,
+                "format_timestamp_with_timezone",
+                return_value="TS_FIXED",
+            ),
+        ):
+            out = self._run_show(account="acct1", show_all=False)
+        expected = dedent_lines(
             "                          |                                CPU                                 |                                GPU                                 |",
             "ACCOUNT                   |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
             "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
@@ -123,7 +158,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
                 return_value="TS_FIXED",
             ),
         ):
-            out = self._run_show("u1", False, display_hours=True)
+            out = self._run_show(username="u1", show_all=False, display_hours=True)
         expected = dedent_lines(
             "                          |                                CPU                                 |                                GPU                                 |",
             "USER                      |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
@@ -161,7 +196,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
                 return_value="TS_FIXED",
             ),
         ):
-            out = self._run_show("u1", False)
+            out = self._run_show(username="u1", show_all=False)
         expected = dedent_lines(
             "                          |                                CPU                                 |                                GPU                                 |",
             "USER                      |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
@@ -183,15 +218,29 @@ class TestShowUserStats(SlurmQuotaTestCase):
                 return_value=([], []),
             ) as m_fetch,
         ):
-            out = self._run_show(None, False)
+            out = self._run_show(show_all=False)
         m_gc.assert_called_once()
-        m_fetch.assert_called_once_with("carol", False)
+        m_fetch.assert_called_once_with("carol", None, False)
         self.assertEqual(out, dedent_lines("No users found in service"))
+
+    def test_skips_get_current_user_when_account_requested(self):
+        with (
+            patch.object(self.sq, "get_current_user") as m_gc,
+            patch.object(
+                self.sq,
+                "fetch_stats_from_service",
+                return_value=([], []),
+            ) as m_fetch,
+        ):
+            out = self._run_show(account="hpc", show_all=False)
+        m_gc.assert_not_called()
+        m_fetch.assert_called_once_with(None, "hpc", False)
+        self.assertEqual(out, dedent_lines("No data found for account: hpc"))
 
     def test_get_current_user_keyerror_exits(self):
         with patch.object(self.sq, "get_current_user", side_effect=KeyError):
             with self.assertRaises(SystemExit) as cm:
-                self.sq.show_user_stats(None, False)
+                self.sq.show_user_stats(show_all=False)
         self.assertEqual(cm.exception.code, 1)
 
     def test_stats_http_error_exits(self):
@@ -201,7 +250,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
             side_effect=self.sq.StatsHTTPError(502),
         ):
             with self.assertRaises(SystemExit) as cm:
-                self.sq.show_user_stats("x", False)
+                self.sq.show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
 
     def test_urlerror_exits(self):
@@ -211,7 +260,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
             side_effect=URLError("down"),
         ):
             with self.assertRaises(SystemExit) as cm:
-                self.sq.show_user_stats("x", False)
+                self.sq.show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
 
     def test_generic_exception_exits(self):
@@ -221,5 +270,5 @@ class TestShowUserStats(SlurmQuotaTestCase):
             side_effect=ValueError("bad json"),
         ):
             with self.assertRaises(SystemExit) as cm:
-                self.sq.show_user_stats("x", False)
+                self.sq.show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
