@@ -299,12 +299,21 @@ sudo slurm-quota set-gpu-factor h200 0.8    # Factor 0.8 for h200 GPUs
 sudo slurm-quota set-gpu-factor default 1.0  # Default factor (used if type is not specified)
 ```
 
-- `prune` (restricted to root): Cleans CPU and GPU times preallocated to jobs not present in the Slurm queue (i.e., orphaned preallocations).
+- `prune` (restricted to root): Cleans data with dedicated selectors:
+  - `--preallocs`: remove orphaned preallocations (jobs not present in Slurm queue)
+  - `--users`: remove users with both consumed CPU and consumed GPU at 0
+  - `--accounts`: remove accounts with both consumed CPU and consumed GPU at 0
+  - `--all`: prune all categories above (default behavior when no selector is provided)
+  - `--dry-run`: report how many preallocations/users/accounts would be removed, without deleting rows
 
 Example:
 
 ```bash
-sudo slurm-quota prune      # removes orphaned preallocations
+sudo slurm-quota prune                  # default: same as --all
+sudo slurm-quota prune --preallocs      # prune only orphaned preallocations
+sudo slurm-quota prune --users          # prune only users with 0 consumed CPU/GPU
+sudo slurm-quota prune --accounts       # prune only accounts with 0 consumed CPU/GPU
+sudo slurm-quota prune --dry-run        # preview removals without applying them
 ```
 
 It is normally not necessary to execute this `prune` command under normal conditions. It may be useful in case of malfunction of the call to the `slurm-quota charge` command by Slurm. Its execution is nevertheless safe, it can be executed if in doubt about the preallocated durations assigned to users.
