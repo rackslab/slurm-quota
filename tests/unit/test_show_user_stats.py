@@ -96,15 +96,15 @@ class TestShowUserStats(SlurmQuotaTestCase):
         ):
             out = self._run_show(username="alice", show_all=False)
         expected = dedent_lines(
-            "                          |                                CPU                                 |                                GPU                                 |",
-            "USER                      |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
-            "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
-            "alice                     |         120           60(2)      600 [██████░░░░░░░░░░░░░░]  30.0% |           0            0(2)        ∞                               | TS_FIXED                 ",
+            "        |                                CPU                                 |                                GPU                                 |",
+            "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+            "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "alice   |         120           60(2)      600 [██████░░░░░░░░░░░░░░]  30.0% |           0            0(2)        ∞                               | TS_FIXED                 ",
             "",
-            "                          |                                CPU                                 |                                GPU                                 |",
-            "ACCOUNT                   |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
-            "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
-            "acct1                     |           1            0(0)        ∞                               |           0            0(0)        ∞                               | TS_FIXED                 ",
+            "        |                                CPU                                 |                                GPU                                 |",
+            "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+            "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "acct1   |           1            0(0)        ∞                               |           0            0(0)        ∞                               | TS_FIXED                 ",
         )
         self.assertEqual(out, expected)
 
@@ -126,10 +126,10 @@ class TestShowUserStats(SlurmQuotaTestCase):
         ):
             out = self._run_show(account="acct1", show_all=False)
         expected = dedent_lines(
-            "                          |                                CPU                                 |                                GPU                                 |",
-            "ACCOUNT                   |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
-            "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
-            "acct1                     |           1            0(0)        ∞                               |           0            0(0)        ∞                               | TS_FIXED                 ",
+            "        |                                CPU                                 |                                GPU                                 |",
+            "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+            "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "acct1   |           1            0(0)        ∞                               |           0            0(0)        ∞                               | TS_FIXED                 ",
         )
         self.assertEqual(out, expected)
 
@@ -160,14 +160,14 @@ class TestShowUserStats(SlurmQuotaTestCase):
         ):
             out = self._run_show(username="u1", show_all=False, display_hours=True)
         expected = dedent_lines(
-            "                          |                                CPU                                 |                                GPU                                 |",
-            "USER                      |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
-            "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
-            "u1                        |        2.00         0.00(0)        ∞                               |        0.00         0.00(0)        ∞                               | TS_FIXED                 ",
+            "        |                                CPU                                 |                                GPU                                 |",
+            "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+            "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "u1      |        2.00         0.00(0)        ∞                               |        0.00         0.00(0)        ∞                               | TS_FIXED                 ",
             "",
-            "                          |                                CPU                                 |                                GPU                                 |",
-            "ACCOUNT                   |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
-            "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "        |                                CPU                                 |                                GPU                                 |",
+            "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+            "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
         )
         self.assertEqual(out, expected)
 
@@ -198,14 +198,69 @@ class TestShowUserStats(SlurmQuotaTestCase):
         ):
             out = self._run_show(username="u1", show_all=False)
         expected = dedent_lines(
-            "                          |                                CPU                                 |                                GPU                                 |",
-            "USER                      |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
-            "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
-            "u1                        |          50            0(0)      100 [██████████░░░░░░░░░░]  50.0% |           0            0(0)        ∞                               | TS_FIXED                 ",
+            "        |                                CPU                                 |                                GPU                                 |",
+            "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+            "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "u1      |          50            0(0)      100 [██████████░░░░░░░░░░]  50.0% |           0            0(0)        ∞                               | TS_FIXED                 ",
             "",
-            "                          |                                CPU                                 |                                GPU                                 |",
-            "ACCOUNT                   |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
-            "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "        |                                CPU                                 |                                GPU                                 |",
+            "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+            "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
+        )
+        self.assertEqual(out, expected)
+
+    def test_first_column_cap_and_ellipsis_align_user_and_account_tables(self):
+        self.env({"NO_COLOR": "1"})
+        users = [
+            {
+                "username": "user_with_a_name_longer_than_thirty_chars",
+                "job_count": 1,
+                "last_updated": None,
+                "total_consumed_cpu_minutes": 1,
+                "total_preallocated_cpu_minutes": 1,
+                "quota_cpu_minutes": -1,
+                "total_consumed_gpu_minutes": 0,
+                "total_preallocated_gpu_minutes": 0,
+                "quota_gpu_minutes": -1,
+            }
+        ]
+        accounts = [
+            {
+                "account": "account_with_a_name_longer_than_thirty_chars",
+                "job_count": 1,
+                "last_updated": None,
+                "total_consumed_cpu_minutes": 1,
+                "total_preallocated_cpu_minutes": 1,
+                "quota_cpu_minutes": -1,
+                "total_consumed_gpu_minutes": 0,
+                "total_preallocated_gpu_minutes": 0,
+                "quota_gpu_minutes": -1,
+            }
+        ]
+        with (
+            patch.object(
+                self.sq,
+                "fetch_stats_from_service",
+                return_value=(users, accounts),
+            ),
+            patch.object(
+                self.sq,
+                "format_timestamp_with_timezone",
+                return_value="TS_FIXED",
+            ),
+        ):
+            out = self._run_show(show_all=True)
+
+        expected = dedent_lines(
+            "                               |                                CPU                                 |                                GPU                                 |",
+            "USER                           |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+            "---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "user_with_a_name_longer_than_… |           1            1(1)        ∞                               |           0            0(1)        ∞                               | TS_FIXED                 ",
+            "",
+            "                               |                                CPU                                 |                                GPU                                 |",
+            "ACCOUNT                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+            "---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "account_with_a_name_longer_th… |           1            1(1)        ∞                               |           0            0(1)        ∞                               | TS_FIXED                 ",
         )
         self.assertEqual(out, expected)
 
