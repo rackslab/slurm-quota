@@ -1,0 +1,152 @@
+from __future__ import annotations
+
+import sqlite3
+from unittest.mock import patch
+
+from tests.test_support import SlurmQuotaTestCase
+
+
+class TestPruneResources(SlurmQuotaTestCase):
+    def test_prune_resources_dry_run_counts_without_deleting(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO users (
+                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [
+                    ("u_free", 0, 0),
+                    ("u_orphan_prealloc", 0, 0),
+                    ("u_active_prealloc", 0, 0),
+                    ("u_busy", 10, 0),
+                ],
+            )
+            conn.executemany(
+                """
+                INSERT INTO accounts (
+                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [
+                    ("a_free", 0, 0),
+                    ("a_orphan_prealloc", 0, 0),
+                    ("a_active_prealloc", 0, 0),
+                    ("a_busy", 5, 0),
+                ],
+            )
+            conn.executemany(
+                """
+                INSERT INTO jobs_preallocations (
+                    job_uuid, username, account, preallocated_cpu_minutes
+                ) VALUES (?, ?, ?, ?)
+                """,
+                [
+                    ("uuid-orphan", "u_orphan_prealloc", "a_orphan_prealloc", 5),
+                    ("uuid-active", "u_active_prealloc", "a_active_prealloc", 5),
+                ],
+            )
+            conn.commit()
+
+        with patch.object(
+            self.sq, "collect_active_job_uuids", return_value={"uuid-active"}
+        ):
+            counts = self.sq.prune_resources(
+                {"preallocs", "users", "accounts"}, dry_run=True
+            )
+
+        self.assertEqual(counts, {"preallocs": 1, "users": 3, "accounts": 3})
+        with self.db_connection() as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM jobs_preallocations").fetchone()[0],
+                2,
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM users").fetchone()[0], 4
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], 4
+            )
+
+    def test_prune_resources_users_only_fails_if_prealloc_references_exist(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO users (
+                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [
+                    ("u_free", 0, 0),
+                    ("u_orphan_prealloc", 0, 0),
+                    ("u_busy", 1, 0),
+                ],
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes, total_consumed_gpu_minutes) VALUES (?, ?, ?)",
+                ("a1", 0, 0),
+            )
+            conn.execute(
+                """
+                INSERT INTO jobs_preallocations (
+                    job_uuid, username, account, preallocated_cpu_minutes
+                ) VALUES (?, ?, ?, ?)
+                """,
+                ("uuid-orphan", "u_orphan_prealloc", "a1", 5),
+            )
+            conn.commit()
+
+        with self.assertRaises(sqlite3.IntegrityError) as cm:
+            self.sq.prune_resources({"users"}, dry_run=False)
+        self.assertIn("Failed to prune users", str(cm.exception))
+        with self.db_connection() as conn:
+            users = {
+                row[0]
+                for row in conn.execute("SELECT username FROM users ORDER BY username")
+            }
+            self.assertEqual(users, {"u_free", "u_orphan_prealloc", "u_busy"})
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM jobs_preallocations").fetchone()[0],
+                1,
+            )
+
+    def test_prune_resources_all_deletes_orphan_prealloc_then_users_accounts(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes, total_consumed_gpu_minutes) VALUES (?, ?, ?)",
+                ("u_orphan_prealloc", 0, 0),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes, total_consumed_gpu_minutes) VALUES (?, ?, ?)",
+                ("a_orphan_prealloc", 0, 0),
+            )
+            conn.execute(
+                """
+                INSERT INTO jobs_preallocations (
+                    job_uuid, username, account, preallocated_cpu_minutes
+                ) VALUES (?, ?, ?, ?)
+                """,
+                ("uuid-orphan", "u_orphan_prealloc", "a_orphan_prealloc", 5),
+            )
+            conn.commit()
+
+        with patch.object(self.sq, "collect_active_job_uuids", return_value=set()):
+            counts = self.sq.prune_resources(
+                {"preallocs", "users", "accounts"}, dry_run=False
+            )
+
+        self.assertEqual(counts, {"preallocs": 1, "users": 1, "accounts": 1})
+        with self.db_connection() as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM jobs_preallocations").fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM users").fetchone()[0], 0
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], 0
+            )
