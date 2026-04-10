@@ -40,7 +40,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.request import urlopen, Request
 from urllib.error import URLError
-from urllib.parse import urlencode, urljoin
+from urllib.parse import urlencode, urljoin, urlparse, parse_qs
 from typing import Tuple, Union, Optional, Any, Dict, List
 
 # Database configuration
@@ -1095,7 +1095,7 @@ class StatsHTTPError(Exception):
 
 
 def fetch_stats_from_service(
-    selected_username: Optional[str], show_all: bool
+    selected_username: Optional[str], selected_account: Optional[str], show_all: bool
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Request /stats from the slurm-quota HTTP service and return user and account rows.
@@ -1105,6 +1105,7 @@ def fetch_stats_from_service(
 
     Args:
         selected_username: User filter when not show_all (may be None if show_all).
+        selected_account: Account filter to apply on account stats.
         show_all: If True, do not add a username query parameter.
 
     Returns:
@@ -1118,6 +1119,8 @@ def fetch_stats_from_service(
     stats_params: Dict[str, str] = {}
     if selected_username and not show_all:
         stats_params["username"] = selected_username
+    if selected_account:
+        stats_params["account"] = selected_account
     stats_url = urljoin(base_url, "stats")
     if stats_params:
         stats_url = f"{stats_url}?{urlencode(stats_params)}"
@@ -1133,18 +1136,22 @@ def fetch_stats_from_service(
 
 
 def show_user_stats(
-    username: Optional[str] = None, show_all: bool = False, display_hours: bool = False
+    username: Optional[str] = None,
+    account: Optional[str] = None,
+    show_all: bool = False,
+    display_hours: bool = False,
 ) -> None:
     """
     Display resource statistics for users in table format.
 
     Args:
-        username: The username to query (if None and not show_all, shows all)
+        username: The username to query (if None and not show_all, uses current user)
+        account: The account to query in the accounts table.
         show_all: If True, show all users
     """
     # Determine target username
     selected_username = username
-    if not show_all and not selected_username:
+    if not show_all and not selected_username and not account:
         try:
             selected_username = get_current_user()
         except KeyError:
@@ -1152,12 +1159,14 @@ def show_user_stats(
 
     try:
         users_data, accounts_data = fetch_stats_from_service(
-            selected_username, show_all
+            selected_username, account, show_all
         )
 
-        if not users_data:
+        if not users_data and not accounts_data:
             if username:
                 print(f"No data found for user: {username}")
+            elif account:
+                print(f"No data found for account: {account}")
             else:
                 print("No users found in service")
             return
@@ -1168,55 +1177,56 @@ def show_user_stats(
             return f"{value_minutes}"
 
         # Print users table
-        header = (
-            f"{'':<25} | {'CPU':^66} | {'GPU':^66} |\n"
-            f"{'USER':<25} | {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} "
-            f"| {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} | {'LAST UPDATED':<25}"
-        )
-        print(header)
-        print("-" * int(len(header) / 2))
-
-        for item in users_data:
-            uname = item.get("username", "?")
-            job_count = int(item.get("job_count", 0))
-            last_updated = item.get("last_updated")
-            last_updated_str = format_timestamp_with_timezone(last_updated)
-
-            # CPU data
-            cpu_consumed = int(item.get("total_consumed_cpu_minutes", 0))
-            cpu_preallocated = int(item.get("total_preallocated_cpu_minutes", 0))
-            cpu_quota = int(item.get("quota_cpu_minutes", -1))
-            cpu_total_used = cpu_consumed + cpu_preallocated
-            if cpu_quota == -1:
-                cpu_quota_str = "∞"
-                cpu_status_bar = ""
-            else:
-                cpu_quota_str = format_value(cpu_quota)
-                cpu_status_bar = create_status_bar(cpu_total_used, cpu_quota)
-            cpu_consumed_str = format_value(cpu_consumed)
-            cpu_preallocated_str = f"{format_value(cpu_preallocated)}({job_count})"
-
-            # GPU data
-            gpu_consumed = int(item.get("total_consumed_gpu_minutes", 0))
-            gpu_preallocated = int(item.get("total_preallocated_gpu_minutes", 0))
-            gpu_quota = int(item.get("quota_gpu_minutes", -1))
-            gpu_total_used = gpu_consumed + gpu_preallocated
-            if gpu_quota == -1:
-                gpu_quota_str = "∞"
-                gpu_status_bar = ""
-            else:
-                gpu_quota_str = format_value(gpu_quota)
-                gpu_status_bar = create_status_bar(gpu_total_used, gpu_quota)
-            gpu_consumed_str = format_value(gpu_consumed)
-            gpu_preallocated_str = f"{format_value(gpu_preallocated)}({job_count})"
-
-            print(
-                f"{uname:<25} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
-                f"| {gpu_consumed_str:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
+        if users_data:
+            header = (
+                f"{'':<25} | {'CPU':^66} | {'GPU':^66} |\n"
+                f"{'USER':<25} | {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} "
+                f"| {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} | {'LAST UPDATED':<25}"
             )
+            print(header)
+            print("-" * int(len(header) / 2))
+
+            for item in users_data:
+                uname = item.get("username", "?")
+                job_count = int(item.get("job_count", 0))
+                last_updated = item.get("last_updated")
+                last_updated_str = format_timestamp_with_timezone(last_updated)
+
+                # CPU data
+                cpu_consumed = int(item.get("total_consumed_cpu_minutes", 0))
+                cpu_preallocated = int(item.get("total_preallocated_cpu_minutes", 0))
+                cpu_quota = int(item.get("quota_cpu_minutes", -1))
+                cpu_total_used = cpu_consumed + cpu_preallocated
+                if cpu_quota == -1:
+                    cpu_quota_str = "∞"
+                    cpu_status_bar = ""
+                else:
+                    cpu_quota_str = format_value(cpu_quota)
+                    cpu_status_bar = create_status_bar(cpu_total_used, cpu_quota)
+                cpu_consumed_str = format_value(cpu_consumed)
+                cpu_preallocated_str = f"{format_value(cpu_preallocated)}({job_count})"
+
+                # GPU data
+                gpu_consumed = int(item.get("total_consumed_gpu_minutes", 0))
+                gpu_preallocated = int(item.get("total_preallocated_gpu_minutes", 0))
+                gpu_quota = int(item.get("quota_gpu_minutes", -1))
+                gpu_total_used = gpu_consumed + gpu_preallocated
+                if gpu_quota == -1:
+                    gpu_quota_str = "∞"
+                    gpu_status_bar = ""
+                else:
+                    gpu_quota_str = format_value(gpu_quota)
+                    gpu_status_bar = create_status_bar(gpu_total_used, gpu_quota)
+                gpu_consumed_str = format_value(gpu_consumed)
+                gpu_preallocated_str = f"{format_value(gpu_preallocated)}({job_count})"
+
+                print(
+                    f"{uname:<25} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
+                    f"| {gpu_consumed_str:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
+                )
+            print()
 
         # Accounts table
-        print()
         header = (
             f"{'':<25} | {'CPU':^66} | {'GPU':^66} |\n"
             f"{'ACCOUNT':<25} | {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} "
@@ -1438,17 +1448,25 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
 
         if self.path.startswith("/stats"):
-            # Parse simple query param ?username=...
+            # Parse query params.
             username_param: Optional[str] = None
-            if "?" in self.path:
-                query = self.path.split("?", 1)[1]
-                for kv in query.split("&"):
-                    if not kv:
-                        continue
-                    k, v = (kv.split("=", 1) + [""])[:2]
-                    if k == "username":
-                        username_param = v
-                        break
+            account_param: Optional[str] = None
+            query_params = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+            usernames = query_params.get("username", [])
+            accounts = query_params.get("account", [])
+            if usernames:
+                username_param = usernames[0]
+            if accounts:
+                account_param = accounts[0]
+            if username_param and account_param:
+                self._send_json(
+                    {
+                        "error": "bad_request",
+                        "message": "username and account are mutually exclusive",
+                    },
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
             try:
                 if not os.path.exists(DB_PATH):
                     self._send_json({"users": [], "accounts": []}, status=200)
@@ -1462,6 +1480,10 @@ class _RequestHandler(BaseHTTPRequestHandler):
                             accounts_filter = get_user_accounts(username_param)
                         except Exception:
                             accounts_filter = set()
+                    if account_param:
+                        accounts_filter = {account_param}
+                        # Account selection is account-centric; do not include user rows.
+                        users = []
                     accounts = query_accounts_aggregate(conn, accounts_filter)
                 self._send_json({"users": users, "accounts": accounts}, status=200)
             except sqlite3.Error as e:
@@ -1883,6 +1905,16 @@ def main():
         help="Username to query (optional, shows all users if not specified)",
     )
     stats_parser.add_argument(
+        "--user",
+        dest="user",
+        help="Username to query (same behavior as positional username)",
+    )
+    stats_parser.add_argument(
+        "--account",
+        dest="account",
+        help="Account to query",
+    )
+    stats_parser.add_argument(
         "--all",
         action="store_true",
         help="Show all users (same as not specifying username)",
@@ -2017,7 +2049,12 @@ def main():
     if args.command == "charge":
         charge_command()
     elif args.command == "stats":
-        show_user_stats(args.username, args.all, args.hours)
+        if args.username and args.user:
+            parser.error("stats: positional username and --user are mutually exclusive")
+        selected_username = args.user or args.username
+        if selected_username and args.account:
+            parser.error("stats: user selection and --account are mutually exclusive")
+        show_user_stats(selected_username, args.account, args.all, args.hours)
     elif args.command == "user-quota":
         set_user_quota_command(args.username, args.quota)
     elif args.command == "account-quota":
