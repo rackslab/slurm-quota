@@ -13,48 +13,71 @@ class TestAccountGpuQuotaCommand(FunctionalCLIBase):
             with patch.object(self.sq, "set_database_permissions"):
                 with self.capture_stdout() as out:
                     self.run_main(
-                        ["slurm-quota", "account-gpu-quota", "acctNew", "200"]
+                        ["slurm-quota", "account-gpu-quota", "genomics_facility", "200"]
                     )
         self.assertEqual(
             out.getvalue(),
-            "Successfully set GPU quota for account acctNew: 200 GPU minutes\n",
+            "Successfully set GPU quota for account genomics_facility: 200 GPU minutes\n",
         )
         with self.db_connection() as conn:
             row = conn.execute(
                 "SELECT quota_gpu_minutes FROM accounts WHERE account = ?",
-                ("acctNew",),
+                ("genomics_facility",),
             ).fetchone()
         self.assertIsNotNone(row)
         self.assertEqual(row[0], 200)
 
+    def test_account_gpu_quota_applies_default_cpu_from_settings_on_create(self):
+        self.init_db()
+        self.update_settings(default_account_quota_cpu_minutes=6666)
+        with patch.object(self.sq, "get_current_user", return_value="root"):
+            with patch.object(self.sq, "set_database_permissions"):
+                self.run_main(
+                    ["slurm-quota", "account-gpu-quota", "neuro_render", "80"]
+                )
+        with self.db_connection() as conn:
+            row = conn.execute(
+                "SELECT quota_cpu_minutes, quota_gpu_minutes FROM accounts WHERE account = ?",
+                ("neuro_render",),
+            ).fetchone()
+        self.assertEqual(row, (6666, 80))
+
     def test_account_gpu_quota_updates_existing_account(self):
         self.init_db()
+        self.update_settings(default_account_quota_cpu_minutes=55555)
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO accounts (account, quota_gpu_minutes) VALUES (?, ?)",
-                ("acctUp", 50),
+                """
+                INSERT INTO accounts (account, quota_cpu_minutes, quota_gpu_minutes)
+                VALUES (?, ?, ?)
+                """,
+                ("weather_cluster", 2222, 50),
             )
             conn.commit()
         with patch.object(self.sq, "get_current_user", return_value="root"):
             with patch.object(self.sq, "set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(["slurm-quota", "account-gpu-quota", "acctUp", "200"])
+                    self.run_main(
+                        ["slurm-quota", "account-gpu-quota", "weather_cluster", "200"]
+                    )
         self.assertEqual(
             out.getvalue(),
-            "Successfully set GPU quota for account acctUp: 200 GPU minutes\n",
+            "Successfully set GPU quota for account weather_cluster: 200 GPU minutes\n",
         )
         with self.db_connection() as conn:
             row = conn.execute(
-                "SELECT quota_gpu_minutes FROM accounts WHERE account = ?",
-                ("acctUp",),
+                "SELECT quota_cpu_minutes, quota_gpu_minutes FROM accounts WHERE account = ?",
+                ("weather_cluster",),
             ).fetchone()
-        self.assertEqual(row[0], 200)
+        self.assertEqual(row, (2222, 200))
 
     def test_account_gpu_quota_rejects_non_root(self):
         with patch.object(self.sq, "get_current_user", return_value="slurm"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    self.run_main(["slurm-quota", "account-gpu-quota", "acctY", "200"])
+                    self.run_main(
+                        ["slurm-quota", "account-gpu-quota", "legacy_archive", "200"]
+                    )
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,

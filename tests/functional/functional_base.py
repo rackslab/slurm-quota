@@ -47,6 +47,16 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
         with redirect_stdout(buf):
             yield buf
 
+    def update_settings(self, **values: int) -> None:
+        """Set ``settings`` rows (requires ``init_db()`` so the table exists)."""
+        with self.db_connection() as conn:
+            for key, value in values.items():
+                conn.execute(
+                    "UPDATE settings SET value = ? WHERE key = ?",
+                    (str(value), key),
+                )
+            conn.commit()
+
     @staticmethod
     def stats_json_payload() -> Dict[str, List[Dict[str, Any]]]:
         """Full multi-user / multi-account payload (no ``?username=`` filter)."""
