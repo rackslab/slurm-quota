@@ -31,8 +31,7 @@ jobs:
     steps:
       - name: Install build dependencies
         run: |
-          dnf -y install epel-release
-          dnf -y install git python3 rpm-build mock
+          dnf -y install git python3 rpm-build mock mock-core-configs
 
       - uses: actions/checkout@v5
 
