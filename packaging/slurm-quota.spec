@@ -42,8 +42,12 @@ asciidoctor -b manpage -o slurm-quota.1 man/slurm-quota.1.adoc
 
 %check
 cd %{_builddir}/%{buildsubdir}
-if id -u mockbuild >/dev/null 2>&1; then
-  su -s /bin/bash -c 'PYTHONPATH=%{_builddir}/%{buildsubdir} %pytest -q --override-ini="addopts="' mockbuild
+TEST_USER=slurmquota_test
+if ! id -u "${TEST_USER}" >/dev/null 2>&1; then
+  useradd -r -M -s /sbin/nologin "${TEST_USER}" >/dev/null 2>&1 || true
+fi
+if id -u "${TEST_USER}" >/dev/null 2>&1; then
+  su -s /bin/bash -c 'PYTHONPATH=%{_builddir}/%{buildsubdir} %pytest -q --override-ini="addopts="' "${TEST_USER}"
 else
   PYTHONPATH=%{_builddir}/%{buildsubdir} %pytest -q --override-ini="addopts="
 fi
