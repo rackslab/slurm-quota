@@ -60,7 +60,28 @@ Additionally, a logrotate configuration file is provided (`slurm-quota-charge.lo
 
 ## Installation
 
-### Controller Node
+### RPM packages (recommended)
+
+For EL systems, 2 RPM packages are published as artifacts of _slurm-quota_ releases:
+
+- `slurm-quota`: common files for all nodes (CLI, manpage, bash completion)
+- `slurm-quota-controller`: controller-only files (`job_submit.lua`, wrapper, systemd units, logrotate, migration script)
+
+Install on compute/login nodes:
+
+```bash
+sudo dnf install slurm-quota
+```
+
+Install on the controller node:
+
+```bash
+sudo dnf install slurm-quota slurm-quota-controller
+```
+
+### Manual installation (without RPM packaging)
+
+#### Controller Node
 
 Here is the procedure to follow to install the solution on the batch controller server:
 
@@ -159,7 +180,7 @@ It is recommended to back up the SQLite database file `/var/lib/state/slurm-quot
 sudo sqlite3 /var/lib/state/slurm-quota/slurm-quota.db ".backup /var/lib/state/slurm-quota/slurm-quota-$(date +%Y-%m-%d).db"
 ```
 
-### Other Nodes
+#### Other Nodes
 
 On the other nodes of the cluster, here are the steps to follow:
 
@@ -334,7 +355,9 @@ It is normally not necessary to execute this `prune` command under normal condit
 
 ### Migration
 
-When updating `slurm-quota`, the database migration script must first be executed:
+When using RPM packages, migration is automatically run during `slurm-quota-controller` installation/upgrade (only when the existing database file is present).
+
+For manual/source-based deployments, the database migration script must be executed before updating other components:
 
 ```console
 # python3 migrate-slurm-quota
@@ -367,7 +390,9 @@ Optional user-local installation:
 install -Dm644 slurm-quota.1 ~/.local/share/man/man1/slurm-quota.1
 ```
 
-## Tests (development)
+## Development
+
+### Tests
 
 The repository includes unit tests under `tests/unit/` (one module per function under test) and functional CLI tests under `tests/functional/` (one module per `slurm-quota` subcommand). They are standard `unittest.TestCase` classes; the recommended runner is **pytest** (as in CI), with optional coverage reports configured in `pyproject.toml`.
 
@@ -384,6 +409,15 @@ Run the full suite (quiet mode, coverage for the loaded `slurm-quota` module, te
 
 ```bash
 python -m pytest
+```
+
+### Packaging
+
+Scripts are available to build RPM packages of locally:
+
+```bash
+packaging/scripts/build-srpm.sh v1.2.3
+packaging/scripts/mock-build.sh el9
 ```
 
 ## Acknowledgements

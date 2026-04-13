@@ -1,0 +1,77 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to package (example: 1.2.3 or v1.2.3)"
+        required: false
+        type: string
+      distribution:
+        description: "Distribution target for mock build"
+        required: false
+        default: "el9"
+        type: choice
+        options:
+          - el9
+
+permissions:
+  contents: write
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:rawhide
+    env:
+      EL_TARGET: ${{ github.event.inputs.distribution || 'el9' }}
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf -y install epel-release
+          dnf -y install git python3 rpm-build mock
+
+      - uses: actions/checkout@v5
+
+      - name: Build SRPM
+        run: |
+          VERSION_INPUT=""
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION_INPUT="${GITHUB_REF_NAME}"
+          fi
+          if [ -n "${{ github.event.inputs.version || '' }}" ]; then
+            VERSION_INPUT="${{ github.event.inputs.version || '' }}"
+          fi
+          if [ -z "${VERSION_INPUT}" ]; then
+            echo "Unable to determine package version." >&2
+            echo "Provide workflow_dispatch input 'version' or run from a tag ref." >&2
+            exit 1
+          fi
+          packaging/scripts/build-srpm.sh "${VERSION_INPUT}"
+
+      - name: Rebuild in mock
+        run: |
+          SRPM_PATH="$(ls build/rpm/SRPMS/slurm-quota-*.src.rpm | sort | tail -n 1)"
+          packaging/scripts/mock-build.sh "${EL_TARGET}" "${SRPM_PATH}"
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: slurm-quota-rpm-${{ github.ref_name }}
+          path: |
+            build/mock/*.rpm
+            build/mock/*.src.rpm
+            build/mock/*.log
+          if-no-files-found: error
+
+      - name: Publish release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/mock/*.rpm
+            build/mock/*.src.rpm
+          fail_on_unmatched_files: true

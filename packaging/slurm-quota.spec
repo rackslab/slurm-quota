@@ -1,0 +1,80 @@
+%global pkg_version %{?pkg_version}%{!?pkg_version:1.0.0}
+%global pkg_release %{?pkg_release}%{!?pkg_release:1}
+
+Name:           slurm-quota
+Version:        %{pkg_version}
+Release:        %{pkg_release}%{?dist}
+Summary:        Slurm quota management tool
+
+License:        MIT
+URL:            https://github.com/rackslab/slurm-quota
+Source0:        %{name}-%{version}.tar.gz
+
+BuildArch:      noarch
+BuildRequires:  python3-devel
+BuildRequires:  python3dist(pytest)
+
+Requires:       python3
+
+%description
+slurm-quota assigns CPU/GPU minute quotas to Slurm users and accounts and
+enforces them on submission and completion paths.
+
+%package controller
+Summary:        Controller-side files for slurm-quota
+Requires:       %{name} = %{version}-%{release}
+Requires:       lua-dbi
+Requires:       lua-posix
+Requires:       sqlite
+Requires(post): /usr/bin/python3
+
+%description controller
+Controller package for slurm-quota with Slurm integration files, systemd units,
+logrotate policy and the migration helper.
+
+%prep
+%autosetup
+
+%build
+# No build step required for script-based package.
+
+%check
+cd %{_builddir}/%{buildsubdir}
+PYTHONPATH=%{_builddir}/%{buildsubdir} %pytest -q --override-ini="addopts="
+
+%install
+install -Dm0755 slurm-quota %{buildroot}/usr/local/bin/slurm-quota
+install -Dm0644 slurm-quota.bash-completion %{buildroot}%{_sysconfdir}/bash_completion.d/slurm-quota
+install -Dm0644 slurm-quota.1 %{buildroot}%{_mandir}/man1/slurm-quota.1
+install -Dm0755 slurm-quota-charge-wrapper %{buildroot}%{_sysconfdir}/slurm/slurm-quota-charge-wrapper
+install -Dm0644 job_submit.lua %{buildroot}%{_sysconfdir}/slurm/job_submit.lua
+install -Dm0644 slurm-quota.service %{buildroot}%{_unitdir}/slurm-quota.service
+install -Dm0644 slurm-quota.socket %{buildroot}%{_unitdir}/slurm-quota.socket
+install -Dm0644 slurm-quota-charge.logrotate %{buildroot}%{_sysconfdir}/logrotate.d/slurm-quota-charge
+install -Dm0755 migrate-slurm-quota %{buildroot}%{_libexecdir}/slurm-quota/migrate-slurm-quota
+
+%post controller
+DB_PATH=/var/lib/state/slurm-quota/slurm-quota.db
+MIGRATE=%{_libexecdir}/slurm-quota/migrate-slurm-quota
+
+if [ -x "${MIGRATE}" ] && [ -f "${DB_PATH}" ]; then
+    "${MIGRATE}" || exit 1
+fi
+
+%files
+%license LICENSE
+/usr/local/bin/slurm-quota
+%{_sysconfdir}/bash_completion.d/slurm-quota
+%{_mandir}/man1/slurm-quota.1*
+
+%files controller
+%config(noreplace) %{_sysconfdir}/slurm/slurm-quota-charge-wrapper
+%config(noreplace) %{_sysconfdir}/slurm/job_submit.lua
+%{_unitdir}/slurm-quota.service
+%{_unitdir}/slurm-quota.socket
+%config(noreplace) %{_sysconfdir}/logrotate.d/slurm-quota-charge
+%{_libexecdir}/slurm-quota/migrate-slurm-quota
+
+%changelog
+* Fri Apr 10 2026 Slurm Quota Maintainers <slurm-quota@localhost> - %{version}-%{release}
+- Initial RPM packaging with controller subpackage and migration hook.
