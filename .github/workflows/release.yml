@@ -72,7 +72,7 @@ jobs:
           done
 
       - name: Upload RPM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: slurm-quota-rpm-${{ github.ref_name }}
           path: |
