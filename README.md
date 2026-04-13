@@ -60,7 +60,57 @@ Additionally, a logrotate configuration file is provided (`slurm-quota-charge.lo
 
 ## Installation
 
-### Controller Node
+### RPM packages (recommended)
+
+For EL systems, 2 RPM packages are published as artifacts of _slurm-quota_ releases:
+
+- `slurm-quota`: common files for all nodes (CLI, manpage, bash completion)
+- `slurm-quota-controller`: controller-only files (`job_submit.lua`, wrapper, systemd units, logrotate, migration script)
+
+On the controller node:
+
+1) Install controller and common packages:
+
+```bash
+sudo dnf install slurm-quota slurm-quota-controller
+```
+
+2) Start and enable the socket-activated API service:
+
+```bash
+sudo systemctl enable --now slurm-quota.socket
+```
+
+3) Configure Slurm plugins in `slurm.conf`:
+
+Edit the Slurm configuration to set up these parameters:
+
+```ini
+JobCompType=jobcomp/script
+JobCompLoc=/etc/slurm/slurm-quota-charge-wrapper
+JobSubmitPlugins=lua
+AccountingStorageTRES=gres/gpu:<type1>,gres/gpu:<type2>
+```
+
+The `AccountingStorageTRES` parameter enables recording of complementary resource allocations (e.g., GPU, licenses) in addition to generic resources (e.g., nodes, cores, memory) in the Slurm accounting database. It is necessary to enable tracking of all GPU types in the cluster so that the `slurm-quota charge` command can determine the GPUs allocated to completed jobs and account for the time consumed on these GPUs.
+
+On compute/login nodes:
+
+1) Install the common package:
+
+```bash
+sudo dnf install slurm-quota
+```
+
+2) Configure the controller API endpoint for all users in `/etc/profile.d/slurm-quota.sh`:
+
+```bash
+export SLURM_QUOTA_URL=http://controller:9911/
+```
+
+### Manual installation (from sources)
+
+#### Controller Node
 
 Here is the procedure to follow to install the solution on the batch controller server:
 
@@ -159,7 +209,7 @@ It is recommended to back up the SQLite database file `/var/lib/state/slurm-quot
 sudo sqlite3 /var/lib/state/slurm-quota/slurm-quota.db ".backup /var/lib/state/slurm-quota/slurm-quota-$(date +%Y-%m-%d).db"
 ```
 
-### Other Nodes
+#### Other Nodes
 
 On the other nodes of the cluster, here are the steps to follow:
 
@@ -332,9 +382,49 @@ sudo slurm-quota prune --dry-run        # preview removals without applying them
 
 It is normally not necessary to execute this `prune` command under normal conditions. It may be useful in case of malfunction of the call to the `slurm-quota charge` command by Slurm. Its execution is nevertheless safe, it can be executed if in doubt about the preallocated durations assigned to users.
 
-### Migration
+### Migrate from manual installation to RPM packages
 
-When updating `slurm-quota`, the database migration script must first be executed:
+Use this procedure to switch an existing manual deployment to RPM-managed files.
+
+1) Back up the database on the controller:
+
+```bash
+sudo sqlite3 /var/lib/state/slurm-quota/slurm-quota.db ".backup /var/lib/state/slurm-quota/slurm-quota-pre-rpm-$(date +%Y-%m-%d).db"
+```
+
+2) Remove legacy manually installed files that conflict with RPM-managed paths:
+
+On the controller node:
+
+```bash
+# Legacy systemd unit locations used by manual installation
+sudo rm -f /etc/systemd/system/slurm-quota.service
+sudo rm -f /etc/systemd/system/slurm-quota.socket
+```
+
+On all nodes:
+
+```bash
+# Legacy manual binary/completion/manpage copies (RPM will reinstall managed files)
+sudo rm -f /usr/local/bin/slurm-quota
+sudo rm -f /etc/bash_completion.d/slurm-quota
+sudo rm -f /usr/local/share/man/man1/slurm-quota.1
+sudo rm -f /usr/share/man/man1/slurm-quota.1
+```
+
+3) Apply the [RPM packages (recommended)](#rpm-packages-recommended) procedure above (controller + compute/login nodes).
+
+### Database Migrations
+
+When using RPM packages, migration is automatically run during `slurm-quota-controller` installation/upgrade (only when the existing database file is present).
+
+To force migration manually with RPM packages, run:
+
+```bash
+sudo /usr/libexec/slurm-quota/migrate-slurm-quota
+```
+
+For manual/source-based deployments, the database migration script must be executed before updating other components:
 
 ```console
 # python3 migrate-slurm-quota
@@ -367,7 +457,9 @@ Optional user-local installation:
 install -Dm644 slurm-quota.1 ~/.local/share/man/man1/slurm-quota.1
 ```
 
-## Tests (development)
+## Development
+
+### Tests
 
 The repository includes unit tests under `tests/unit/` (one module per function under test) and functional CLI tests under `tests/functional/` (one module per `slurm-quota` subcommand). They are standard `unittest.TestCase` classes; the recommended runner is **pytest** (as in CI), with optional coverage reports configured in `pyproject.toml`.
 
@@ -385,6 +477,24 @@ Run the full suite (quiet mode, coverage for the loaded `slurm-quota` module, te
 ```bash
 python -m pytest
 ```
+
+### Packaging
+
+Build SRPM and binary RPMs:
+
+```bash
+packaging/scripts/mock-build.sh v1.2.3 el9
+```
+
+SRPM only:
+
+```bash
+packaging/scripts/mock-build.sh v1.2.3 el9 --srpm-only
+```
+
+Override the mock profile if needed: `MOCK_TARGET=rocky+epel-9-x86_64 packaging/scripts/mock-build.sh …`
+
+Mock writes detailed logs under `build/mock/` (`build.log`, `root.log`, `state.log`, …). Default is `MOCK_VERBOSE=0` (quiet). Set `MOCK_VERBOSE=1` for mock `-v`, and `MOCK_TRACE=1` for `--trace`. Extra flags: `MOCK_OPTS="..." packaging/scripts/mock-build.sh …` (see `mock --help`).
 
 ## Acknowledgements
 
