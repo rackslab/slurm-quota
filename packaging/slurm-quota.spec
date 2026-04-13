@@ -74,7 +74,3 @@ fi
 %{_unitdir}/slurm-quota.socket
 %config(noreplace) %{_sysconfdir}/logrotate.d/slurm-quota-charge
 %{_libexecdir}/slurm-quota/migrate-slurm-quota
-
-%changelog
-* Fri Apr 10 2026 Slurm Quota Maintainers <slurm-quota@localhost> - %{version}-%{release}
-- Initial RPM packaging with controller subpackage and migration hook.

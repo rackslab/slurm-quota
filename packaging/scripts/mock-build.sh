@@ -11,7 +11,9 @@ set -euo pipefail
 # Override mock profile:
 #   MOCK_TARGET=rocky+epel-9-x86_64 packaging/scripts/mock-build.sh 1.2.3 el9
 #
-# Outputs go to MOCK_OUTPUT_DIR (default: build/mock).
+# Outputs go to MOCK_OUTPUT_DIR (default: build/mock). Mock also writes detailed logs
+# there (e.g. build.log, root.log, state.log). Set MOCK_VERBOSE=2 for mock -v -v.
+# MOCK_OPTS: extra mock CLI words (e.g. MOCK_OPTS="--trace" — use with care).
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NAME="slurm-quota"
@@ -62,15 +64,27 @@ if [[ ! -f "${SPEC_FILE}" ]]; then
   exit 1
 fi
 
-# Passed through to rpmbuild inside mock so Version/Release/Source0 match the git archive
-# (mock's internal rpmbuild -bs does not read host-only settings).
-MOCK_RPM_DEFINES=(
-  --define "pkg_version ${VERSION}"
-  --define "pkg_release ${RELEASE}"
-)
+# MOCK_VERBOSE: 0 = quiet, 1 = -v (default), 2 = -v -v
+case "${MOCK_VERBOSE:-1}" in
+  0) MOCK_VERBOSITY=() ;;
+  1) MOCK_VERBOSITY=(-v) ;;
+  2) MOCK_VERBOSITY=(-v -v) ;;
+  *) MOCK_VERBOSITY=(-v) ;;
+esac
+# shellcheck disable=SC2206 # intentional word split for extra mock flags
+MOCK_USER_OPTS=( ${MOCK_OPTS-} )
 
 rm -rf "${STAGING}"
 mkdir -p "${STAGING}" "${OUTPUT_DIR}"
+
+# mock(1) --define is not applied to the inner rpmbuild -bb during --rebuild, so the spec
+# inside the SRPM would see pkg_version unset and fall back to 1.0.0 (wrong Source0).
+# --macrofile is installed in the chroot and loaded for every rpmbuild phase.
+MOCK_MACROFILE="${STAGING}/slurm-quota-version.mac"
+{
+  echo "%pkg_version ${VERSION}"
+  echo "%pkg_release ${RELEASE}"
+} > "${MOCK_MACROFILE}"
 
 SPEC_STAGING="${STAGING}/slurm-quota.spec"
 cp "${SPEC_FILE}" "${SPEC_STAGING}"
@@ -79,7 +93,8 @@ ARCHIVE="${STAGING}/${NAME}-${VERSION}.tar.gz"
 git -C "${ROOT_DIR}" archive --format=tar.gz --prefix="${NAME}-${VERSION}/" -o "${ARCHIVE}" HEAD
 
 echo "mock --buildsrpm target=${MOCK_TARGET} resultdir=${OUTPUT_DIR}"
-mock "${MOCK_RPM_DEFINES[@]}" \
+mock "${MOCK_VERBOSITY[@]}" "${MOCK_USER_OPTS[@]}" \
+  --macrofile "${MOCK_MACROFILE}" \
   --buildsrpm \
   --spec "${SPEC_STAGING}" \
   --sources "${STAGING}" \
@@ -105,10 +120,12 @@ echo "SRPM: ${SRPM_PATH}"
 
 if [[ "${SRPM_ONLY}" -eq 0 ]]; then
   echo "mock --rebuild target=${MOCK_TARGET} resultdir=${OUTPUT_DIR}"
-  mock "${MOCK_RPM_DEFINES[@]}" \
+  mock "${MOCK_VERBOSITY[@]}" "${MOCK_USER_OPTS[@]}" \
+    --macrofile "${MOCK_MACROFILE}" \
     --rebuild "${SRPM_PATH}" \
     -r "${MOCK_TARGET}" \
     --resultdir "${OUTPUT_DIR}"
 fi
 
 echo "Mock build completed."
+echo "Full mock/rpmbuild logs: ${OUTPUT_DIR}/*.log (especially build.log and root.log)"

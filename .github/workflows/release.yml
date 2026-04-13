@@ -31,6 +31,8 @@ jobs:
       options: --privileged
     env:
       EL_TARGET: ${{ github.event.inputs.distribution || 'el9' }}
+      # mock -v by default (see packaging/scripts/mock-build.sh); use MOCK_VERBOSE=2 for -v -v
+      MOCK_VERBOSE: "1"
     steps:
       - name: Install build dependencies
         run: |
@@ -58,6 +60,16 @@ jobs:
             exit 1
           fi
           packaging/scripts/mock-build.sh "${VERSION_INPUT}" "${EL_TARGET}"
+
+      - name: Show mock logs on failure
+        if: failure()
+        run: |
+          for f in build/mock/*.log; do
+            if [ -f "$f" ]; then
+              echo "======== $f ========"
+              tail -n 400 "$f" || true
+            fi
+          done
 
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
