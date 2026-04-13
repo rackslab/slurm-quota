@@ -12,6 +12,7 @@ Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch
 BuildRequires:  asciidoctor
+BuildRequires:  bash-completion
 BuildRequires:  python3-devel
 BuildRequires:  python3dist(pytest)
 BuildRequires:  systemd-rpm-macros
@@ -55,7 +56,7 @@ fi
 
 %install
 install -Dm0755 slurm-quota %{buildroot}%{_bindir}/slurm-quota
-install -Dm0644 slurm-quota.bash-completion %{buildroot}%{_sysconfdir}/bash_completion.d/slurm-quota
+install -Dm0644 slurm-quota.bash-completion %{buildroot}%{bash_completions_dir}/slurm-quota
 install -Dm0644 slurm-quota.1 %{buildroot}%{_mandir}/man1/slurm-quota.1
 install -Dm0755 slurm-quota-charge-wrapper %{buildroot}%{_sysconfdir}/slurm/slurm-quota-charge-wrapper
 install -Dm0644 job_submit.lua %{buildroot}%{_sysconfdir}/slurm/job_submit.lua
@@ -77,7 +78,7 @@ fi
 %files
 %license LICENSE
 %{_bindir}/slurm-quota
-%{_sysconfdir}/bash_completion.d/slurm-quota
+%{bash_completions_dir}/slurm-quota
 %{_mandir}/man1/slurm-quota.1*
 
 %files controller
