@@ -2,6 +2,7 @@
 :doctype: manpage
 :manmanual: Slurm Quota Commands
 :mansource: slurm-quota
+:revnumber: 1.0.0
 :revdate: 2026-04-10
 
 == Name
@@ -10,7 +11,7 @@ slurm-quota - manage Slurm CPU/GPU quota accounting, limits, and stats
 
 == Synopsis
 
-*slurm-quota* [*-h*] [*--debug*] <command> [<args>...]
+*slurm-quota* [*-h*] [*--debug*] [*--version*] <command> [<args>...]
 
 == Description
 
@@ -27,6 +28,9 @@ The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 
 *--debug*::
   Enable debug logging.
+
+*--version*::
+  Show program version and exit.
 
 == Commands
 
