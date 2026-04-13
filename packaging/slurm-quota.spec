@@ -42,7 +42,11 @@ asciidoctor -b manpage -o slurm-quota.1 man/slurm-quota.1.adoc
 
 %check
 cd %{_builddir}/%{buildsubdir}
-PYTHONPATH=%{_builddir}/%{buildsubdir} %pytest -q --override-ini="addopts="
+if id -u mockbuild >/dev/null 2>&1; then
+  su -s /bin/bash -c 'PYTHONPATH=%{_builddir}/%{buildsubdir} %pytest -q --override-ini="addopts="' mockbuild
+else
+  PYTHONPATH=%{_builddir}/%{buildsubdir} %pytest -q --override-ini="addopts="
+fi
 
 %install
 install -Dm0755 slurm-quota %{buildroot}/usr/local/bin/slurm-quota
