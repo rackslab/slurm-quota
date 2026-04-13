@@ -39,8 +39,13 @@ logrotate policy and the migration helper.
 %autosetup
 
 %build
+# Stamp runtime APP_VERSION with package version
+sed -i "s|^APP_VERSION = \".*\"$|APP_VERSION = \"%{version}\"|g" slurm-quota
+# Rewrite /usr/local/bin references to the final %{_bindir} path
+sed -i 's|/usr/local/bin/slurm-quota|%{_bindir}/slurm-quota|g' slurm-quota-charge-wrapper
+sed -i 's|/usr/local/bin/slurm-quota|%{_bindir}/slurm-quota|g' slurm-quota.service
 # Generate man page from source AsciiDoc file.
-asciidoctor -b manpage -o slurm-quota.1 man/slurm-quota.1.adoc
+asciidoctor -a revnumber=%{version} -b manpage -o slurm-quota.1 man/slurm-quota.1.adoc
 
 %check
 cd %{_builddir}/%{buildsubdir}
@@ -64,8 +69,6 @@ install -Dm0644 slurm-quota.service %{buildroot}%{_unitdir}/slurm-quota.service
 install -Dm0644 slurm-quota.socket %{buildroot}%{_unitdir}/slurm-quota.socket
 install -Dm0644 slurm-quota-charge.logrotate %{buildroot}%{_sysconfdir}/logrotate.d/slurm-quota-charge
 install -Dm0755 migrate-slurm-quota %{buildroot}%{_libexecdir}/slurm-quota/migrate-slurm-quota
-sed -i 's|/usr/local/bin/slurm-quota|%{_bindir}/slurm-quota|g' %{buildroot}%{_sysconfdir}/slurm/slurm-quota-charge-wrapper
-sed -i 's|/usr/local/bin/slurm-quota|%{_bindir}/slurm-quota|g' %{buildroot}%{_unitdir}/slurm-quota.service
 
 %post controller
 DB_PATH=/var/lib/state/slurm-quota/slurm-quota.db
