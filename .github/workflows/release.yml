@@ -26,6 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: fedora:rawhide
+      # mock needs mounts/namespaces (tmpfs on /proc, chroot/bootstrap). Default GHA
+      # containers are too locked down; Podman-in-Docker also needs this.
+      options: --privileged
     env:
       EL_TARGET: ${{ github.event.inputs.distribution || 'el9' }}
     steps:
