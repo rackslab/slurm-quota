@@ -413,12 +413,19 @@ python -m pytest
 
 ### Packaging
 
-Scripts are available to build RPM packages of locally:
+Build SRPM and binary RPMs:
 
 ```bash
-packaging/scripts/build-srpm.sh v1.2.3
-packaging/scripts/mock-build.sh el9
+packaging/scripts/mock-build.sh v1.2.3 el9
 ```
+
+SRPM only:
+
+```bash
+packaging/scripts/mock-build.sh v1.2.3 el9 --srpm-only
+```
+
+Override the mock profile if needed: `MOCK_TARGET=rocky+epel-9-x86_64 packaging/scripts/mock-build.sh …`
 
 ## Acknowledgements
 

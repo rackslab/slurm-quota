@@ -34,7 +34,7 @@ jobs:
     steps:
       - name: Install build dependencies
         run: |
-          dnf -y install git python3 rpm-build mock mock-core-configs
+          dnf -y install git mock mock-core-configs
 
       - uses: actions/checkout@v5
 
@@ -43,7 +43,7 @@ jobs:
       - name: Mark workspace safe for git
         run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
-      - name: Build SRPM
+      - name: Build SRPM and RPMs
         run: |
           VERSION_INPUT=""
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
@@ -57,12 +57,7 @@ jobs:
             echo "Provide workflow_dispatch input 'version' or run from a tag ref." >&2
             exit 1
           fi
-          packaging/scripts/build-srpm.sh "${VERSION_INPUT}"
-
-      - name: Rebuild in mock
-        run: |
-          SRPM_PATH="$(ls build/rpm/SRPMS/slurm-quota-*.src.rpm | sort | tail -n 1)"
-          packaging/scripts/mock-build.sh "${EL_TARGET}" "${SRPM_PATH}"
+          packaging/scripts/mock-build.sh "${VERSION_INPUT}" "${EL_TARGET}"
 
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
