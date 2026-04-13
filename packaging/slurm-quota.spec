@@ -14,6 +14,7 @@ BuildArch:      noarch
 BuildRequires:  asciidoctor
 BuildRequires:  python3-devel
 BuildRequires:  python3dist(pytest)
+BuildRequires:  systemd-rpm-macros
 
 Requires:       python3
 
