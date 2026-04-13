@@ -12,8 +12,9 @@ set -euo pipefail
 #   MOCK_TARGET=rocky+epel-9-x86_64 packaging/scripts/mock-build.sh 1.2.3 el9
 #
 # Outputs go to MOCK_OUTPUT_DIR (default: build/mock). Mock also writes detailed logs
-# there (e.g. build.log, root.log, state.log). Set MOCK_VERBOSE=2 for mock -v -v.
-# MOCK_OPTS: extra mock CLI words (e.g. MOCK_OPTS="--trace" — use with care).
+# there (e.g. build.log, root.log, state.log). MOCK_VERBOSE=0 stays quiet
+# (default), MOCK_VERBOSE=1 adds -v. Use MOCK_TRACE=1 for --trace.
+# MOCK_OPTS: extra mock CLI words (e.g. MOCK_OPTS="--enable-network" — use with care).
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NAME="slurm-quota"
@@ -64,13 +65,17 @@ if [[ ! -f "${SPEC_FILE}" ]]; then
   exit 1
 fi
 
-# MOCK_VERBOSE: 0 = quiet, 1 = -v (default), 2 = -v -v
-case "${MOCK_VERBOSE:-1}" in
+# MOCK_VERBOSE: 0 = quiet (default), 1 = -v
+case "${MOCK_VERBOSE:-0}" in
   0) MOCK_VERBOSITY=() ;;
   1) MOCK_VERBOSITY=(-v) ;;
-  2) MOCK_VERBOSITY=(-v -v) ;;
   *) MOCK_VERBOSITY=(-v) ;;
 esac
+if [[ "${MOCK_TRACE:-0}" = "1" ]]; then
+  MOCK_TRACE_OPT=(--trace)
+else
+  MOCK_TRACE_OPT=()
+fi
 # shellcheck disable=SC2206 # intentional word split for extra mock flags
 MOCK_USER_OPTS=( ${MOCK_OPTS-} )
 
@@ -93,7 +98,7 @@ ARCHIVE="${STAGING}/${NAME}-${VERSION}.tar.gz"
 git -C "${ROOT_DIR}" archive --format=tar.gz --prefix="${NAME}-${VERSION}/" -o "${ARCHIVE}" HEAD
 
 echo "mock --buildsrpm target=${MOCK_TARGET} resultdir=${OUTPUT_DIR}"
-mock "${MOCK_VERBOSITY[@]}" "${MOCK_USER_OPTS[@]}" \
+mock "${MOCK_VERBOSITY[@]}" "${MOCK_TRACE_OPT[@]}" "${MOCK_USER_OPTS[@]}" \
   --macrofile "${MOCK_MACROFILE}" \
   --buildsrpm \
   --spec "${SPEC_STAGING}" \
@@ -120,7 +125,7 @@ echo "SRPM: ${SRPM_PATH}"
 
 if [[ "${SRPM_ONLY}" -eq 0 ]]; then
   echo "mock --rebuild target=${MOCK_TARGET} resultdir=${OUTPUT_DIR}"
-  mock "${MOCK_VERBOSITY[@]}" "${MOCK_USER_OPTS[@]}" \
+  mock "${MOCK_VERBOSITY[@]}" "${MOCK_TRACE_OPT[@]}" "${MOCK_USER_OPTS[@]}" \
     --macrofile "${MOCK_MACROFILE}" \
     --rebuild "${SRPM_PATH}" \
     -r "${MOCK_TARGET}" \

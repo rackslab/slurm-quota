@@ -427,7 +427,7 @@ packaging/scripts/mock-build.sh v1.2.3 el9 --srpm-only
 
 Override the mock profile if needed: `MOCK_TARGET=rocky+epel-9-x86_64 packaging/scripts/mock-build.sh …`
 
-Mock writes detailed logs under `build/mock/` (`build.log`, `root.log`, `state.log`, …). For more console noise, set `MOCK_VERBOSE=2` (mock `-v -v`) or `MOCK_VERBOSE=0` to quiet mock. Extra flags: `MOCK_OPTS="--trace" packaging/scripts/mock-build.sh …` (see `mock --help`).
+Mock writes detailed logs under `build/mock/` (`build.log`, `root.log`, `state.log`, …). Default is `MOCK_VERBOSE=0` (quiet). Set `MOCK_VERBOSE=1` for mock `-v`, and `MOCK_TRACE=1` for `--trace`. Extra flags: `MOCK_OPTS="..." packaging/scripts/mock-build.sh …` (see `mock --help`).
 
 ## Acknowledgements
 
