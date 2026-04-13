@@ -55,7 +55,9 @@ _slurm_quota() {
     local subcmd=""
     local subcmd_idx=-1
     local i
-    for (( i=1; i<=cword; i++ )); do
+    # Parse only words before the one being completed. Including the current
+    # partial token here prevents proper autocompletion of subcommands/options.
+    for (( i=1; i<cword; i++ )); do
         if [[ "${words[i]}" == --debug || "${words[i]}" == -h || "${words[i]}" == --help ]]; then
             continue
         fi
