@@ -40,6 +40,11 @@ if [[ -z "${VERSION_INPUT}" ]]; then
 fi
 
 VERSION="${VERSION_INPUT#v}"
+if [[ ! "${VERSION}" =~ ^[0-9]+(\.[0-9]+){2}([._+-][0-9A-Za-z.-]+)?$ ]]; then
+  echo "Invalid version format: ${VERSION_INPUT}" >&2
+  echo "Expected semantic version like 1.2.3 (optional suffix allowed)." >&2
+  exit 1
+fi
 RELEASE="${RPM_RELEASE:-1}"
 OUTPUT_DIR="${MOCK_OUTPUT_DIR:-${ROOT_DIR}/build/mock}"
 STAGING="${MOCK_STAGING_DIR:-${ROOT_DIR}/build/mock-input}"
