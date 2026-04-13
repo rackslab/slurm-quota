@@ -82,15 +82,6 @@ MOCK_USER_OPTS=( ${MOCK_OPTS-} )
 rm -rf "${STAGING}"
 mkdir -p "${STAGING}" "${OUTPUT_DIR}"
 
-# mock(1) --define is not applied to the inner rpmbuild -bb during --rebuild, so the spec
-# inside the SRPM would see pkg_version unset and fall back to 1.0.0 (wrong Source0).
-# --macrofile is installed in the chroot and loaded for every rpmbuild phase.
-MOCK_MACROFILE="${STAGING}/slurm-quota-version.mac"
-{
-  echo "%pkg_version ${VERSION}"
-  echo "%pkg_release ${RELEASE}"
-} > "${MOCK_MACROFILE}"
-
 SPEC_STAGING="${STAGING}/slurm-quota.spec"
 cp "${SPEC_FILE}" "${SPEC_STAGING}"
 
@@ -99,7 +90,8 @@ git -C "${ROOT_DIR}" archive --format=tar.gz --prefix="${NAME}-${VERSION}/" -o "
 
 echo "mock --buildsrpm target=${MOCK_TARGET} resultdir=${OUTPUT_DIR}"
 mock "${MOCK_VERBOSITY[@]}" "${MOCK_TRACE_OPT[@]}" "${MOCK_USER_OPTS[@]}" \
-  --macrofile "${MOCK_MACROFILE}" \
+  --define "pkg_version ${VERSION}" \
+  --define "pkg_release ${RELEASE}" \
   --buildsrpm \
   --spec "${SPEC_STAGING}" \
   --sources "${STAGING}" \
@@ -126,7 +118,8 @@ echo "SRPM: ${SRPM_PATH}"
 if [[ "${SRPM_ONLY}" -eq 0 ]]; then
   echo "mock --rebuild target=${MOCK_TARGET} resultdir=${OUTPUT_DIR}"
   mock "${MOCK_VERBOSITY[@]}" "${MOCK_TRACE_OPT[@]}" "${MOCK_USER_OPTS[@]}" \
-    --macrofile "${MOCK_MACROFILE}" \
+    --define "pkg_version ${VERSION}" \
+    --define "pkg_release ${RELEASE}" \
     --rebuild "${SRPM_PATH}" \
     -r "${MOCK_TARGET}" \
     --resultdir "${OUTPUT_DIR}"
