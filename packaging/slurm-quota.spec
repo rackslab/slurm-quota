@@ -11,6 +11,7 @@ URL:            https://github.com/rackslab/slurm-quota
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch
+BuildRequires:  asciidoctor
 BuildRequires:  python3-devel
 BuildRequires:  python3dist(pytest)
 
@@ -36,7 +37,8 @@ logrotate policy and the migration helper.
 %autosetup
 
 %build
-# No build step required for script-based package.
+# Generate man page from source AsciiDoc file.
+asciidoctor -b manpage -o slurm-quota.1 man/slurm-quota.1.adoc
 
 %check
 cd %{_builddir}/%{buildsubdir}
