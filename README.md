@@ -64,7 +64,25 @@ The `slurm-quota-web` application is a web dashboard that retrieves the same sta
 
 ### RPM packages (recommended)
 
-For EL systems, 3 RPM packages are published as artifacts of _slurm-quota_ releases:
+RPM packages are published for **Enterprise Linux 9 only** (RHEL 9, Rocky Linux 9, AlmaLinux 9, CentOS Stream 9, and similar) in the [Rackslab packages](https://pkgs.rackslab.io/rpm/el9/main/$basearch/) repository.
+
+1) Install the Rackslab repository keyring:
+
+```bash
+sudo curl https://pkgs.rackslab.io/keyring.asc --output /etc/pki/rpm-gpg/RPM-GPG-KEY-Rackslab
+```
+
+2) Create `/etc/yum.repos.d/rackslab.repo` with this content:
+
+```ini
+[rackslab]
+name=Rackslab
+baseurl=https://pkgs.rackslab.io/rpm/el9/main/$basearch/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-Rackslab
+```
+
+The following packages are available:
 
 - `slurm-quota`: common files for all nodes (CLI, manpage, bash completion)
 - `slurm-quota-controller`: controller-only files (`job_submit.lua`, wrapper, systemd units, logrotate, migration script)
@@ -652,24 +670,6 @@ Run the full suite (quiet mode, coverage for the loaded `slurm-quota` module, te
 ```bash
 python -m pytest
 ```
-
-### Packaging
-
-Build SRPM and binary RPMs:
-
-```bash
-packaging/scripts/mock-build.sh v1.2.3 el9
-```
-
-SRPM only:
-
-```bash
-packaging/scripts/mock-build.sh v1.2.3 el9 --srpm-only
-```
-
-Override the mock profile if needed: `MOCK_TARGET=rocky+epel-9-x86_64 packaging/scripts/mock-build.sh …`
-
-Mock writes detailed logs under `build/mock/` (`build.log`, `root.log`, `state.log`, …). Default is `MOCK_VERBOSE=0` (quiet). Set `MOCK_VERBOSE=1` for mock `-v`, and `MOCK_TRACE=1` for `--trace`. Extra flags: `MOCK_OPTS="..." packaging/scripts/mock-build.sh …` (see `mock --help`).
 
 ## Acknowledgements
 
