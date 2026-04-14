@@ -58,14 +58,17 @@ The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL conf
 
 Additionally, a logrotate configuration file is provided (`slurm-quota-charge.logrotate`) to prevent the log file fed by the `slurm-quota-charge-wrapper` wrapper from growing too large over time.
 
+The `slurm-quota-web` application is a web dashboard that retrieves the same statistics from the HTTP API (`GET /stats`) and renders them as HTML tables and quota usage bars. It can run standalone with Flask built-in HTTP server for local testing, or be launched by a production-ready HTTP server (for example Apache with mod_wsgi) as a WSGI application.
+
 ## Installation
 
 ### RPM packages (recommended)
 
-For EL systems, 2 RPM packages are published as artifacts of _slurm-quota_ releases:
+For EL systems, 3 RPM packages are published as artifacts of _slurm-quota_ releases:
 
 - `slurm-quota`: common files for all nodes (CLI, manpage, bash completion)
 - `slurm-quota-controller`: controller-only files (`job_submit.lua`, wrapper, systemd units, logrotate, migration script)
+- `slurm-quota-web`: optional web application with HTML dashboard
 
 On the controller node:
 
@@ -107,6 +110,83 @@ sudo dnf install slurm-quota
 ```bash
 export SLURM_QUOTA_URL=http://controller:9911/
 ```
+
+For the optional web dashboard:
+
+1) Install the web dashboard package on the node running Apache:
+
+```bash
+sudo dnf install slurm-quota-web
+```
+
+2) Install Apache/mod_wsgi packages:
+
+```bash
+sudo dnf install httpd mod_wsgi httpd-tools
+```
+
+3) Configure Apache virtual host with mod_wsgi:
+
+```apache
+<VirtualHost *:80>
+    ServerName quota.example.org
+
+    # Optional: point web app to remote API endpoint
+    SetEnv SLURM_QUOTA_URL http://127.0.0.1:9911/
+
+    WSGIDaemonProcess slurm-quota-web processes=2 threads=5 display-name=%{GROUP}
+    WSGIProcessGroup slurm-quota-web
+    WSGIScriptAlias / /usr/libexec/slurm-quota/slurm-quota-web
+    # If you mount in a subdir (example: /quota), use:
+    # WSGIScriptAlias /quota /usr/libexec/slurm-quota/slurm-quota-web
+
+    Alias /static/ /usr/share/slurm-quota-web/static/
+    # Keep the static prefix aligned with WSGIScriptAlias:
+    # - WSGIScriptAlias /      -> Alias /static/
+    # - WSGIScriptAlias /quota -> Alias /quota/static/
+    <Directory /usr/share/slurm-quota-web/static>
+        Require all granted
+    </Directory>
+
+    <Directory /usr/libexec/slurm-quota>
+        Require all granted
+    </Directory>
+
+    ErrorLog /var/log/httpd/slurm-quota-web-error.log
+    CustomLog /var/log/httpd/slurm-quota-web-access.log combined
+</VirtualHost>
+```
+
+4) Enable and reload Apache:
+
+```bash
+sudo systemctl enable --now httpd
+sudo apachectl configtest
+sudo systemctl reload httpd
+```
+
+5) Optional: enable HTTP Basic authentication with `htpasswd`:
+
+```bash
+sudo htpasswd -c /etc/httpd/conf.d/slurm-quota-web.htpasswd admin
+```
+
+Then add inside the same `<VirtualHost>`:
+
+```apache
+<Location />
+    AuthType Basic
+    AuthName "slurm-quota dashboard"
+    AuthUserFile /etc/httpd/conf.d/slurm-quota-web.htpasswd
+    Require valid-user
+</Location>
+```
+
+Security recommendations:
+
+- Keep the backend API bound to cluster local networks when possible.
+- Restrict dashboard access with auth and/or trusted networks.
+- Prefer HTTPS/TLS at Apache level.
 
 ### Manual installation (from sources)
 
@@ -235,6 +315,83 @@ The `SLURM_QUOTA_URL` environment variable must point to the controller node to 
 export SLURM_QUOTA_URL=http://controller:9911/
 ```
 
+#### Web dashboard (optional)
+
+1) Install dependencies:
+
+```bash
+sudo dnf install python3-flask python3-jinja2 httpd mod_wsgi httpd-tools
+```
+
+2) Install script and assets:
+
+```bash
+sudo install -Dm0755 slurm-quota-web /usr/local/bin/slurm-quota-web
+sudo mkdir -p /usr/local/share/slurm-quota-web
+sudo cp -r webapp/templates /usr/local/share/slurm-quota-web/
+sudo cp -r webapp/static /usr/local/share/slurm-quota-web/
+```
+
+3) Configure the assets path for the app:
+
+```bash
+export SLURM_QUOTA_WEB_ASSETS_DIR=/usr/local/share/slurm-quota-web
+```
+
+4) Run standalone (HTTP built-in server, for testing only):
+
+```bash
+SLURM_QUOTA_URL=http://127.0.0.1:9911/ \
+SLURM_QUOTA_WEB_ASSETS_DIR=/usr/local/share/slurm-quota-web \
+/usr/local/bin/slurm-quota-web
+```
+
+5) Configure Apache with this manual installation:
+
+```apache
+<VirtualHost *:80>
+    ServerName quota.example.org
+
+    SetEnv SLURM_QUOTA_URL http://127.0.0.1:9911/
+    SetEnv SLURM_QUOTA_WEB_ASSETS_DIR /usr/local/share/slurm-quota-web
+
+    WSGIDaemonProcess slurm-quota-web processes=2 threads=5 display-name=%{GROUP}
+    WSGIProcessGroup slurm-quota-web
+    WSGIScriptAlias / /usr/local/bin/slurm-quota-web
+    # If you mount in a subdir (example: /quota), use:
+    # WSGIScriptAlias /quota /usr/local/bin/slurm-quota-web
+
+    Alias /static/ /usr/local/share/slurm-quota-web/static/
+    # Keep the static prefix aligned with WSGIScriptAlias:
+    # - WSGIScriptAlias /      -> Alias /static/
+    # - WSGIScriptAlias /quota -> Alias /quota/static/
+    <Directory /usr/local/share/slurm-quota-web/static>
+        Require all granted
+    </Directory>
+
+    <Directory /usr/local/bin>
+        <Files slurm-quota-web>
+            Require all granted
+        </Files>
+    </Directory>
+
+    # Optional HTTP Basic authentication
+    # AuthType Basic
+    # AuthName "slurm-quota dashboard"
+    # AuthUserFile /etc/httpd/conf.d/slurm-quota-web.htpasswd
+    # Require valid-user
+
+    ErrorLog /var/log/httpd/slurm-quota-web-error.log
+    CustomLog /var/log/httpd/slurm-quota-web-access.log combined
+</VirtualHost>
+```
+
+6) Optional: create `htpasswd` file:
+
+```bash
+sudo htpasswd -c /etc/httpd/conf.d/slurm-quota-web.htpasswd admin
+```
+
 ## Usage
 
 ### `slurm-quota` Command
@@ -275,6 +432,16 @@ curl http://127.0.0.1:9911/stats?account=hpc
 ```
 
 The service automatically stops after a period of inactivity (600 seconds, ie. 10 minutes by default). This can be disabled with `--idle-timeout 0` argument. The `stats` command queries this HTTP service (URL configurable via the `SLURM_QUOTA_URL` environment variable).
+
+- `slurm-quota-web`: Starts the web dashboard with the built-in HTTP server (intended for local testing; production should use Apache/mod_wsgi or another WSGI server).
+
+Examples:
+
+```bash
+slurm-quota-web
+SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 slurm-quota-web
+SLURM_QUOTA_URL=http://controller:9911/ slurm-quota-web
+```
 
 - `user-quota` (restricted to root): Sets a CPU quota for a user.
 
@@ -407,9 +574,11 @@ On all nodes:
 ```bash
 # Legacy manual binary/completion/manpage copies (RPM will reinstall managed files)
 sudo rm -f /usr/local/bin/slurm-quota
+sudo rm -f /usr/local/bin/slurm-quota-web
 sudo rm -f /etc/bash_completion.d/slurm-quota
 sudo rm -f /usr/local/share/man/man1/slurm-quota.1
 sudo rm -f /usr/share/man/man1/slurm-quota.1
+sudo rm -rf /usr/local/share/slurm-quota-web
 ```
 
 3) Apply the [RPM packages (recommended)](#rpm-packages-recommended) procedure above (controller + compute/login nodes).
@@ -437,24 +606,30 @@ Then, the other components (`job_submit.lua`, `slurm-quota`, etc.) must be updat
 
 ## Manpage
 
-Manpage for `slurm-quota` command is maintained in file located at `man/slurm-quota.1.adoc` in AsciiDoc format.
+Manpages are maintained in AsciiDoc format:
 
-To generate a roff manpage from this file, use this command:
+- `man/slurm-quota.1.adoc` for `slurm-quota`
+- `man/slurm-quota-web.1.adoc` for `slurm-quota-web`
+
+To generate roff manpages from these files, use:
 
 ```bash
 asciidoctor -b manpage -o slurm-quota.1 man/slurm-quota.1.adoc
+asciidoctor -b manpage -o slurm-quota-web.1 man/slurm-quota-web.1.adoc
 ```
 
-To preview the generated file locally:
+To preview generated files locally:
 
 ```bash
 man -l ./slurm-quota.1
+man -l ./slurm-quota-web.1
 ```
 
 Optional user-local installation:
 
 ```bash
 install -Dm644 slurm-quota.1 ~/.local/share/man/man1/slurm-quota.1
+install -Dm644 slurm-quota-web.1 ~/.local/share/man/man1/slurm-quota-web.1
 ```
 
 ## Development
