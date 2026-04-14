@@ -18,8 +18,6 @@ slurm-quota - manage Slurm CPU/GPU quota accounting, limits, and stats
 *slurm-quota* manages CPU and GPU minute quotas for Slurm users and accounts.
 It updates consumed resources, configures quota and GPU charging settings, prunes
 unused data, and can expose a JSON API used by the `stats` command.
-An optional companion command, `slurm-quota-web`, can render these stats in an
-HTML dashboard via Flask/Jinja2 (distributed in the `slurm-quota-web` RPM).
 
 The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 
