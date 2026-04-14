@@ -1,0 +1,242 @@
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 2rem;
+}
+
+.subtitle {
+  margin-top: -0.5rem;
+  color: #475569;
+}
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.refresh-standalone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
+  max-width: 100%;
+}
+
+.refresh-standalone label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 0.85rem;
+  gap: 0.25rem;
+}
+
+.refresh-standalone .refresh-enable {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.refresh-standalone .refresh-interval-wrap[hidden] {
+  display: flex;
+  justify-content: flex-end;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.refresh-standalone .refresh-interval-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.refresh-standalone .refresh-interval-label select {
+  min-width: 7.5rem;
+  border: 1px solid #94a3b8;
+  border-radius: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  font-size: inherit;
+  background: #fff;
+  color: inherit;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  background: #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.filters label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+  gap: 0.2rem;
+}
+
+.filters input[type="text"],
+.filters input[type="number"] {
+  min-width: 11rem;
+  border: 1px solid #94a3b8;
+  border-radius: 0.35rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.filters button {
+  border: 0;
+  border-radius: 0.35rem;
+  background: #0f766e;
+  color: #fff;
+  padding: 0.5rem 0.8rem;
+  cursor: pointer;
+}
+
+.filters .unit-fieldset {
+  border: 1px solid #94a3b8;
+  border-radius: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.filters .unit-fieldset legend {
+  padding: 0 0.25rem;
+  font-size: 0.9rem;
+}
+
+.filters .unit-radio {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.error {
+  background: #fee2e2;
+  color: #7f1d1d;
+  border: 1px solid #fecaca;
+  border-radius: 0.35rem;
+  padding: 0.6rem 0.75rem;
+  margin: 0.5rem 0 1rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.2rem;
+  background: #fff;
+}
+
+th,
+td {
+  border: 1px solid #cbd5e1;
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+th {
+  background: #f1f5f9;
+}
+
+.stats-table thead tr.group-row th {
+  text-align: center;
+  font-weight: 600;
+  padding: 0.4rem 0.5rem;
+}
+
+.stats-table thead tr.group-row th.group-cpu {
+  background: #e0f2fe;
+  border-bottom: 2px solid #0284c7;
+}
+
+.stats-table thead tr.group-row th.group-gpu {
+  background: #fae8ff;
+  border-bottom: 2px solid #7c3aed;
+}
+
+.stats-table thead tr.group-row th.group-meta {
+  vertical-align: middle;
+  border-bottom: 2px solid #cbd5e1;
+}
+
+.stats-table .col-name {
+  width: 11rem;
+  min-width: 11rem;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.stats-table th.num,
+.stats-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-muted {
+  color: #94a3b8;
+}
+
+.usage-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 11rem;
+}
+
+.usage-track {
+  width: 7rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+
+.usage-fill {
+  height: 100%;
+}
+
+.bar-ok {
+  background: #16a34a;
+}
+
+.bar-warning {
+  background: #ea580c;
+}
+
+.bar-danger {
+  background: #dc2626;
+}
+
+.usage-unlimited {
+  font-style: italic;
+}
