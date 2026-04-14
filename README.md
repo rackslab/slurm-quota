@@ -64,7 +64,7 @@ The `slurm-quota-web` application is a web dashboard that retrieves the same sta
 
 ### RPM packages (recommended)
 
-RPM packages are published for **Enterprise Linux 9 only** (RHEL 9, Rocky Linux 9, AlmaLinux 9, CentOS Stream 9, and similar) in the [Rackslab packages](https://pkgs.rackslab.io/rpm/el9/main/$basearch/) repository.
+RPM packages are published for **Enterprise Linux 9** (RHEL 9, Rocky Linux 9, AlmaLinux 9, CentOS Stream 9, and similar) in the [Rackslab packages](https://pkgs.rackslab.io/rpm/) repository.
 
 1) Install the Rackslab repository keyring:
 
