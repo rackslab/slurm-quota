@@ -1,0 +1,10 @@
+{% if usage.percent is none %}
+<span class="usage-unlimited stat-muted">unlimited</span>
+{% else %}
+<div class="usage-wrap">
+  <div class="usage-track">
+    <div class="usage-fill {{ usage.status_class }}" style="width: {{ "%.1f"|format(usage.percent) }}%;"></div>
+  </div>
+  <span class="usage-label">{{ "%.1f"|format(usage.percent) }}%</span>
+</div>
+{% endif %}

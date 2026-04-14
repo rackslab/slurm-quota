@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}slurm-quota{% endblock %}
+
+{% block body %}
+<div class="page-header">
+  <h1 class="page-title">slurm-quota</h1>
+  <div class="refresh-standalone">
+    <label class="refresh-enable">
+      <input type="checkbox" id="refresh-enabled">
+      Enable auto-refresh
+    </label>
+    <div class="refresh-interval-wrap" id="refresh-interval-wrap" hidden>
+      <label class="refresh-interval-label">Interval
+        <select id="refresh-interval">
+          <option value="30" selected>30 seconds</option>
+          <option value="60">1 minute</option>
+          <option value="120">2 minutes</option>
+          <option value="300">5 minutes</option>
+          <option value="600">10 minutes</option>
+        </select>
+      </label>
+    </div>
+  </div>
+</div>
+
+<form id="filters-form" method="get" class="filters">
+  <label>Username
+    <input type="text" name="username" value="{{ selected_username }}" placeholder="alice">
+  </label>
+  <label>Account
+    <input type="text" name="account" value="{{ selected_account }}" placeholder="hpc">
+  </label>
+  <fieldset class="unit-fieldset">
+    <legend>Units</legend>
+    <label class="unit-radio">
+      <input
+        type="radio"
+        name="unit"
+        value="minutes"
+        {% if not display_hours %}checked{% endif %}
+      >
+      Minutes
+    </label>
+    <label class="unit-radio">
+      <input
+        type="radio"
+        name="unit"
+        value="hours"
+        {% if display_hours %}checked{% endif %}
+      >
+      Hours
+    </label>
+  </fieldset>
+  <button type="submit">Apply</button>
+</form>
+
+{% if error %}
+<div class="error">{{ error }}</div>
+{% endif %}
+
+{% if users %}
+<h2>Users</h2>
+<table class="stats-table">
+  <thead>
+    <tr class="group-row">
+      <th rowspan="2" class="col-name">User</th>
+      <th colspan="4" class="group-cpu">CPU</th>
+      <th colspan="4" class="group-gpu">GPU</th>
+      <th rowspan="2" class="group-meta">Last updated</th>
+    </tr>
+    <tr>
+      <th class="num">Consumed</th>
+      <th class="num">Prealloc (jobs)</th>
+      <th class="num">Quota</th>
+      <th>Usage</th>
+      <th class="num">Consumed</th>
+      <th class="num">Prealloc (jobs)</th>
+      <th class="num">Quota</th>
+      <th>Usage</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in users %}
+    <tr>
+      <td class="col-name">{{ row.name }}</td>
+      <td class="num">{{ row.cpu.consumed }}</td>
+      <td class="num">{{ row.cpu.preallocated }} ({{ row.job_count }})</td>
+      <td class="num">{% if row.cpu.quota == "∞" %}<span class="stat-muted">∞</span>{% else %}{{ row.cpu.quota }}{% endif %}</td>
+      <td>
+        {% set usage = row.cpu %}
+        {% include "usage_bar.html" %}
+      </td>
+      <td class="num">{{ row.gpu.consumed }}</td>
+      <td class="num">{{ row.gpu.preallocated }} ({{ row.job_count }})</td>
+      <td class="num">{% if row.gpu.quota == "∞" %}<span class="stat-muted">∞</span>{% else %}{{ row.gpu.quota }}{% endif %}</td>
+      <td>
+        {% set usage = row.gpu %}
+        {% include "usage_bar.html" %}
+      </td>
+      <td>{{ row.last_updated }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if accounts %}
+<h2>Accounts</h2>
+<table class="stats-table">
+  <thead>
+    <tr class="group-row">
+      <th rowspan="2" class="col-name">Account</th>
+      <th colspan="4" class="group-cpu">CPU</th>
+      <th colspan="4" class="group-gpu">GPU</th>
+      <th rowspan="2" class="group-meta">Last updated</th>
+    </tr>
+    <tr>
+      <th class="num">Consumed</th>
+      <th class="num">Prealloc (jobs)</th>
+      <th class="num">Quota</th>
+      <th>Usage</th>
+      <th class="num">Consumed</th>
+      <th class="num">Prealloc (jobs)</th>
+      <th class="num">Quota</th>
+      <th>Usage</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in accounts %}
+    <tr>
+      <td class="col-name">{{ row.name }}</td>
+      <td class="num">{{ row.cpu.consumed }}</td>
+      <td class="num">{{ row.cpu.preallocated }} ({{ row.job_count }})</td>
+      <td class="num">{% if row.cpu.quota == "∞" %}<span class="stat-muted">∞</span>{% else %}{{ row.cpu.quota }}{% endif %}</td>
+      <td>
+        {% set usage = row.cpu %}
+        {% include "usage_bar.html" %}
+      </td>
+      <td class="num">{{ row.gpu.consumed }}</td>
+      <td class="num">{{ row.gpu.preallocated }} ({{ row.job_count }})</td>
+      <td class="num">{% if row.gpu.quota == "∞" %}<span class="stat-muted">∞</span>{% else %}{{ row.gpu.quota }}{% endif %}</td>
+      <td>
+        {% set usage = row.gpu %}
+        {% include "usage_bar.html" %}
+      </td>
+      <td>{{ row.last_updated }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if not users and not accounts and not error %}
+<p>No stats returned by service.</p>
+{% endif %}
+<script>
+  (function () {
+    var LS_ENABLED = "slurm-quota-web.autoRefresh.enabled";
+    var LS_SECONDS = "slurm-quota-web.autoRefresh.seconds";
+    var ALLOWED_SECONDS = ["30", "60", "120", "300", "600"];
+
+    var enabled = document.getElementById("refresh-enabled");
+    var interval = document.getElementById("refresh-interval");
+    var wrap = document.getElementById("refresh-interval-wrap");
+    if (!enabled || !interval || !wrap) {
+      return;
+    }
+    var timerId = null;
+
+    var isAllowedSeconds = function (v) {
+      return ALLOWED_SECONDS.indexOf(v) !== -1;
+    };
+
+    var normalizeSelectValue = function () {
+      if (!isAllowedSeconds(interval.value)) {
+        interval.value = "30";
+      }
+    };
+
+    var persist = function () {
+      try {
+        window.localStorage.setItem(LS_ENABLED, enabled.checked ? "1" : "0");
+        window.localStorage.setItem(LS_SECONDS, interval.value);
+      } catch (e) {
+        /* ignore (private mode, disabled storage) */
+      }
+    };
+
+    var syncVisibility = function () {
+      var on = enabled.checked;
+      wrap.hidden = !on;
+      interval.disabled = !on;
+    };
+
+    var clearTimer = function () {
+      if (timerId !== null) {
+        clearInterval(timerId);
+        timerId = null;
+      }
+    };
+
+    var scheduleTimer = function () {
+      clearTimer();
+      if (!enabled.checked) {
+        return;
+      }
+      normalizeSelectValue();
+      var sec = parseInt(interval.value, 10);
+      timerId = setInterval(function () {
+        window.location.reload();
+      }, sec * 1000);
+    };
+
+    var loadFromStorage = function () {
+      try {
+        var en = window.localStorage.getItem(LS_ENABLED);
+        if (en === "1") {
+          enabled.checked = true;
+        }
+        var sec = window.localStorage.getItem(LS_SECONDS);
+        if (sec && isAllowedSeconds(sec)) {
+          interval.value = sec;
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      syncVisibility();
+      scheduleTimer();
+    };
+
+    loadFromStorage();
+
+    enabled.addEventListener("change", function () {
+      persist();
+      syncVisibility();
+      scheduleTimer();
+    });
+    interval.addEventListener("change", function () {
+      normalizeSelectValue();
+      persist();
+      scheduleTimer();
+    });
+  })();
+</script>
+{% endblock %}
