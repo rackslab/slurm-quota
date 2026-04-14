@@ -1,0 +1,68 @@
+= slurm-quota-web(1)
+:doctype: manpage
+:manmanual: Slurm Quota Web Dashboard
+:mansource: slurm-quota-web
+:revnumber: 1.0.0
+:revdate: 2026-04-13
+
+== Name
+
+slurm-quota-web - HTTP server for Slurm quota statistics web dashboard
+
+== Synopsis
+
+*slurm-quota-web*
+
+== Description
+
+*slurm-quota-web* starts a HTTP server that renders Slurm quota and consumption
+statistics in HTML web dashboard.
+
+The dashboard is read-only and consumes the existing `slurm-quota` HTTP API
+(`/stats`) exposed by `slurm-quota serve`.
+
+== Environment
+
+*SLURM_QUOTA_URL*::
+  Base URL of the slurm-quota HTTP API queried by the dashboard.
+  Default: `http://127.0.0.1:9911/`
+
+*SLURM_QUOTA_WEB_ASSETS_DIR*::
+  Optional directory containing `templates/` and `static/` subdirectories.
+  If unset, the app first tries local `webapp/`, then `/usr/share/slurm-quota-web`.
+
+*SLURM_QUOTA_WEB_HOST*::
+  Bind host used by standalone mode.
+  Default: `127.0.0.1`
+
+*SLURM_QUOTA_WEB_PORT*::
+  Bind port used by standalone mode.
+  Default: `5000`
+
+*SLURM_QUOTA_WEB_DEBUG*::
+  If set to `1`, enables Flask debug mode in standalone execution.
+
+== Examples
+
+....
+# default standalone launch
+slurm-quota-web
+
+# custom API endpoint
+SLURM_QUOTA_URL=http://controller:9911/ slurm-quota-web
+
+# custom bind host/port
+SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 slurm-quota-web
+....
+
+== Exit Status
+
+*0*::
+  Server exited cleanly.
+
+*1*::
+  Runtime failure.
+
+== See Also
+
+`slurm-quota(1)`, `httpd(8)`, `mod_wsgi(8)`, `systemd.service(5)`
