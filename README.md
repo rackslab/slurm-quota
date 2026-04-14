@@ -4,7 +4,7 @@
 
 The objective of this solution is to assign CPU and GPU minute quotas to users and accounts on Slurm clusters, and to block Slurm job submissions and modifications when these quotas are reached.
 
-![Screenshot of slurm-quota in action](assets/screenshot_0.png)
+![Screenshot of slurm-quota in action](assets/slurm-quota_screenshots.png)
 
 The solution takes into account the time preallocated to jobs that are not yet completed. These jobs must be accounted for to prevent users/accounts from submitting jobs in parallel that, when added together, could exceed the quota once they are accounted for upon completion. By controlling the sum of "consumed + preallocated" at both the user and account levels, we ensure that reserved but not yet used capacity is properly accounted for and that the system is not over-committed.
 
