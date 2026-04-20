@@ -11,7 +11,7 @@ slurm-quota - manage Slurm CPU/GPU quota accounting, limits, and stats
 
 == Synopsis
 
-*slurm-quota* [*-h*] [*--debug*] [*--version*] <command> [<args>...]
+*slurm-quota* [*-h*] [*--debug* | *-q* | *--quiet*] [*--version*] <command> [<args>...]
 
 == Description
 
@@ -27,7 +27,10 @@ The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
   Show help and exit.
 
 *--debug*::
-  Enable debug logging.
+  Enable debug output.
+
+*-q*, *--quiet*::
+  Only print errors and warnings.
 
 *--version*::
   Show program version and exit.
