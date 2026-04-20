@@ -157,7 +157,7 @@ _slurm_quota() {
             COMPREPLY=($(compgen -W "$base_opts --user-cpu --user-gpu --account-cpu --account-gpu" -- "$cur"))
             ;;
         prune)
-            COMPREPLY=($(compgen -W "$base_opts --preallocs --users --accounts --all --dry-run" -- "$cur"))
+            COMPREPLY=($(compgen -W "$base_opts --preallocs --users --accounts --all --dry-run --user --account" -- "$cur"))
             ;;
         serve)
             COMPREPLY=($(compgen -W "$base_opts --host --port --idle-timeout" -- "$cur"))
