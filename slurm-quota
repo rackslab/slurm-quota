@@ -627,13 +627,20 @@ def collect_active_job_uuids() -> set[str]:
     return uuids
 
 
-def prune_resources(targets: set[str], dry_run: bool = False) -> Dict[str, int]:
+def prune_resources(
+    targets: set[str],
+    dry_run: bool = False,
+    user_filter: Optional[str] = None,
+    account_filter: Optional[str] = None,
+) -> Dict[str, int]:
     """
     Prune selected resource records from the database.
 
     Args:
         targets: Set of prune targets among {"preallocs", "users", "accounts"}.
         dry_run: If True, report counts without deleting rows.
+        user_filter: Optional username to limit user pruning candidates.
+        account_filter: Optional account to limit account pruning candidates.
 
     Returns:
         Mapping with deleted (or deletable in dry-run) rows per target.
@@ -664,14 +671,17 @@ def prune_resources(targets: set[str], dry_run: bool = False) -> Dict[str, int]:
 
         users_to_delete: List[str] = []
         if "users" in targets:
-            cursor.execute(
-                """
+            users_query = """
                 SELECT username
                 FROM users
                 WHERE total_consumed_cpu_minutes = 0
                   AND total_consumed_gpu_minutes = 0
-                """
-            )
+            """
+            users_params: List[str] = []
+            if user_filter:
+                users_query += " AND username = ?"
+                users_params.append(user_filter)
+            cursor.execute(users_query, users_params)
             users_to_delete = [
                 str(username) for (username,) in cursor.fetchall() if username
             ]
@@ -681,14 +691,17 @@ def prune_resources(targets: set[str], dry_run: bool = False) -> Dict[str, int]:
 
         accounts_to_delete: List[str] = []
         if "accounts" in targets:
-            cursor.execute(
-                """
+            accounts_query = """
                 SELECT account
                 FROM accounts
                 WHERE total_consumed_cpu_minutes = 0
                   AND total_consumed_gpu_minutes = 0
-                """
-            )
+            """
+            accounts_params: List[str] = []
+            if account_filter:
+                accounts_query += " AND account = ?"
+                accounts_params.append(account_filter)
+            cursor.execute(accounts_query, accounts_params)
             accounts_to_delete = [
                 str(account) for (account,) in cursor.fetchall() if account
             ]
@@ -2093,6 +2106,8 @@ def prune_command(
     accounts: bool = False,
     all_targets: bool = False,
     dry_run: bool = False,
+    user_filter: Optional[str] = None,
+    account_filter: Optional[str] = None,
 ) -> None:
     """
     Execute the prune command to remove selected orphan/unused entries.
@@ -2116,7 +2131,12 @@ def prune_command(
                 targets.add("users")
             if accounts:
                 targets.add("accounts")
-        counts = prune_resources(targets, dry_run=dry_run)
+        counts = prune_resources(
+            targets,
+            dry_run=dry_run,
+            user_filter=user_filter,
+            account_filter=account_filter,
+        )
         selected_counts = {target: counts[target] for target in sorted(targets)}
 
         if dry_run:
@@ -2355,6 +2375,14 @@ def main():
         action="store_true",
         help="Show how many entries would be removed without deleting anything",
     )
+    prune_parser.add_argument(
+        "--user",
+        help="Limit users pruning to a specific username",
+    )
+    prune_parser.add_argument(
+        "--account",
+        help="Limit accounts pruning to a specific account",
+    )
 
     # Serve command (HTTP JSON API for stats, designed for systemd socket activation)
     serve_parser = subparsers.add_parser(
@@ -2427,6 +2455,8 @@ def main():
             accounts=args.accounts,
             all_targets=args.all,
             dry_run=args.dry_run,
+            user_filter=args.user,
+            account_filter=args.account,
         )
     elif args.command == "serve":
         run_serve_command(args.host, args.port, args.idle_timeout)
