@@ -46,7 +46,7 @@ from typing import Tuple, Union, Optional, Any, Dict, List
 
 # Database configuration
 DB_PATH = "/var/lib/state/slurm-quota/slurm-quota.db"
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
 DEFAULT_QUOTA_SETTINGS = {
     "default_user_quota_cpu_minutes": -1,
     "default_user_quota_gpu_minutes": -1,
