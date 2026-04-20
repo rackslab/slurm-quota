@@ -553,6 +553,8 @@ sudo slurm-quota set-gpu-factor default 1.0  # Default factor (used if type is n
   - `--users`: remove users with both consumed CPU and consumed GPU at 0
   - `--accounts`: remove accounts with both consumed CPU and consumed GPU at 0
   - `--all`: prune all categories above (default behavior when no selector is provided)
+  - `--user <username>`: limit user pruning candidates to one username
+  - `--account <account>`: limit account pruning candidates to one account
   - `--dry-run`: report how many preallocations/users/accounts would be removed, without deleting rows
 
 Example:
@@ -561,7 +563,9 @@ Example:
 sudo slurm-quota prune                  # default: same as --all
 sudo slurm-quota prune --preallocs      # prune only orphaned preallocations
 sudo slurm-quota prune --users          # prune only users with 0 consumed CPU/GPU
+sudo slurm-quota prune --users --user alice      # prune only this eligible user
 sudo slurm-quota prune --accounts       # prune only accounts with 0 consumed CPU/GPU
+sudo slurm-quota prune --accounts --account hpc  # prune only this eligible account
 sudo slurm-quota prune --dry-run        # preview removals without applying them
 ```
 

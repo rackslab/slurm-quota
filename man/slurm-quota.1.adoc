@@ -216,7 +216,7 @@ sudo slurm-quota set-default-quotas --user-cpu 50000 --account-cpu 200000
 
 === prune
 
-*slurm-quota prune* [*--preallocs* | *--users* | *--accounts* | *--all*] [*--dry-run*]
+*slurm-quota prune* [*--preallocs* | *--users* | *--accounts* | *--all*] [*--user* <username>] [*--account* <account>] [*--dry-run*]
 
 Prune orphaned/unused records from the database.
 This command must run as `root`.
@@ -238,6 +238,12 @@ Selectors (mutually exclusive):
 *--dry-run*::
   Report what would be removed, without deleting anything.
 
+*--user* <username>::
+  Limit user pruning candidates to this username (applies when users are in selected targets).
+
+*--account* <account>::
+  Limit account pruning candidates to this account (applies when accounts are in selected targets).
+
 Examples:
 
 ....
@@ -245,7 +251,9 @@ sudo slurm-quota prune
 sudo slurm-quota prune --dry-run
 sudo slurm-quota prune --preallocs
 sudo slurm-quota prune --users
+sudo slurm-quota prune --users --user alice
 sudo slurm-quota prune --accounts
+sudo slurm-quota prune --accounts --account hpc
 sudo slurm-quota prune --all
 ....
 
