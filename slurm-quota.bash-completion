@@ -88,7 +88,7 @@ _slurm_quota() {
             (( i++ ))
             continue
         fi
-        if [[ "${words[i]}" == --debug || "${words[i]}" == --version || "${words[i]}" == -h || "${words[i]}" == --help ]]; then
+        if [[ "${words[i]}" == --debug || "${words[i]}" == -q || "${words[i]}" == --quiet || "${words[i]}" == --version || "${words[i]}" == -h || "${words[i]}" == --help ]]; then
             continue
         fi
         if [[ "${words[i]}" != -* ]]; then
@@ -99,7 +99,7 @@ _slurm_quota() {
     done
 
     if [[ -z "$subcmd" ]]; then
-        COMPREPLY=($(compgen -W "--debug --version -h --help ${subcommands[*]}" -- "$cur"))
+        COMPREPLY=($(compgen -W "--debug -q --quiet --version -h --help ${subcommands[*]}" -- "$cur"))
         return 0
     fi
 
