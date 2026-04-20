@@ -52,11 +52,36 @@ class TestPruneResources(SlurmQuotaTestCase):
         with patch.object(
             self.sq, "collect_active_job_uuids", return_value={"uuid-active"}
         ):
-            counts = self.sq.prune_resources(
-                {"preallocs", "users", "accounts"}, dry_run=True
-            )
+            with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+                counts = self.sq.prune_resources(
+                    {"preallocs", "users", "accounts"}, dry_run=True
+                )
 
         self.assertEqual(counts, {"preallocs": 1, "users": 3, "accounts": 3})
+        self.assertIn(
+            "INFO:slurm_quota:Eligible user for pruning: u_free",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible user for pruning: u_orphan_prealloc",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible user for pruning: u_active_prealloc",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible account for pruning: a_free",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible account for pruning: a_orphan_prealloc",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible account for pruning: a_active_prealloc",
+            log_cm.output,
+        )
         with self.db_connection() as conn:
             self.assertEqual(
                 conn.execute("SELECT COUNT(*) FROM jobs_preallocations").fetchone()[0],
@@ -134,11 +159,20 @@ class TestPruneResources(SlurmQuotaTestCase):
             conn.commit()
 
         with patch.object(self.sq, "collect_active_job_uuids", return_value=set()):
-            counts = self.sq.prune_resources(
-                {"preallocs", "users", "accounts"}, dry_run=False
-            )
+            with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+                counts = self.sq.prune_resources(
+                    {"preallocs", "users", "accounts"}, dry_run=False
+                )
 
         self.assertEqual(counts, {"preallocs": 1, "users": 1, "accounts": 1})
+        self.assertIn(
+            "INFO:slurm_quota:Eligible user for pruning: u_orphan_prealloc",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible account for pruning: a_orphan_prealloc",
+            log_cm.output,
+        )
         with self.db_connection() as conn:
             self.assertEqual(
                 conn.execute("SELECT COUNT(*) FROM jobs_preallocations").fetchone()[0],
