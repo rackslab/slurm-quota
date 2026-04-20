@@ -184,3 +184,91 @@ class TestPruneResources(SlurmQuotaTestCase):
             self.assertEqual(
                 conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], 0
             )
+
+    def test_prune_resources_applies_user_and_account_filters(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO users (
+                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [("u1", 0, 0), ("u2", 0, 0), ("u_busy", 1, 0)],
+            )
+            conn.executemany(
+                """
+                INSERT INTO accounts (
+                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [("a1", 0, 0), ("a2", 0, 0), ("a_busy", 0, 1)],
+            )
+            conn.commit()
+
+        with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+            counts = self.sq.prune_resources(
+                {"users", "accounts"},
+                dry_run=True,
+                user_filter="u1",
+                account_filter="a2",
+            )
+
+        self.assertEqual(counts, {"preallocs": 0, "users": 1, "accounts": 1})
+        self.assertIn(
+            "INFO:slurm_quota:Eligible user for pruning: u1",
+            log_cm.output,
+        )
+        self.assertNotIn(
+            "INFO:slurm_quota:Eligible user for pruning: u2",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible account for pruning: a2",
+            log_cm.output,
+        )
+        self.assertNotIn(
+            "INFO:slurm_quota:Eligible account for pruning: a1",
+            log_cm.output,
+        )
+
+    def test_prune_resources_filtered_non_eligible_user_and_account(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO users (
+                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [("u_busy", 3, 0), ("u_zero", 0, 0)],
+            )
+            conn.executemany(
+                """
+                INSERT INTO accounts (
+                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [("a_busy", 0, 4), ("a_zero", 0, 0)],
+            )
+            conn.commit()
+
+        counts = self.sq.prune_resources(
+            {"users", "accounts"},
+            dry_run=False,
+            user_filter="u_busy",
+            account_filter="a_busy",
+        )
+        self.assertEqual(counts, {"preallocs": 0, "users": 0, "accounts": 0})
+
+        with self.db_connection() as conn:
+            users = {
+                row[0]
+                for row in conn.execute("SELECT username FROM users ORDER BY username")
+            }
+            accounts = {
+                row[0]
+                for row in conn.execute("SELECT account FROM accounts ORDER BY account")
+            }
+            self.assertEqual(users, {"u_busy", "u_zero"})
+            self.assertEqual(accounts, {"a_busy", "a_zero"})

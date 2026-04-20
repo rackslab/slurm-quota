@@ -410,6 +410,216 @@ class TestPruneCommand(FunctionalCLIBase):
                 1,
             )
 
+    def test_prune_users_filtered_by_username(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO users (
+                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [("u_keep", 0, 0), ("u_drop", 0, 0), ("u_busy", 5, 0)],
+            )
+            conn.execute(
+                """
+                INSERT INTO accounts (
+                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                ("a1", 0, 0),
+            )
+            conn.commit()
+
+        with patch.object(self.sq, "get_current_user", return_value="root"):
+            with self.capture_stdout() as out:
+                self.run_main(["slurm-quota", "prune", "--users", "--user", "u_drop"])
+        self.assertEqual(
+            out.getvalue(),
+            "Removed 0 orphan preallocation(s), 1 user(s), 0 account(s)\n",
+        )
+        with self.db_connection() as conn:
+            users = {
+                row[0]
+                for row in conn.execute("SELECT username FROM users ORDER BY username")
+            }
+            self.assertEqual(users, {"u_busy", "u_keep"})
+
+    def test_prune_users_filtered_username_ineligible(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO users (
+                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [("u_zero", 0, 0), ("u_busy", 5, 0)],
+            )
+            conn.commit()
+
+        with patch.object(self.sq, "get_current_user", return_value="root"):
+            with self.capture_stdout() as out:
+                self.run_main(["slurm-quota", "prune", "--users", "--user", "u_busy"])
+        self.assertEqual(out.getvalue(), "Nothing to prune\n")
+        with self.db_connection() as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM users").fetchone()[0], 2
+            )
+
+    def test_prune_accounts_filtered_by_account(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO users (
+                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                ("u1", 0, 0),
+            )
+            conn.executemany(
+                """
+                INSERT INTO accounts (
+                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [("a_keep", 0, 0), ("a_drop", 0, 0), ("a_busy", 0, 9)],
+            )
+            conn.commit()
+
+        with patch.object(self.sq, "get_current_user", return_value="root"):
+            with self.capture_stdout() as out:
+                self.run_main(
+                    ["slurm-quota", "prune", "--accounts", "--account", "a_drop"]
+                )
+        self.assertEqual(
+            out.getvalue(),
+            "Removed 0 orphan preallocation(s), 0 user(s), 1 account(s)\n",
+        )
+        with self.db_connection() as conn:
+            accounts = {
+                row[0]
+                for row in conn.execute("SELECT account FROM accounts ORDER BY account")
+            }
+            self.assertEqual(accounts, {"a_busy", "a_keep"})
+
+    def test_prune_accounts_filtered_dry_run(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO users (
+                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [("u1", 0, 0), ("u2", 0, 0)],
+            )
+            conn.executemany(
+                """
+                INSERT INTO accounts (
+                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [("a1", 0, 0), ("a2", 0, 0)],
+            )
+            conn.commit()
+
+        with patch.object(self.sq, "get_current_user", return_value="root"):
+            with self.capture_stdout() as out:
+                self.run_main(
+                    [
+                        "slurm-quota",
+                        "prune",
+                        "--accounts",
+                        "--account",
+                        "a1",
+                        "--dry-run",
+                    ]
+                )
+        self.assertEqual(
+            out.getvalue(),
+            "Dry-run: would remove 0 orphan preallocation(s), 0 user(s), 1 account(s)\n",
+        )
+        with self.db_connection() as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], 2
+            )
+
+    def test_prune_accounts_filtered_account_ineligible(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO users (
+                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                ("u1", 0, 0),
+            )
+            conn.executemany(
+                """
+                INSERT INTO accounts (
+                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [("a_zero", 0, 0), ("a_busy", 2, 0)],
+            )
+            conn.commit()
+
+        with patch.object(self.sq, "get_current_user", return_value="root"):
+            with self.capture_stdout() as out:
+                self.run_main(
+                    ["slurm-quota", "prune", "--accounts", "--account", "a_busy"]
+                )
+        self.assertEqual(out.getvalue(), "Nothing to prune\n")
+        with self.db_connection() as conn:
+            accounts = {
+                row[0]
+                for row in conn.execute("SELECT account FROM accounts ORDER BY account")
+            }
+            self.assertEqual(accounts, {"a_busy", "a_zero"})
+
+    def test_prune_user_filter_does_not_allow_sql_injection(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO users (
+                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                [("u1", 0, 0), ("u2", 0, 0)],
+            )
+            conn.execute(
+                """
+                INSERT INTO accounts (
+                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
+                ) VALUES (?, ?, ?)
+                """,
+                ("a1", 0, 0),
+            )
+            conn.commit()
+
+        with patch.object(self.sq, "get_current_user", return_value="root"):
+            with self.capture_stdout() as out:
+                self.run_main(
+                    [
+                        "slurm-quota",
+                        "prune",
+                        "--users",
+                        "--user",
+                        "u1' OR 1=1 --",
+                    ]
+                )
+        self.assertEqual(out.getvalue(), "Nothing to prune\n")
+        with self.db_connection() as conn:
+            users = {
+                row[0]
+                for row in conn.execute("SELECT username FROM users ORDER BY username")
+            }
+            self.assertEqual(users, {"u1", "u2"})
+
     def test_prune_prints_nothing_to_prune(self):
         self.init_db()
         with self.db_connection() as conn:
