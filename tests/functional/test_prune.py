@@ -75,11 +75,28 @@ class TestPruneCommand(FunctionalCLIBase):
             with patch.object(
                 self.sq, "collect_active_job_uuids", return_value={"uuid-active"}
             ):
-                with self.capture_stdout() as out:
-                    self.run_main(["slurm-quota", "prune"])
+                with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+                    with self.capture_stdout() as out:
+                        self.run_main(["slurm-quota", "prune"])
         self.assertEqual(
             out.getvalue(),
             "Removed 1 orphan preallocation(s), 2 user(s), 2 account(s)\n",
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible user for pruning: u_free",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible user for pruning: u_with_orphan",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible account for pruning: a_free",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible account for pruning: a_with_orphan",
+            log_cm.output,
         )
         with self.db_connection() as conn:
             self.assertEqual(
@@ -358,14 +375,27 @@ class TestPruneCommand(FunctionalCLIBase):
             conn.commit()
 
         with patch.object(self.sq, "get_current_user", return_value="root"):
-            with self.capture_stdout() as out:
-                self.run_main(["slurm-quota", "prune", "--users", "--dry-run"])
+            with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+                with self.capture_stdout() as out:
+                    self.run_main(["slurm-quota", "prune", "--users", "--dry-run"])
         self.assertEqual(
             out.getvalue(),
             (
                 "Dry-run: would remove 0 orphan preallocation(s), 3 user(s), "
                 "0 account(s)\n"
             ),
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible user for pruning: u1",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible user for pruning: u2",
+            log_cm.output,
+        )
+        self.assertIn(
+            "INFO:slurm_quota:Eligible user for pruning: u3",
+            log_cm.output,
         )
         # Verify that nothing was deleted
         with self.db_connection() as conn:
