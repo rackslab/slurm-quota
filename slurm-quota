@@ -56,20 +56,27 @@ DEFAULT_QUOTA_SETTINGS = {
 
 
 # Configure logging
-def setup_logging(debug: bool = False) -> None:
+def setup_logging(debug: bool = False, quiet: bool = False) -> None:
     """
     Setup logging configuration.
 
     Args:
-        debug: If True, set logging level to DEBUG, otherwise INFO
+        debug: If True, set logging level to DEBUG
+        quiet: If True, set logging level to WARNING
     """
-    level = logging.DEBUG if debug else logging.INFO
+    if debug:
+        level = logging.DEBUG
+    elif quiet:
+        level = logging.WARNING
+    else:
+        level = logging.INFO
     logging.basicConfig(
         level=level,
         format="%(asctime)s - %(levelname)s - %(message)s",
         handlers=[
             logging.StreamHandler(sys.stderr),
         ],
+        force=True,
     )
 
 
@@ -2146,11 +2153,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # Add global debug option
-    parser.add_argument(
+    # Add global logging options
+    log_level_group = parser.add_mutually_exclusive_group()
+    log_level_group.add_argument(
         "--debug",
         action="store_true",
-        help="Enable debug logging",
+        help="Print debug output",
+    )
+    log_level_group.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Only print errors and warnings",
     )
     parser.add_argument(
         "--version",
@@ -2367,8 +2381,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Setup logging with debug level if requested
-    setup_logging(debug=args.debug)
+    # Setup logging with selected log verbosity
+    setup_logging(debug=args.debug, quiet=args.quiet)
 
     if args.command == "charge":
         charge_command()
