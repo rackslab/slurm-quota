@@ -668,6 +668,8 @@ def prune_resources(targets: set[str], dry_run: bool = False) -> Dict[str, int]:
             users_to_delete = [
                 str(username) for (username,) in cursor.fetchall() if username
             ]
+            for username in users_to_delete:
+                logger.info("Eligible user for pruning: %s", username)
             counts["users"] = len(users_to_delete)
 
         accounts_to_delete: List[str] = []
@@ -683,6 +685,8 @@ def prune_resources(targets: set[str], dry_run: bool = False) -> Dict[str, int]:
             accounts_to_delete = [
                 str(account) for (account,) in cursor.fetchall() if account
             ]
+            for account in accounts_to_delete:
+                logger.info("Eligible account for pruning: %s", account)
             counts["accounts"] = len(accounts_to_delete)
 
         if dry_run:
