@@ -650,27 +650,26 @@ def prune_resources(
         logger.info("Database not found; nothing to prune")
         return counts
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("PRAGMA foreign_keys = ON")
-        cursor = conn.cursor()
-
-        prealloc_rows: List[Tuple[Optional[str], Optional[str], Optional[str]]] = []
-        orphan_prealloc_uuids: List[str] = []
-        if "preallocs" in targets:
+    orphan_prealloc_uuids: List[str] = []
+    if "preallocs" in targets:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
             cursor.execute(
                 "SELECT job_uuid, username, account FROM jobs_preallocations"
             )
             prealloc_rows = cursor.fetchall()
-            active_job_uuids = collect_active_job_uuids()
-            orphan_prealloc_uuids = [
-                str(job_uuid)
-                for job_uuid, _username, _account in prealloc_rows
-                if job_uuid and job_uuid not in active_job_uuids
-            ]
-            counts["preallocs"] = len(orphan_prealloc_uuids)
+        active_job_uuids = collect_active_job_uuids()
+        orphan_prealloc_uuids = [
+            str(job_uuid)
+            for job_uuid, _username, _account in prealloc_rows
+            if job_uuid and job_uuid not in active_job_uuids
+        ]
+        counts["preallocs"] = len(orphan_prealloc_uuids)
 
-        users_to_delete: List[str] = []
-        if "users" in targets:
+    users_to_delete: List[str] = []
+    if "users" in targets:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
             users_query = """
                 SELECT username
                 FROM users
@@ -689,8 +688,10 @@ def prune_resources(
                 logger.info("Eligible user for pruning: %s", username)
             counts["users"] = len(users_to_delete)
 
-        accounts_to_delete: List[str] = []
-        if "accounts" in targets:
+    accounts_to_delete: List[str] = []
+    if "accounts" in targets:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
             accounts_query = """
                 SELECT account
                 FROM accounts
@@ -709,10 +710,16 @@ def prune_resources(
                 logger.info("Eligible account for pruning: %s", account)
             counts["accounts"] = len(accounts_to_delete)
 
-        if dry_run:
-            return counts
+    if dry_run or (
+        not orphan_prealloc_uuids and not users_to_delete and not accounts_to_delete
+    ):
+        return counts
 
-        # Delete preallocations first so users/accounts can become eligible in the same run.
+    # Delete preallocations first so users/accounts can become eligible in the same run.
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+        cursor = conn.cursor()
+
         if orphan_prealloc_uuids:
             cursor.executemany(
                 "DELETE FROM jobs_preallocations WHERE job_uuid = ?",
@@ -744,7 +751,8 @@ def prune_resources(
                 ) from e
 
         conn.commit()
-        return counts
+
+    return counts
 
 
 def get_job_info_from_environment() -> Tuple[str, str, int, str, Optional[str], int]:
