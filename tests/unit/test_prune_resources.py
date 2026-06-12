@@ -94,6 +94,69 @@ class TestPruneResources(SlurmQuotaTestCase):
                 conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], 4
             )
 
+    def test_prune_resources_does_not_call_squeue_with_db_open(self):
+        self.init_db()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes, total_consumed_gpu_minutes) VALUES (?, ?, ?)",
+                ("u1", 0, 0),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes, total_consumed_gpu_minutes) VALUES (?, ?, ?)",
+                ("a1", 0, 0),
+            )
+            conn.execute(
+                """
+                INSERT INTO jobs_preallocations (
+                    job_uuid, username, account, preallocated_cpu_minutes
+                ) VALUES (?, ?, ?, ?)
+                """,
+                ("uuid-orphan", "u1", "a1", 5),
+            )
+            conn.commit()
+
+        # Count how many prune_resources DB contexts are currently open.
+        # prune_resources uses "with sqlite3.connect(...)"; we wrap connect() so
+        # __enter__/__exit__ increment/decrement this counter per connection.
+        open_connections = 0
+        real_connect = sqlite3.connect
+
+        def tracking_connect(database, *args, **kwargs):
+            conn = real_connect(database, *args, **kwargs)
+
+            class TrackingConnection:
+                def __enter__(self):
+                    nonlocal open_connections
+                    open_connections += 1
+                    conn.__enter__()
+                    return conn
+
+                def __exit__(self, exc_type, exc, tb):
+                    nonlocal open_connections
+                    open_connections -= 1
+                    return conn.__exit__(exc_type, exc, tb)
+
+                def __getattr__(self, name):
+                    return getattr(conn, name)
+
+            return TrackingConnection()
+
+        def collect_without_db_lock():
+            # Called in place of squeue; must run after the prealloc SELECT
+            # connection is closed (open_connections back to 0).
+            self.assertEqual(open_connections, 0)
+            return set()
+
+        with patch.object(self.sq.sqlite3, "connect", side_effect=tracking_connect):
+            with patch.object(
+                self.sq,
+                "collect_active_job_uuids",
+                side_effect=collect_without_db_lock,
+            ):
+                counts = self.sq.prune_resources({"preallocs"}, dry_run=True)
+
+        self.assertEqual(counts, {"preallocs": 1, "users": 0, "accounts": 0})
+
     def test_prune_resources_users_only_fails_if_prealloc_references_exist(self):
         self.init_db()
         with self.db_connection() as conn:
