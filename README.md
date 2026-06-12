@@ -692,4 +692,4 @@ ISDM stands for *Institut des Sciences des Données de Montpellier*. ISDM-Meso i
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the GNU General Public License v2.0 or later (GPL-2.0-or-later). See [LICENSE](LICENSE) for the full text.
