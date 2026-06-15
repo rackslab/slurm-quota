@@ -15,7 +15,7 @@ The solution is built around a SQLite database located at `/var/lib/state/slurm-
 This database is used by 2 programs:
 
 - `job_submit.lua`, a Lua script designed to be used as a Slurm submission plugin.
-- `slurm-quota`, a Python script with several subcommands intended to be executed by Slurm, administrators, and cluster users.
+- `slurm-quota`, a Python application with several subcommands intended to be executed by Slurm, administrators, and cluster users.
 
 When the Lua submission plugin is enabled in the Slurm configuration, the `job_submit.lua` script is automatically called during each job submission or modification (`sbatch`, `srun`, `scontrol`, etc.) to validate the request before it is accepted into the system. The script can thus apply custom rules (such as quota control for example) and reject jobs that do not comply with the defined policies.
 
@@ -231,11 +231,10 @@ sudo chown slurm: /var/lib/state/slurm-quota
 sudo chmod 0755 /var/lib/state/slurm-quota
 ```
 
-3) Installation of the `slurm-quota` command
+3) Installation of the application
 
 ```bash
-sudo cp slurm-quota /usr/local/bin/slurm-quota
-sudo chmod 0755 /usr/local/bin/slurm-quota
+sudo python3 -m pip install .
 ```
 
 Optional: install Bash completion for `slurm-quota`:
@@ -311,11 +310,10 @@ sudo sqlite3 /var/lib/state/slurm-quota/slurm-quota.db ".backup /var/lib/state/s
 
 On the other nodes of the cluster, here are the steps to follow:
 
-1) Installation of the `slurm-quota` command
+1) Installation of the application
 
 ```bash
-sudo cp slurm-quota /usr/local/bin/slurm-quota
-sudo chmod 0755 /usr/local/bin/slurm-quota
+sudo python3 -m pip install .
 ```
 
 Optional: install Bash completion for `slurm-quota`:
@@ -617,8 +615,13 @@ sudo /usr/libexec/slurm-quota/migrate-slurm-quota
 
 For manual/source-based deployments, the database migration script must be executed before updating other components:
 
+```bash
+sudo migrate-slurm-quota
+```
+
+Example output:
+
 ```console
-# python3 migrate-slurm-quota
 2025-12-04 10:11:42,926 - INFO - Adding array_size column to jobs_preallocations table
 2025-12-04 10:11:42,938 - INFO - Migration completed: array_size column added
 2025-12-04 10:11:42,939 - INFO - Database migration completed successfully
@@ -658,7 +661,7 @@ install -Dm644 slurm-quota-web.1 ~/.local/share/man/man1/slurm-quota-web.1
 
 ### Tests
 
-The repository includes unit tests under `tests/unit/` (one module per function under test) and functional CLI tests under `tests/functional/` (one module per `slurm-quota` subcommand). They are standard `unittest.TestCase` classes; the recommended runner is **pytest** (as in CI), with optional coverage reports configured in `pyproject.toml`.
+The repository includes unit tests under `tests/unit/` (one module per source module under `src/slurm_quota/`, with one `TestCase` class per function) and functional CLI tests under `tests/functional/` (one module per `slurm-quota` subcommand). They are standard `unittest.TestCase` classes; the recommended runner is **pytest** (as in CI), with optional coverage reports configured in `pyproject.toml`.
 
 From the repository root, use a virtual environment (recommended on distributions that restrict system-wide `pip`, e.g. PEP 668):
 
