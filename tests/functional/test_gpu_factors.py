@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from slurm_quota.database import init_database
+
 from tests.functional.functional_base import FunctionalCLIBase
 
 
@@ -12,7 +14,7 @@ class TestGpuFactorsCommand(FunctionalCLIBase):
         self.assertIn("Database not found", out.getvalue())
 
     def test_gpu_factors_with_rows(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.execute(
                 "INSERT INTO gpu_factors (gpu_type, factor) VALUES (?, ?)",

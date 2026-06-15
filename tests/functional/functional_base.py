@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional
 from unittest.mock import patch
 from urllib.parse import parse_qs, unquote, urlparse
 
+from slurm_quota.cli import main
+
 from tests.test_support import SlurmQuotaTestCase
 
 
@@ -33,12 +35,12 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
 
     def run_main(self, argv):
         with patch.object(sys, "argv", argv):
-            self.sq.main()
+            main()
 
     def run_main_exit(self, argv, code=1):
         with patch.object(sys, "argv", argv):
             with self.assertRaises(SystemExit) as cm:
-                self.sq.main()
+                main()
         self.assertEqual(cm.exception.code, code)
 
     @contextmanager
@@ -48,7 +50,7 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
             yield buf
 
     def update_settings(self, **values: int) -> None:
-        """Set ``settings`` rows (requires ``init_db()`` so the table exists)."""
+        """Set ``settings`` rows (requires ``init_database()`` so the table exists)."""
         with self.db_connection() as conn:
             for key, value in values.items():
                 conn.execute(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from slurm_quota.database import init_database
+
 from itertools import combinations
 from unittest.mock import patch
 
@@ -18,7 +20,7 @@ class TestPruneCommand(FunctionalCLIBase):
                 self.assertEqual(cm.exception.code, 2)
 
     def test_prune_rejects_non_root(self):
-        with patch.object(self.sq, "get_current_user", return_value="slurm"):
+        with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
                     self.run_main(["slurm-quota", "prune"])
@@ -32,7 +34,7 @@ class TestPruneCommand(FunctionalCLIBase):
         )
 
     def test_prune_as_root_defaults_to_all_targets(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.executemany(
                 """
@@ -71,9 +73,10 @@ class TestPruneCommand(FunctionalCLIBase):
             )
             conn.commit()
 
-        with patch.object(self.sq, "get_current_user", return_value="root"):
-            with patch.object(
-                self.sq, "collect_active_job_uuids", return_value={"uuid-active"}
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
+            with patch(
+                "slurm_quota.slurm.collect_active_job_uuids",
+                return_value={"uuid-active"},
             ):
                 with self.assertLogs("slurm_quota", level="INFO") as log_cm:
                     with self.capture_stdout() as out:
@@ -111,7 +114,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
 
     def test_prune_only_preallocs(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.executemany(
                 """
@@ -138,9 +141,10 @@ class TestPruneCommand(FunctionalCLIBase):
                 [("uuid-orphan", "u1", "a1", 5), ("uuid-active", "u2", "a2", 5)],
             )
             conn.commit()
-        with patch.object(self.sq, "get_current_user", return_value="root"):
-            with patch.object(
-                self.sq, "collect_active_job_uuids", return_value={"uuid-active"}
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
+            with patch(
+                "slurm_quota.slurm.collect_active_job_uuids",
+                return_value={"uuid-active"},
             ):
                 with self.capture_stdout() as out:
                     self.run_main(["slurm-quota", "prune", "--preallocs"])
@@ -161,7 +165,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
 
     def test_prune_only_users(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.executemany(
                 """
@@ -180,7 +184,7 @@ class TestPruneCommand(FunctionalCLIBase):
                 ("a1", 0, 0),
             )
             conn.commit()
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
                 self.run_main(["slurm-quota", "prune", "--users"])
         self.assertEqual(
@@ -198,7 +202,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
 
     def test_prune_only_accounts(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.execute(
                 """
@@ -217,7 +221,7 @@ class TestPruneCommand(FunctionalCLIBase):
                 [("a_free", 0, 0), ("a_busy", 0, 7)],
             )
             conn.commit()
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
                 self.run_main(["slurm-quota", "prune", "--accounts"])
         self.assertEqual(
@@ -235,7 +239,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
 
     def test_prune_users_with_linked_prealloc_fails(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.execute(
                 """
@@ -263,7 +267,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
             conn.commit()
 
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
                     self.run_main(["slurm-quota", "prune", "--users"])
@@ -288,7 +292,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
 
     def test_prune_accounts_with_linked_prealloc_fails(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.execute(
                 """
@@ -316,7 +320,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
             conn.commit()
 
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
                     self.run_main(["slurm-quota", "prune", "--accounts"])
@@ -341,7 +345,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
 
     def test_prune_users_dry_run(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.executemany(
                 """
@@ -374,7 +378,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
             conn.commit()
 
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.assertLogs("slurm_quota", level="INFO") as log_cm:
                 with self.capture_stdout() as out:
                     self.run_main(["slurm-quota", "prune", "--users", "--dry-run"])
@@ -411,7 +415,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
 
     def test_prune_users_filtered_by_username(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.executemany(
                 """
@@ -431,7 +435,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
             conn.commit()
 
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
                 self.run_main(["slurm-quota", "prune", "--users", "--user", "u_drop"])
         self.assertEqual(
@@ -446,7 +450,7 @@ class TestPruneCommand(FunctionalCLIBase):
             self.assertEqual(users, {"u_busy", "u_keep"})
 
     def test_prune_users_filtered_username_ineligible(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.executemany(
                 """
@@ -458,7 +462,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
             conn.commit()
 
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
                 self.run_main(["slurm-quota", "prune", "--users", "--user", "u_busy"])
         self.assertEqual(out.getvalue(), "Nothing to prune\n")
@@ -468,7 +472,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
 
     def test_prune_accounts_filtered_by_account(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.execute(
                 """
@@ -488,7 +492,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
             conn.commit()
 
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
                 self.run_main(
                     ["slurm-quota", "prune", "--accounts", "--account", "a_drop"]
@@ -505,7 +509,7 @@ class TestPruneCommand(FunctionalCLIBase):
             self.assertEqual(accounts, {"a_busy", "a_keep"})
 
     def test_prune_accounts_filtered_dry_run(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.executemany(
                 """
@@ -525,7 +529,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
             conn.commit()
 
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
                 self.run_main(
                     [
@@ -547,7 +551,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
 
     def test_prune_accounts_filtered_account_ineligible(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.execute(
                 """
@@ -567,7 +571,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
             conn.commit()
 
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
                 self.run_main(
                     ["slurm-quota", "prune", "--accounts", "--account", "a_busy"]
@@ -581,7 +585,7 @@ class TestPruneCommand(FunctionalCLIBase):
             self.assertEqual(accounts, {"a_busy", "a_zero"})
 
     def test_prune_user_filter_does_not_allow_sql_injection(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.executemany(
                 """
@@ -601,7 +605,7 @@ class TestPruneCommand(FunctionalCLIBase):
             )
             conn.commit()
 
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
                 self.run_main(
                     [
@@ -621,7 +625,7 @@ class TestPruneCommand(FunctionalCLIBase):
             self.assertEqual(users, {"u1", "u2"})
 
     def test_prune_prints_nothing_to_prune(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.execute(
                 "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
@@ -641,9 +645,10 @@ class TestPruneCommand(FunctionalCLIBase):
             )
             conn.commit()
 
-        with patch.object(self.sq, "get_current_user", return_value="root"):
-            with patch.object(
-                self.sq, "collect_active_job_uuids", return_value={"uuid-active"}
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
+            with patch(
+                "slurm_quota.slurm.collect_active_job_uuids",
+                return_value={"uuid-active"},
             ):
                 with self.capture_stdout() as out:
                     self.run_main(["slurm-quota", "prune", "--preallocs"])

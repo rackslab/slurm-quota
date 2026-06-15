@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from slurm_quota.database import init_database
+
 import os
 from textwrap import dedent
 
@@ -28,7 +30,7 @@ class TestDefaultQuotasCommand(FunctionalCLIBase):
         self.assertTrue(os.path.isfile(self.db_path))
 
     def test_default_quotas_reflects_settings_table(self):
-        self.init_db()
+        init_database()
         self.update_settings(
             default_user_quota_cpu_minutes=100,
             default_user_quota_gpu_minutes=200,
@@ -52,7 +54,7 @@ class TestDefaultQuotasCommand(FunctionalCLIBase):
         )
 
     def test_default_quotas_shows_infinity_only_for_negative_one(self):
-        self.init_db()
+        init_database()
         self.update_settings(
             default_user_quota_cpu_minutes=-1,
             default_user_quota_gpu_minutes=0,

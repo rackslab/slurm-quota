@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from slurm_quota.database import init_database
+
 import http.client
 import json
 import os
@@ -71,7 +73,7 @@ class TestServeCommand(FunctionalCLIBase):
         self.assertFalse(thread.is_alive())
 
     def test_serve_get_health_returns_ok(self):
-        self.init_db()
+        init_database()
         host = "127.0.0.1"
         port = self._free_tcp_port()
         thread = self._start_serve_thread(host, port)
@@ -92,7 +94,7 @@ class TestServeCommand(FunctionalCLIBase):
         self._join_after_idle(thread)
 
     def test_serve_get_stats_returns_users_and_accounts(self):
-        self.init_db()
+        init_database()
         host = "127.0.0.1"
         port = self._free_tcp_port()
         thread = self._start_serve_thread(host, port)
@@ -112,7 +114,7 @@ class TestServeCommand(FunctionalCLIBase):
         self._join_after_idle(thread)
 
     def test_serve_get_stats_supports_username_query_filter(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.execute(
                 "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
@@ -134,7 +136,7 @@ class TestServeCommand(FunctionalCLIBase):
 
         host = "127.0.0.1"
         port = self._free_tcp_port()
-        with patch.object(self.sq, "get_user_accounts", return_value={"hpc"}):
+        with patch("slurm_quota.slurm.get_user_accounts", return_value={"hpc"}):
             thread = self._start_serve_thread(host, port)
             self._wait_until_ready(host, port)
 
@@ -154,7 +156,7 @@ class TestServeCommand(FunctionalCLIBase):
             self._join_after_idle(thread)
 
     def test_serve_get_stats_supports_account_query_filter(self):
-        self.init_db()
+        init_database()
         with self.db_connection() as conn:
             conn.execute(
                 "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
@@ -190,7 +192,7 @@ class TestServeCommand(FunctionalCLIBase):
         self._join_after_idle(thread)
 
     def test_serve_get_stats_rejects_username_and_account_filters(self):
-        self.init_db()
+        init_database()
         host = "127.0.0.1"
         port = self._free_tcp_port()
         thread = self._start_serve_thread(host, port)
@@ -214,7 +216,7 @@ class TestServeCommand(FunctionalCLIBase):
         self._join_after_idle(thread)
 
     def test_serve_get_unknown_path_returns_not_found(self):
-        self.init_db()
+        init_database()
         host = "127.0.0.1"
         port = self._free_tcp_port()
         thread = self._start_serve_thread(host, port)
@@ -235,7 +237,7 @@ class TestServeCommand(FunctionalCLIBase):
         self._join_after_idle(thread)
 
     def test_serve_uses_systemd_socket_activation_env(self):
-        self.init_db()
+        init_database()
         host = "127.0.0.1"
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -284,7 +286,7 @@ class TestServeCommand(FunctionalCLIBase):
                     pass
 
     def test_serve_idle_timeout_zero_disables_shutdown(self):
-        self.init_db()
+        init_database()
         host = "127.0.0.1"
         port = self._free_tcp_port()
         thread = threading.Thread(
