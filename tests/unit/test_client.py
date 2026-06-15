@@ -1,4 +1,4 @@
-"""Unit tests for fetch_stats_from_service."""
+"""Unit tests for slurm_quota.client."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import json
 from unittest.mock import patch
 
 from urllib.error import URLError
+
+from slurm_quota.client import StatsHTTPError, fetch_stats_from_service
 
 from tests.test_support import SlurmQuotaTestCase
 
@@ -59,51 +61,55 @@ def _sample_payload():
 class TestFetchStatsFromService(SlurmQuotaTestCase):
     def test_returns_users_and_accounts(self):
         payload = _sample_payload()
-        with patch.object(
-            self.sq, "urlopen", return_value=_FakeUrlopenResponse(payload)
+        with patch(
+            "slurm_quota.client.urlopen", return_value=_FakeUrlopenResponse(payload)
         ):
-            users, accounts = self.sq.fetch_stats_from_service("alice", None, False)
+            users, accounts = fetch_stats_from_service("alice", None, False)
         self.assertEqual(len(users), 1)
         self.assertEqual(users[0]["username"], "alice")
         self.assertEqual(len(accounts), 1)
         self.assertEqual(accounts[0]["account"], "acct1")
 
     def test_empty_payload_lists_when_keys_missing(self):
-        with patch.object(self.sq, "urlopen", return_value=_FakeUrlopenResponse({})):
-            users, accounts = self.sq.fetch_stats_from_service(None, None, True)
+        with patch("slurm_quota.client.urlopen", return_value=_FakeUrlopenResponse({})):
+            users, accounts = fetch_stats_from_service(None, None, True)
         self.assertEqual(users, [])
         self.assertEqual(accounts, [])
 
     def test_adds_username_query_when_filtered(self):
-        with patch.object(
-            self.sq, "urlopen", return_value=_FakeUrlopenResponse(_sample_payload())
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            self.sq.fetch_stats_from_service("alice", None, False)
+            fetch_stats_from_service("alice", None, False)
         req = m_urlopen.call_args[0][0]
         self.assertIn("username=alice", req.full_url)
 
     def test_no_username_query_when_show_all(self):
-        with patch.object(
-            self.sq, "urlopen", return_value=_FakeUrlopenResponse(_sample_payload())
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            self.sq.fetch_stats_from_service("alice", None, True)
+            fetch_stats_from_service("alice", None, True)
         req = m_urlopen.call_args[0][0]
         self.assertNotIn("username=", req.full_url)
 
     def test_adds_account_query_when_filtered(self):
-        with patch.object(
-            self.sq, "urlopen", return_value=_FakeUrlopenResponse(_sample_payload())
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            self.sq.fetch_stats_from_service(None, "projX", False)
+            fetch_stats_from_service(None, "projX", False)
         req = m_urlopen.call_args[0][0]
         self.assertIn("account=projX", req.full_url)
 
     def test_respects_slurm_quota_url(self):
         self.env({"SLURM_QUOTA_URL": "http://custom.example:9999/api/"})
-        with patch.object(
-            self.sq, "urlopen", return_value=_FakeUrlopenResponse(_sample_payload())
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            self.sq.fetch_stats_from_service(None, None, True)
+            fetch_stats_from_service(None, None, True)
         req = m_urlopen.call_args[0][0]
         self.assertTrue(
             req.full_url.startswith("http://custom.example:9999/api/"),
@@ -112,14 +118,15 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
         self.assertIn("/stats", req.full_url)
 
     def test_raises_stats_http_error_on_bad_status(self):
-        with patch.object(
-            self.sq, "urlopen", return_value=_FakeUrlopenResponse({}, status=500)
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=500),
         ):
-            with self.assertRaises(self.sq.StatsHTTPError) as cm:
-                self.sq.fetch_stats_from_service(None, None, True)
+            with self.assertRaises(StatsHTTPError) as cm:
+                fetch_stats_from_service(None, None, True)
         self.assertEqual(cm.exception.status, 500)
 
     def test_urlerror_propagates(self):
-        with patch.object(self.sq, "urlopen", side_effect=URLError("boom")):
+        with patch("slurm_quota.client.urlopen", side_effect=URLError("boom")):
             with self.assertRaises(URLError):
-                self.sq.fetch_stats_from_service(None, None, True)
+                fetch_stats_from_service(None, None, True)

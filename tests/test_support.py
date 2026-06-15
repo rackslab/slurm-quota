@@ -1,46 +1,22 @@
 from __future__ import annotations
 
-import importlib.util
 import os
 import sqlite3
-import sys
 import tempfile
 import unittest
 from contextlib import closing, contextmanager
-from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from typing import Dict
 from unittest.mock import patch
 
 
-_SCRIPT = Path(__file__).resolve().parent.parent / "slurm-quota"
-
-
-def load_module():
-    mod = sys.modules.get("slurm_quota")
-    if mod is not None:
-        return mod
-    loader = SourceFileLoader("slurm_quota", str(_SCRIPT))
-    spec = importlib.util.spec_from_loader(loader.name, loader)
-    if spec is None:
-        raise RuntimeError("Unable to create module spec")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["slurm_quota"] = mod
-    loader.exec_module(mod)
-    return mod
-
-
 class SlurmQuotaTestCase(unittest.TestCase):
     """Use ``with self.db_connection() as conn:`` for any direct SQLite access in tests."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.sq = load_module()
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.db_path = str(Path(self._tmp.name) / "slurm-quota.db")
-        self._patch_db = patch.object(self.sq, "DB_PATH", self.db_path)
+        self._patch_db = patch("slurm_quota.DB_PATH", self.db_path)
         self._patch_db.start()
 
     def tearDown(self):
@@ -48,9 +24,6 @@ class SlurmQuotaTestCase(unittest.TestCase):
             self._patch_db.stop()
         finally:
             self._tmp.cleanup()
-
-    def init_db(self):
-        self.sq.init_database()
 
     @contextmanager
     def db_connection(self):
