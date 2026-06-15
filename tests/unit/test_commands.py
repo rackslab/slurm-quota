@@ -1,4 +1,4 @@
-"""Unit tests for show_user_stats."""
+"""Unit tests for slurm_quota.commands."""
 
 from __future__ import annotations
 
@@ -8,8 +8,29 @@ from unittest.mock import patch
 
 from urllib.error import URLError
 
+from slurm_quota.client import StatsHTTPError
+from slurm_quota.commands import (
+    create_status_bar,
+    format_timestamp_with_timezone,
+    show_user_stats,
+)
+
 from tests.test_support import SlurmQuotaTestCase
 from tests.testing_utils import dedent_lines
+
+
+class TestFormatTimestampWithTimezone(SlurmQuotaTestCase):
+    def test_format_timestamp_with_timezone(self):
+        self.assertEqual(format_timestamp_with_timezone(""), "N/A")
+        out = format_timestamp_with_timezone("2024-01-15T12:30:45")
+        self.assertIn("2024", out)
+
+
+class TestCreateStatusBar(SlurmQuotaTestCase):
+    def test_create_status_bar(self):
+        self.assertEqual(create_status_bar(0, 0), " " * 20)
+        self.assertIn("50.0%", create_status_bar(5, 10))
+        self.assertIn("100.0%", create_status_bar(15, 10))
 
 
 def _sample_users_and_accounts():
@@ -46,13 +67,12 @@ class TestShowUserStats(SlurmQuotaTestCase):
     def _run_show(self, **kwargs):
         buf = io.StringIO()
         with redirect_stdout(buf):
-            self.sq.show_user_stats(**kwargs)
+            show_user_stats(**kwargs)
         return buf.getvalue()
 
     def test_no_data_for_explicit_username(self):
-        with patch.object(
-            self.sq,
-            "fetch_stats_from_service",
+        with patch(
+            "slurm_quota.client.fetch_stats_from_service",
             return_value=([], []),
         ):
             out = self._run_show(username="bob", show_all=False)
@@ -60,9 +80,8 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.assertEqual(out, expected)
 
     def test_no_data_for_explicit_account(self):
-        with patch.object(
-            self.sq,
-            "fetch_stats_from_service",
+        with patch(
+            "slurm_quota.client.fetch_stats_from_service",
             return_value=([], []),
         ):
             out = self._run_show(account="projX", show_all=False)
@@ -70,9 +89,8 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.assertEqual(out, expected)
 
     def test_no_users_when_show_all_empty(self):
-        with patch.object(
-            self.sq,
-            "fetch_stats_from_service",
+        with patch(
+            "slurm_quota.client.fetch_stats_from_service",
             return_value=([], []),
         ):
             out = self._run_show(show_all=True)
@@ -83,14 +101,12 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.env({"NO_COLOR": "1"})
         users, accounts = _sample_users_and_accounts()
         with (
-            patch.object(
-                self.sq,
-                "fetch_stats_from_service",
+            patch(
+                "slurm_quota.client.fetch_stats_from_service",
                 return_value=(users, accounts),
             ),
-            patch.object(
-                self.sq,
-                "format_timestamp_with_timezone",
+            patch(
+                "slurm_quota.commands.format_timestamp_with_timezone",
                 return_value="TS_FIXED",
             ),
         ):
@@ -113,14 +129,12 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.env({"NO_COLOR": "1"})
         _, accounts = _sample_users_and_accounts()
         with (
-            patch.object(
-                self.sq,
-                "fetch_stats_from_service",
+            patch(
+                "slurm_quota.client.fetch_stats_from_service",
                 return_value=([], accounts),
             ),
-            patch.object(
-                self.sq,
-                "format_timestamp_with_timezone",
+            patch(
+                "slurm_quota.commands.format_timestamp_with_timezone",
                 return_value="TS_FIXED",
             ),
         ):
@@ -147,14 +161,12 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "quota_gpu_minutes": -1,
         }
         with (
-            patch.object(
-                self.sq,
-                "fetch_stats_from_service",
+            patch(
+                "slurm_quota.client.fetch_stats_from_service",
                 return_value=([user], []),
             ),
-            patch.object(
-                self.sq,
-                "format_timestamp_with_timezone",
+            patch(
+                "slurm_quota.commands.format_timestamp_with_timezone",
                 return_value="TS_FIXED",
             ),
         ):
@@ -185,14 +197,12 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "quota_gpu_minutes": -1,
         }
         with (
-            patch.object(
-                self.sq,
-                "fetch_stats_from_service",
+            patch(
+                "slurm_quota.client.fetch_stats_from_service",
                 return_value=([user], []),
             ),
-            patch.object(
-                self.sq,
-                "format_timestamp_with_timezone",
+            patch(
+                "slurm_quota.commands.format_timestamp_with_timezone",
                 return_value="TS_FIXED",
             ),
         ):
@@ -238,14 +248,12 @@ class TestShowUserStats(SlurmQuotaTestCase):
             }
         ]
         with (
-            patch.object(
-                self.sq,
-                "fetch_stats_from_service",
+            patch(
+                "slurm_quota.client.fetch_stats_from_service",
                 return_value=(users, accounts),
             ),
-            patch.object(
-                self.sq,
-                "format_timestamp_with_timezone",
+            patch(
+                "slurm_quota.commands.format_timestamp_with_timezone",
                 return_value="TS_FIXED",
             ),
         ):
@@ -266,10 +274,9 @@ class TestShowUserStats(SlurmQuotaTestCase):
 
     def test_uses_get_current_user_when_username_omitted(self):
         with (
-            patch.object(self.sq, "get_current_user", return_value="carol") as m_gc,
-            patch.object(
-                self.sq,
-                "fetch_stats_from_service",
+            patch("slurm_quota.auth.get_current_user", return_value="carol") as m_gc,
+            patch(
+                "slurm_quota.client.fetch_stats_from_service",
                 return_value=([], []),
             ) as m_fetch,
         ):
@@ -280,10 +287,9 @@ class TestShowUserStats(SlurmQuotaTestCase):
 
     def test_skips_get_current_user_when_account_requested(self):
         with (
-            patch.object(self.sq, "get_current_user") as m_gc,
-            patch.object(
-                self.sq,
-                "fetch_stats_from_service",
+            patch("slurm_quota.auth.get_current_user") as m_gc,
+            patch(
+                "slurm_quota.client.fetch_stats_from_service",
                 return_value=([], []),
             ) as m_fetch,
         ):
@@ -293,37 +299,34 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.assertEqual(out, dedent_lines("No data found for account: hpc"))
 
     def test_get_current_user_keyerror_exits(self):
-        with patch.object(self.sq, "get_current_user", side_effect=KeyError):
+        with patch("slurm_quota.auth.get_current_user", side_effect=KeyError):
             with self.assertRaises(SystemExit) as cm:
-                self.sq.show_user_stats(show_all=False)
+                show_user_stats(show_all=False)
         self.assertEqual(cm.exception.code, 1)
 
     def test_stats_http_error_exits(self):
-        with patch.object(
-            self.sq,
-            "fetch_stats_from_service",
-            side_effect=self.sq.StatsHTTPError(502),
+        with patch(
+            "slurm_quota.client.fetch_stats_from_service",
+            side_effect=StatsHTTPError(502),
         ):
             with self.assertRaises(SystemExit) as cm:
-                self.sq.show_user_stats(username="x", show_all=False)
+                show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
 
     def test_urlerror_exits(self):
-        with patch.object(
-            self.sq,
-            "fetch_stats_from_service",
+        with patch(
+            "slurm_quota.client.fetch_stats_from_service",
             side_effect=URLError("down"),
         ):
             with self.assertRaises(SystemExit) as cm:
-                self.sq.show_user_stats(username="x", show_all=False)
+                show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
 
     def test_generic_exception_exits(self):
-        with patch.object(
-            self.sq,
-            "fetch_stats_from_service",
+        with patch(
+            "slurm_quota.client.fetch_stats_from_service",
             side_effect=ValueError("bad json"),
         ):
             with self.assertRaises(SystemExit) as cm:
-                self.sq.show_user_stats(username="x", show_all=False)
+                show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
