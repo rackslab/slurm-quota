@@ -13,6 +13,7 @@ license = { text = "GPL-2.0-or-later" }
 [project.scripts]
 slurm-quota = "slurm_quota.cli:main"
 migrate-slurm-quota = "slurm_quota.migrate:main"
+slurm-quota-web = "slurm_quota.web:main"
 
 [project.optional-dependencies]
 web = [
@@ -28,6 +29,11 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.data-files]
+"slurm-quota/web/wsgi" = ["web/wsgi/slurm-quota-web.wsgi"]
+"slurm-quota/web/templates" = ["web/templates/*"]
+"slurm-quota/web/static" = ["web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
