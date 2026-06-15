@@ -29,7 +29,9 @@ The dashboard is read-only and consumes the existing `slurm-quota` HTTP API
 
 *SLURM_QUOTA_WEB_ASSETS_DIR*::
   Optional directory containing `templates/` and `static/` subdirectories.
-  If unset, the app first tries local `webapp/`, then `/usr/share/slurm-quota-web`.
+  If unset, the app tries the repo-root `web/` directory (development),
+  then the pip-installed data directory (`{prefix}/slurm-quota/web/`),
+  then `/usr/share/slurm-quota/web`.
 
 *SLURM_QUOTA_WEB_HOST*::
   Bind host used by standalone mode.
