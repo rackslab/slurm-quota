@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from slurm_quota.database import init_database
+
 import os
 from unittest.mock import patch
 
@@ -22,7 +24,7 @@ _SLURM_CHARGE_JOB_ENV = {
 
 class TestChargeCommand(FunctionalCLIBase):
     def test_charge_updates_database_as_slurm(self):
-        self.init_db()
+        init_database()
         self.update_settings(
             default_user_quota_cpu_minutes=601,
             default_user_quota_gpu_minutes=602,
@@ -45,10 +47,11 @@ class TestChargeCommand(FunctionalCLIBase):
             conn.commit()
         self.env(_SLURM_CHARGE_JOB_ENV)
         with self.assertLogs("slurm_quota", level="INFO") as log_cm:
-            with patch.object(self.sq, "get_current_user", return_value="slurm"):
+            with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
                 # Real env drives CPU math; sacct is not available in tests — fix UUID/GPU expectations.
-                with patch.object(
-                    self.sq, "get_job_info_from_sacct", return_value=(None, None)
+                with patch(
+                    "slurm_quota.slurm.get_job_info_from_sacct",
+                    return_value=(None, None),
                 ):
                     self.run_main(["slurm-quota", "charge"])
         self.assertEqual(
@@ -80,7 +83,7 @@ class TestChargeCommand(FunctionalCLIBase):
         self.assertEqual(a, (30, 0, 33, 44))
 
     def test_charge_applies_default_quotas_when_creating_user_and_account(self):
-        self.init_db()
+        init_database()
         self.update_settings(
             default_user_quota_cpu_minutes=701,
             default_user_quota_gpu_minutes=702,
@@ -95,9 +98,10 @@ class TestChargeCommand(FunctionalCLIBase):
             }
         )
         with self.assertLogs("slurm_quota", level="INFO") as log_cm:
-            with patch.object(self.sq, "get_current_user", return_value="slurm"):
-                with patch.object(
-                    self.sq, "get_job_info_from_sacct", return_value=(None, None)
+            with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
+                with patch(
+                    "slurm_quota.slurm.get_job_info_from_sacct",
+                    return_value=(None, None),
                 ):
                     self.run_main(["slurm-quota", "charge"])
         self.assertEqual(
@@ -135,9 +139,10 @@ class TestChargeCommand(FunctionalCLIBase):
         )
         self.env(_SLURM_CHARGE_JOB_ENV)
         with self.assertLogs("slurm_quota", level="INFO") as log_cm:
-            with patch.object(self.sq, "get_current_user", return_value="slurm"):
-                with patch.object(
-                    self.sq, "get_job_info_from_sacct", return_value=(None, None)
+            with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
+                with patch(
+                    "slurm_quota.slurm.get_job_info_from_sacct",
+                    return_value=(None, None),
                 ):
                     self.run_main(["slurm-quota", "charge"])
         self.assertTrue(os.path.exists(self.db_path))
@@ -164,7 +169,7 @@ class TestChargeCommand(FunctionalCLIBase):
         )
 
     def test_charge_removes_preallocation_when_array_size_one(self):
-        self.init_db()
+        init_database()
         job_uuid = "prealloc-job-uuid"
         with self.db_connection() as conn:
             conn.execute(
@@ -178,10 +183,9 @@ class TestChargeCommand(FunctionalCLIBase):
             conn.commit()
         self.env(_SLURM_CHARGE_JOB_ENV)
         with self.assertLogs("slurm_quota", level="INFO") as log_cm:
-            with patch.object(self.sq, "get_current_user", return_value="slurm"):
-                with patch.object(
-                    self.sq,
-                    "get_job_info_from_sacct",
+            with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
+                with patch(
+                    "slurm_quota.slurm.get_job_info_from_sacct",
                     return_value=(job_uuid, None),
                 ):
                     self.run_main(["slurm-quota", "charge"])
@@ -210,7 +214,7 @@ class TestChargeCommand(FunctionalCLIBase):
         self.assertEqual(a[0], 30)
 
     def test_charge_rejects_non_slurm_user(self):
-        with patch.object(self.sq, "get_current_user", return_value="root"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
                     self.run_main(["slurm-quota", "charge"])

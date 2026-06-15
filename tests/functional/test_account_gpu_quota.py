@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from slurm_quota.database import init_database
+
 from unittest.mock import patch
 
 from tests.functional.functional_base import FunctionalCLIBase
@@ -9,8 +11,8 @@ from tests.functional.functional_base import FunctionalCLIBase
 
 class TestAccountGpuQuotaCommand(FunctionalCLIBase):
     def test_account_gpu_quota_creates_account_when_missing(self):
-        with patch.object(self.sq, "get_current_user", return_value="root"):
-            with patch.object(self.sq, "set_database_permissions"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
+            with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
                     self.run_main(
                         ["slurm-quota", "account-gpu-quota", "genomics_facility", "200"]
@@ -28,10 +30,10 @@ class TestAccountGpuQuotaCommand(FunctionalCLIBase):
         self.assertEqual(row[0], 200)
 
     def test_account_gpu_quota_applies_default_cpu_from_settings_on_create(self):
-        self.init_db()
+        init_database()
         self.update_settings(default_account_quota_cpu_minutes=6666)
-        with patch.object(self.sq, "get_current_user", return_value="root"):
-            with patch.object(self.sq, "set_database_permissions"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
+            with patch("slurm_quota.database.set_database_permissions"):
                 self.run_main(
                     ["slurm-quota", "account-gpu-quota", "neuro_render", "80"]
                 )
@@ -43,7 +45,7 @@ class TestAccountGpuQuotaCommand(FunctionalCLIBase):
         self.assertEqual(row, (6666, 80))
 
     def test_account_gpu_quota_updates_existing_account(self):
-        self.init_db()
+        init_database()
         self.update_settings(default_account_quota_cpu_minutes=55555)
         with self.db_connection() as conn:
             conn.execute(
@@ -54,8 +56,8 @@ class TestAccountGpuQuotaCommand(FunctionalCLIBase):
                 ("weather_cluster", 2222, 50),
             )
             conn.commit()
-        with patch.object(self.sq, "get_current_user", return_value="root"):
-            with patch.object(self.sq, "set_database_permissions"):
+        with patch("slurm_quota.auth.get_current_user", return_value="root"):
+            with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
                     self.run_main(
                         ["slurm-quota", "account-gpu-quota", "weather_cluster", "200"]
@@ -72,7 +74,7 @@ class TestAccountGpuQuotaCommand(FunctionalCLIBase):
         self.assertEqual(row, (2222, 200))
 
     def test_account_gpu_quota_rejects_non_root(self):
-        with patch.object(self.sq, "get_current_user", return_value="slurm"):
+        with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
                     self.run_main(

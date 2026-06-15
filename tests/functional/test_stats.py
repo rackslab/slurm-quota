@@ -27,7 +27,7 @@ class TestStatsCommand(FunctionalCLIBase):
             payload["users"].extend(deepcopy(payload_extend.get("users", [])))
             payload["accounts"].extend(deepcopy(payload_extend.get("accounts", [])))
         current_user_ctx = (
-            patch.object(self.sq, "get_current_user", return_value=current_user)
+            patch("slurm_quota.auth.get_current_user", return_value=current_user)
             if current_user is not None
             else nullcontext()
         )
@@ -37,13 +37,13 @@ class TestStatsCommand(FunctionalCLIBase):
                 "_STATS_REST_PAYLOAD",
                 payload,
             ),
-            patch.object(
-                self.sq,
-                "urlopen",
+            patch(
+                "slurm_quota.client.urlopen",
                 side_effect=FunctionalCLIBase.stats_urlopen_side_effect,
             ),
-            patch.object(
-                self.sq, "format_timestamp_with_timezone", return_value="TS_FIXED"
+            patch(
+                "slurm_quota.commands.format_timestamp_with_timezone",
+                return_value="TS_FIXED",
             ),
             current_user_ctx,
             self.capture_stdout() as out,
