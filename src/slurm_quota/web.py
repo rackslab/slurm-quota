@@ -1,33 +1,55 @@
-#!/usr/bin/env python3
-"""
-Flask WSGI dashboard for slurm-quota stats.
+# Copyright (c) 2025 Rackslab
+# Copyright (c) 2025 Université de Montpellier
+# SPDX-License-Identifier: GPL-2.0-or-later
 
-Copyright (c) 2026 Rackslab
-Copyright (c) 2026 Université de Montpellier
-SPDX-License-Identifier: GPL-2.0-or-later
-"""
+"""Flask WSGI dashboard for slurm-quota stats."""
 
 from __future__ import annotations
 
 import os
-import json
+import site
+import sysconfig
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urljoin
-from urllib.request import Request, urlopen
+from typing import Any, Dict, List, Optional
+from urllib.error import URLError
 
 from flask import Flask, render_template, request
 
+from slurm_quota import client as stats_client
+from slurm_quota.client import StatsHTTPError
+
 
 def _assets_root() -> Path:
+    """Return the directory containing templates/ and static/ for the dashboard.
+
+    Resolution order:
+    1. SLURM_QUOTA_WEB_ASSETS_DIR when set (custom layout).
+    2. Repo-root web/ when running from a git checkout (src/slurm_quota/web.py).
+    3. Install prefix data directory (slurm-quota/web under sysconfig data path),
+       used by normal pip install into a virtualenv or system prefix.
+    4. User site-packages install (~/.local/slurm-quota/web) when the package
+       is loaded from a pip install --user environment.
+    5. /usr/share/slurm-quota/web as the default fallback for distro packages.
+    """
     env_root = os.environ.get("SLURM_QUOTA_WEB_ASSETS_DIR")
     if env_root:
         return Path(env_root)
-    local_root = Path(__file__).resolve().parent / "webapp"
-    if local_root.exists():
-        return local_root
-    return Path("/usr/share/slurm-quota-web")
+
+    repo_web = Path(__file__).resolve().parents[2] / "web"
+    if repo_web.is_dir():
+        return repo_web
+
+    data_root = Path(sysconfig.get_path("data")) / "slurm-quota" / "web"
+    if (data_root / "templates").is_dir():
+        return data_root
+
+    user_site = site.getusersitepackages()
+    if user_site and str(Path(__file__).resolve()).startswith(user_site):
+        user_data = Path(site.getuserbase()) / "slurm-quota" / "web"
+        if (user_data / "templates").is_dir():
+            return user_data
+
+    return Path("/usr/share/slurm-quota/web")
 
 
 _WEB_ROOT = _assets_root()
@@ -36,21 +58,6 @@ app = Flask(
     template_folder=str(_WEB_ROOT / "templates"),
     static_folder=str(_WEB_ROOT / "static"),
 )
-# WSGI servers (uWSGI, Gunicorn, etc.) default to a callable named "application".
-application = app
-
-
-def _stats_url(username: Optional[str], account: Optional[str]) -> str:
-    base_url = os.environ.get("SLURM_QUOTA_URL", "http://127.0.0.1:9911/")
-    params: Dict[str, str] = {}
-    if username:
-        params["username"] = username
-    if account:
-        params["account"] = account
-    stats_url = urljoin(base_url, "stats")
-    if params:
-        return f"{stats_url}?{urlencode(params)}"
-    return stats_url
 
 
 def _parse_int(value: Any, default: int = 0) -> int:
@@ -127,19 +134,6 @@ def _decorate_rows(
     return decorated
 
 
-def fetch_stats(
-    username: Optional[str], account: Optional[str]
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    url = _stats_url(username, account)
-    with urlopen(
-        Request(url, headers={"Accept": "application/json"}), timeout=5
-    ) as resp:
-        if getattr(resp, "status", 200) != 200:
-            raise RuntimeError(f"HTTP {resp.status}")
-        payload = json.load(resp)
-    return list(payload.get("users", [])), list(payload.get("accounts", []))
-
-
 @app.get("/")
 def dashboard() -> str:
     username = (request.args.get("username") or "").strip() or None
@@ -150,7 +144,6 @@ def dashboard() -> str:
     elif unit in ("minutes", "m", "min"):
         display_hours = False
     elif (request.args.get("hours") or "").lower() in {"1", "true", "yes", "on"}:
-        # Legacy query param from older dashboard links.
         display_hours = True
     else:
         display_hours = False
@@ -163,10 +156,12 @@ def dashboard() -> str:
         error = "username and account filters are mutually exclusive."
     else:
         try:
-            users_raw, accounts_raw = fetch_stats(username, account)
+            users_raw, accounts_raw = stats_client.fetch_stats_from_service(
+                username, account, show_all=username is None
+            )
             users = _decorate_rows(users_raw, "username", display_hours)
             accounts = _decorate_rows(accounts_raw, "account", display_hours)
-        except (URLError, HTTPError, RuntimeError) as exc:
+        except (URLError, StatsHTTPError) as exc:
             error = f"Failed to retrieve stats from service: {exc}"
 
     return render_template(
@@ -181,7 +176,7 @@ def dashboard() -> str:
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
     host = os.environ.get("SLURM_QUOTA_WEB_HOST", "127.0.0.1")
     port = _parse_int(os.environ.get("SLURM_QUOTA_WEB_PORT"), 5000)
     debug = os.environ.get("SLURM_QUOTA_WEB_DEBUG") == "1"
