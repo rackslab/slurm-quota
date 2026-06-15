@@ -1,24 +1,20 @@
-#!/usr/bin/env python3
-"""
-Slurm Quota Database Migration Script
+# Copyright (c) 2025 Rackslab
+# Copyright (c) 2025 Université de Montpellier
+# SPDX-License-Identifier: GPL-2.0-or-later
 
-Copyright (c) 2025 Rackslab
-Copyright (c) 2025 Université de Montpellier
-SPDX-License-Identifier: GPL-2.0-or-later
+"""Database migration CLI for slurm-quota."""
 
-This script migrates the slurm-quota database schema to add new columns.
-It should be run manually by administrators when database schema changes are needed.
-"""
+import argparse
 
+import os
 import sqlite3
 import sys
-import os
-import logging
-import pwd
 
-# Database configuration
-DB_PATH = "/var/lib/state/slurm-quota/slurm-quota.db"
-DEFAULT_QUOTA_SETTINGS = {
+import slurm_quota
+from slurm_quota.auth import get_current_user
+from slurm_quota.log import logger, setup_logging
+
+MIGRATE_DEFAULT_QUOTA_SETTINGS = {
     "default_user_quota_cpu_minutes": "-1",
     "default_user_quota_gpu_minutes": "-1",
     "default_account_quota_cpu_minutes": "-1",
@@ -26,53 +22,17 @@ DEFAULT_QUOTA_SETTINGS = {
 }
 
 
-# Configure logging
-def setup_logging(debug: bool = False) -> None:
-    """
-    Setup logging configuration.
-
-    Args:
-        debug: If True, set logging level to DEBUG, otherwise INFO
-    """
-    level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stderr),
-        ],
-    )
-
-
-logger = logging.getLogger(__name__)
-
-
-def get_current_user() -> str:
-    """
-    Get the current user name based on the process UID.
-
-    Returns:
-        The username of the current process owner
-    """
-    current_uid = os.getuid()
-    try:
-        return pwd.getpwuid(current_uid).pw_name
-    except KeyError:
-        logger.error(f"Unable to get user name for UID {current_uid}")
-        raise
-
-
 def migrate_database() -> None:
     """
     Migrate existing database schema to add new columns if needed.
     This function is safe to call on databases that already have the columns.
     """
-    if not os.path.exists(DB_PATH):
-        logger.error(f"Database file not found: {DB_PATH}")
+    if not os.path.exists(slurm_quota.DB_PATH):
+        logger.error(f"Database file not found: {slurm_quota.DB_PATH}")
         sys.exit(1)
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
             cursor = conn.cursor()
 
             # Check if array_size column exists in jobs_preallocations
@@ -190,7 +150,7 @@ def migrate_database() -> None:
                 logger.info("Migration completed: settings table created")
 
             # Ensure default quota settings are present
-            for key, value in DEFAULT_QUOTA_SETTINGS.items():
+            for key, value in MIGRATE_DEFAULT_QUOTA_SETTINGS.items():
                 cursor.execute(
                     """
                     INSERT INTO settings (key, value)
@@ -207,12 +167,8 @@ def migrate_database() -> None:
         raise
 
 
-def main():
-    """
-    Main entry point for the migration script.
-    """
-    import argparse
-
+def main() -> None:
+    """Main entry point for the migration script."""
     parser = argparse.ArgumentParser(
         description="Migrate slurm-quota database schema",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -226,10 +182,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Setup logging
     setup_logging(debug=args.debug)
 
-    # Check if running as root or slurm user
     current_user = get_current_user()
     if current_user != "root":
         logger.warning(
@@ -243,7 +197,3 @@ def main():
     except Exception as e:
         logger.error(f"Migration failed: {e}")
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

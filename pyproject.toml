@@ -10,6 +10,10 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "GPL-2.0-or-later" }
 
+[project.scripts]
+slurm-quota = "slurm_quota.cli:main"
+migrate-slurm-quota = "slurm_quota.migrate:main"
+
 [project.optional-dependencies]
 web = [
   "flask>=2",
@@ -22,8 +26,8 @@ dev = [
   "jinja2>=2",
 ]
 
-[tool.setuptools]
-packages = []
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -36,7 +40,7 @@ addopts = [
 
 [tool.coverage.run]
 branch = true
-source = ["."]
+source = ["src/slurm_quota"]
 omit = [
   "tests/*",
   "*/__pycache__/*",
