@@ -154,20 +154,22 @@ sudo dnf install httpd mod_wsgi httpd-tools
 
     WSGIDaemonProcess slurm-quota-web processes=2 threads=5 display-name=%{GROUP}
     WSGIProcessGroup slurm-quota-web
-    WSGIScriptAlias / /usr/libexec/slurm-quota/slurm-quota-web
+    WSGIScriptAlias / /usr/share/slurm-quota/web/wsgi/slurm-quota-web.wsgi
     # If you mount in a subdir (example: /quota), use:
-    # WSGIScriptAlias /quota /usr/libexec/slurm-quota/slurm-quota-web
+    # WSGIScriptAlias /quota /usr/share/slurm-quota/web/wsgi/slurm-quota-web.wsgi
 
-    Alias /static/ /usr/share/slurm-quota-web/static/
+    Alias /static/ /usr/share/slurm-quota/web/static/
     # Keep the static prefix aligned with WSGIScriptAlias:
     # - WSGIScriptAlias /      -> Alias /static/
     # - WSGIScriptAlias /quota -> Alias /quota/static/
-    <Directory /usr/share/slurm-quota-web/static>
+    <Directory /usr/share/slurm-quota/web/static>
         Require all granted
     </Directory>
 
-    <Directory /usr/libexec/slurm-quota>
-        Require all granted
+    <Directory /usr/share/slurm-quota/web/wsgi>
+        <Files slurm-quota-web.wsgi>
+            Require all granted
+        </Files>
     </Directory>
 
     ErrorLog /var/log/httpd/slurm-quota-web-error.log
@@ -339,54 +341,47 @@ export SLURM_QUOTA_URL=http://controller:9911/
 sudo dnf install python3-flask python3-jinja2 httpd mod_wsgi httpd-tools
 ```
 
-2) Install script and assets:
+2) Install the web dashboard:
 
 ```bash
-sudo install -Dm0755 slurm-quota-web /usr/local/bin/slurm-quota-web
-sudo mkdir -p /usr/local/share/slurm-quota-web
-sudo cp -r webapp/templates /usr/local/share/slurm-quota-web/
-sudo cp -r webapp/static /usr/local/share/slurm-quota-web/
+sudo python3 -m pip install ".[web]"
 ```
 
-3) Configure the assets path for the app:
+3) Run standalone (HTTP built-in server, for testing only):
 
 ```bash
-export SLURM_QUOTA_WEB_ASSETS_DIR=/usr/local/share/slurm-quota-web
+SLURM_QUOTA_URL=http://127.0.0.1:9911/ slurm-quota-web
 ```
 
-4) Run standalone (HTTP built-in server, for testing only):
+> [!NOTE]
+> Templates and static files are resolved automatically: repo-root `web/` when running from a git checkout, then the pip-installed data directory (for example `{prefix}/slurm-quota/web/`), then `/usr/share/slurm-quota/web`. If needed, set `SLURM_QUOTA_WEB_ASSETS_DIR` environment variable to use a custom directory containing `templates/` and `static/` (for example in Apache: `SetEnv SLURM_QUOTA_WEB_ASSETS_DIR /path/to/assets`).
 
-```bash
-SLURM_QUOTA_URL=http://127.0.0.1:9911/ \
-SLURM_QUOTA_WEB_ASSETS_DIR=/usr/local/share/slurm-quota-web \
-/usr/local/bin/slurm-quota-web
-```
+4) Configure Apache with this manual installation:
 
-5) Configure Apache with this manual installation:
+Use the bundled WSGI entry script (`web/wsgi/slurm-quota-web.wsgi` in a git checkout, or `{prefix}/slurm-quota/web/wsgi/slurm-quota-web.wsgi` after `pip install`, with `{prefix}` from `python3 -c "import sys; print(sys.prefix)"`):
 
 ```apache
 <VirtualHost *:80>
     ServerName quota.example.org
 
     SetEnv SLURM_QUOTA_URL http://127.0.0.1:9911/
-    SetEnv SLURM_QUOTA_WEB_ASSETS_DIR /usr/local/share/slurm-quota-web
 
     WSGIDaemonProcess slurm-quota-web processes=2 threads=5 display-name=%{GROUP}
     WSGIProcessGroup slurm-quota-web
-    WSGIScriptAlias / /usr/local/bin/slurm-quota-web
+    WSGIScriptAlias / /path/to/slurm-quota/web/wsgi/slurm-quota-web.wsgi
     # If you mount in a subdir (example: /quota), use:
-    # WSGIScriptAlias /quota /usr/local/bin/slurm-quota-web
+    # WSGIScriptAlias /quota /path/to/slurm-quota/web/wsgi/slurm-quota-web.wsgi
 
-    Alias /static/ /usr/local/share/slurm-quota-web/static/
+    Alias /static/ /usr/local/slurm-quota/web/static/
     # Keep the static prefix aligned with WSGIScriptAlias:
     # - WSGIScriptAlias /      -> Alias /static/
     # - WSGIScriptAlias /quota -> Alias /quota/static/
-    <Directory /usr/local/share/slurm-quota-web/static>
+    <Directory /usr/local/slurm-quota/web/static>
         Require all granted
     </Directory>
 
-    <Directory /usr/local/bin>
-        <Files slurm-quota-web>
+    <Directory /path/to/slurm-quota/web/wsgi>
+        <Files slurm-quota-web.wsgi>
             Require all granted
         </Files>
     </Directory>
@@ -402,7 +397,7 @@ SLURM_QUOTA_WEB_ASSETS_DIR=/usr/local/share/slurm-quota-web \
 </VirtualHost>
 ```
 
-6) Optional: create `htpasswd` file:
+5) Optional: create `htpasswd` file:
 
 ```bash
 sudo htpasswd -c /etc/httpd/conf.d/slurm-quota-web.htpasswd admin
@@ -569,6 +564,8 @@ sudo slurm-quota prune --dry-run        # preview removals without applying them
 
 It is normally not necessary to execute this `prune` command under normal conditions. It may be useful in case of malfunction of the call to the `slurm-quota charge` command by Slurm. Its execution is nevertheless safe, it can be executed if in doubt about the preallocated durations assigned to users.
 
+## Upgrade
+
 ### Migrate from manual installation to RPM packages
 
 Use this procedure to switch an existing manual deployment to RPM-managed files.
@@ -598,7 +595,7 @@ sudo rm -f /usr/local/bin/slurm-quota-web
 sudo rm -f /etc/bash_completion.d/slurm-quota
 sudo rm -f /usr/local/share/man/man1/slurm-quota.1
 sudo rm -f /usr/share/man/man1/slurm-quota.1
-sudo rm -rf /usr/local/share/slurm-quota-web
+sudo rm -rf /usr/local/share/slurm-quota/web
 ```
 
 3) Apply the [RPM packages (recommended)](#rpm-packages-recommended) procedure above (controller + compute/login nodes).
@@ -628,6 +625,41 @@ Example output:
 ```
 
 Then, the other components (`job_submit.lua`, `slurm-quota`, etc.) must be updated.
+
+### Upgrade from version 2 to 3
+
+Version 3 refactors the web dashboard into a proper Python package. The application logic is unchanged, but packaging and deployment paths differ from version 2.
+
+**What changed**
+
+- Web assets (`wsgi/`, `templates/`, `static/`) are installed under `slurm-quota/web/` (for example `/usr/share/slurm-quota/web/` on typical system installs) instead of `/usr/share/slurm-quota-web/`.
+- `/usr/libexec/slurm-quota/slurm-quota-web` is no longer a WSGI script. It is now the standalone console entry point (Flask built-in HTTP server, for local testing only).
+- Production Apache/mod_wsgi deployments must use the bundled WSGI script (for example `/usr/share/slurm-quota/web/wsgi/slurm-quota-web.wsgi`).
+
+**Apache configuration**
+
+After upgrading to version 3, update the virtual host configuration. Replace the v2 paths:
+
+```apache
+WSGIScriptAlias / /usr/libexec/slurm-quota/slurm-quota-web
+Alias /static/ /usr/share/slurm-quota-web/static/
+```
+
+with the v3 paths:
+
+```apache
+WSGIScriptAlias / /usr/share/slurm-quota/web/wsgi/slurm-quota-web.wsgi
+Alias /static/ /usr/share/slurm-quota/web/static/
+```
+
+Also update the matching `<Directory>` blocks. See the [RPM web dashboard](#rpm-packages-recommended) or [manual web dashboard](#web-dashboard-optional) Apache examples for a full v3 configuration.
+
+Validate and reload Apache:
+
+```bash
+sudo apachectl configtest
+sudo systemctl reload httpd
+```
 
 ## Manpage
 
