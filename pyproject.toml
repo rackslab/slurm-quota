@@ -12,6 +12,8 @@ license = { text = "GPL-2.0-or-later" }
 
 [project.scripts]
 slurm-quota = "slurm_quota.cli:main"
+slurm-quota-charge = "slurm_quota.charge:main"
+slurm-quota-serve = "slurm_quota.serve:main"
 migrate-slurm-quota = "slurm_quota.migrate:main"
 slurm-quota-web = "slurm_quota.web:main"
 
