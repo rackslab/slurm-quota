@@ -1,4 +1,4 @@
-"""Functional tests: `serve` subcommand (`--host`, `--port`, `--idle-timeout`)."""
+"""Functional tests: `slurm-quota-serve` command (`--host`, `--port`, `--idle-timeout`)."""
 
 from __future__ import annotations
 
@@ -25,11 +25,10 @@ class TestServeCommand(FunctionalCLIBase):
         self, host: str, port: int, idle_timeout: int = 1
     ) -> threading.Thread:
         thread = threading.Thread(
-            target=self.run_main,
+            target=self.run_serve_main,
             args=(
                 [
-                    "slurm-quota",
-                    "serve",
+                    "slurm-quota-serve",
                     "--host",
                     host,
                     "--port",
@@ -290,11 +289,10 @@ class TestServeCommand(FunctionalCLIBase):
         host = "127.0.0.1"
         port = self._free_tcp_port()
         thread = threading.Thread(
-            target=self.run_main,
+            target=self.run_serve_main,
             args=(
                 [
-                    "slurm-quota",
-                    "serve",
+                    "slurm-quota-serve",
                     "--host",
                     host,
                     "--port",

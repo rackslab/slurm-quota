@@ -1,4 +1,4 @@
-"""Functional tests: `charge` subcommand."""
+"""Functional tests: `slurm-quota-charge` command."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ class TestChargeCommand(FunctionalCLIBase):
                     "slurm_quota.slurm.get_job_info_from_sacct",
                     return_value=(None, None),
                 ):
-                    self.run_main(["slurm-quota", "charge"])
+                    self.run_charge_main(["slurm-quota-charge"])
         self.assertEqual(
             log_cm.output,
             [
@@ -103,7 +103,7 @@ class TestChargeCommand(FunctionalCLIBase):
                     "slurm_quota.slurm.get_job_info_from_sacct",
                     return_value=(None, None),
                 ):
-                    self.run_main(["slurm-quota", "charge"])
+                    self.run_charge_main(["slurm-quota-charge"])
         self.assertEqual(
             log_cm.output,
             [
@@ -144,7 +144,7 @@ class TestChargeCommand(FunctionalCLIBase):
                     "slurm_quota.slurm.get_job_info_from_sacct",
                     return_value=(None, None),
                 ):
-                    self.run_main(["slurm-quota", "charge"])
+                    self.run_charge_main(["slurm-quota-charge"])
         self.assertTrue(os.path.exists(self.db_path))
         self.assertEqual(
             log_cm.output,
@@ -188,7 +188,7 @@ class TestChargeCommand(FunctionalCLIBase):
                     "slurm_quota.slurm.get_job_info_from_sacct",
                     return_value=(job_uuid, None),
                 ):
-                    self.run_main(["slurm-quota", "charge"])
+                    self.run_charge_main(["slurm-quota-charge"])
         self.assertEqual(
             log_cm.output,
             [
@@ -217,7 +217,7 @@ class TestChargeCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    self.run_main(["slurm-quota", "charge"])
+                    self.run_charge_main(["slurm-quota-charge"])
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,

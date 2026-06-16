@@ -13,7 +13,7 @@ from tests.functional.functional_base import FunctionalCLIBase
 class TestDefaultQuotasCommand(FunctionalCLIBase):
     def test_default_quotas_initializes_db_and_prints_defaults(self):
         with self.capture_stdout() as out:
-            self.run_main(["slurm-quota", "default-quotas"])
+            self.run_cli_main(["slurm-quota", "default-quotas"])
         self.assertEqual(
             out.getvalue(),
             dedent(
@@ -38,7 +38,7 @@ class TestDefaultQuotasCommand(FunctionalCLIBase):
             default_account_quota_gpu_minutes=400,
         )
         with self.capture_stdout() as out:
-            self.run_main(["slurm-quota", "default-quotas"])
+            self.run_cli_main(["slurm-quota", "default-quotas"])
         self.assertEqual(
             out.getvalue(),
             dedent(
@@ -62,7 +62,7 @@ class TestDefaultQuotasCommand(FunctionalCLIBase):
             default_account_quota_gpu_minutes=42,
         )
         with self.capture_stdout() as out:
-            self.run_main(["slurm-quota", "default-quotas"])
+            self.run_cli_main(["slurm-quota", "default-quotas"])
         self.assertEqual(
             out.getvalue(),
             dedent(

@@ -14,7 +14,7 @@ class TestAdjustCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    self.run_main(
+                    self.run_cli_main(
                         [
                             "slurm-quota",
                             "adjust",
@@ -45,7 +45,7 @@ class TestAdjustCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(
+                    self.run_cli_main(
                         [
                             "slurm-quota",
                             "adjust",
@@ -81,7 +81,7 @@ class TestAdjustCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(
+                    self.run_cli_main(
                         [
                             "slurm-quota",
                             "adjust",
@@ -117,7 +117,7 @@ class TestAdjustCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(
+                    self.run_cli_main(
                         [
                             "slurm-quota",
                             "adjust",
@@ -143,7 +143,7 @@ class TestAdjustCommand(FunctionalCLIBase):
         self.assertEqual(row, (0,))
 
     def test_adjust_rejects_unsigned_delta(self):
-        self.run_main_exit(
+        self.run_cli_main_exit(
             [
                 "slurm-quota",
                 "adjust",
@@ -162,7 +162,7 @@ class TestAdjustCommand(FunctionalCLIBase):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                     with self.assertRaises(SystemExit) as cm:
-                        self.run_main(
+                        self.run_cli_main(
                             [
                                 "slurm-quota",
                                 "adjust",

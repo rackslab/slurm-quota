@@ -14,7 +14,7 @@ class TestUserGpuQuotaCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(["slurm-quota", "user-gpu-quota", "liam", "100"])
+                    self.run_cli_main(["slurm-quota", "user-gpu-quota", "liam", "100"])
         self.assertEqual(
             out.getvalue(),
             "Successfully set GPU quota for user liam: 100 GPU minutes\n",
@@ -32,7 +32,7 @@ class TestUserGpuQuotaCommand(FunctionalCLIBase):
         self.update_settings(default_user_quota_cpu_minutes=5151)
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
-                self.run_main(["slurm-quota", "user-gpu-quota", "amara", "200"])
+                self.run_cli_main(["slurm-quota", "user-gpu-quota", "amara", "200"])
         with self.db_connection() as conn:
             row = conn.execute(
                 "SELECT quota_cpu_minutes, quota_gpu_minutes FROM users WHERE username = ?",
@@ -55,7 +55,7 @@ class TestUserGpuQuotaCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(["slurm-quota", "user-gpu-quota", "noah", "100"])
+                    self.run_cli_main(["slurm-quota", "user-gpu-quota", "noah", "100"])
         self.assertEqual(
             out.getvalue(),
             "Successfully set GPU quota for user noah: 100 GPU minutes\n",
@@ -71,7 +71,7 @@ class TestUserGpuQuotaCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    self.run_main(["slurm-quota", "user-gpu-quota", "owen", "100"])
+                    self.run_cli_main(["slurm-quota", "user-gpu-quota", "owen", "100"])
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,

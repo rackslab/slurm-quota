@@ -10,7 +10,9 @@ from typing import Any, Dict, List, Optional
 from unittest.mock import patch
 from urllib.parse import parse_qs, unquote, urlparse
 
-from slurm_quota.cli import main
+from slurm_quota.cli import main as cli_main
+from slurm_quota.charge import main as charge_main
+from slurm_quota.serve import main as serve_main
 
 from tests.test_support import SlurmQuotaTestCase
 
@@ -33,14 +35,22 @@ class FakeJsonUrlopenResponse:
 class FunctionalCLIBase(SlurmQuotaTestCase):
     """Base for one-command functional TestCase classes."""
 
-    def run_main(self, argv):
+    def run_cli_main(self, argv):
         with patch.object(sys, "argv", argv):
-            main()
+            cli_main()
 
-    def run_main_exit(self, argv, code=1):
+    def run_charge_main(self, argv):
+        with patch.object(sys, "argv", argv):
+            charge_main()
+
+    def run_serve_main(self, argv):
+        with patch.object(sys, "argv", argv):
+            serve_main()
+
+    def run_cli_main_exit(self, argv, code=1):
         with patch.object(sys, "argv", argv):
             with self.assertRaises(SystemExit) as cm:
-                main()
+                cli_main()
         self.assertEqual(cm.exception.code, code)
 
     @contextmanager

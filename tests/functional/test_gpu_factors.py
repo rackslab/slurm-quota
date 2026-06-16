@@ -10,7 +10,7 @@ from tests.functional.functional_base import FunctionalCLIBase
 class TestGpuFactorsCommand(FunctionalCLIBase):
     def test_gpu_factors_without_database(self):
         with self.capture_stdout() as out:
-            self.run_main(["slurm-quota", "gpu-factors"])
+            self.run_cli_main(["slurm-quota", "gpu-factors"])
         self.assertIn("Database not found", out.getvalue())
 
     def test_gpu_factors_with_rows(self):
@@ -22,5 +22,5 @@ class TestGpuFactorsCommand(FunctionalCLIBase):
             )
             conn.commit()
         with self.capture_stdout() as out:
-            self.run_main(["slurm-quota", "gpu-factors"])
+            self.run_cli_main(["slurm-quota", "gpu-factors"])
         self.assertIn("a100", out.getvalue())
