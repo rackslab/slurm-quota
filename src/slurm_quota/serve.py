@@ -4,18 +4,25 @@
 
 """HTTP JSON API server for stats."""
 
-import argparse
-import json
+from __future__ import annotations
 
+import argparse
+import logging
 import os
 import socket
 import sqlite3
 import sys
+import threading
 import time
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any, Optional
-from urllib.parse import parse_qs, urlparse
+from typing import Any, Dict, Optional, Tuple
+
+try:
+    from flask import Flask, jsonify, request
+    from werkzeug.serving import make_server
+except ImportError as exc:
+    raise ImportError(
+        "slurm-quota-serve requires Flask. Install with: pip install 'slurm-quota[serve]'"
+    ) from exc
 
 import slurm_quota
 from slurm_quota import APP_VERSION
@@ -23,108 +30,112 @@ from slurm_quota.database import query_accounts_aggregate, query_users_aggregate
 from slurm_quota.log import setup_logging
 from slurm_quota import slurm as slurm_integration
 
-import logging
-
 logger = logging.getLogger("slurm_quota")
 
-
-class _RequestHandler(BaseHTTPRequestHandler):
-    server_version = f"slurm-quota-http/{slurm_quota.APP_VERSION}"
-
-    def _send_json(self, payload: Any, status: int = 200) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format: str, *args: Any) -> None:
-        logger.info("%s - - %s", self.address_string(), format % args)
-
-    def do_GET(self) -> None:
-        # Make sure self.server is InactivityHTTPServer with touch_activity method
-        assert isinstance(self.server, InactivityHTTPServer)
-        # Mark last activity
-        self.server.touch_activity()
-
-        if self.path.startswith("/health"):
-            self._send_json({"status": "ok"})
-            return
-
-        if self.path.startswith("/stats"):
-            # Parse query params.
-            username_param: Optional[str] = None
-            account_param: Optional[str] = None
-            query_params = parse_qs(urlparse(self.path).query, keep_blank_values=True)
-            usernames = query_params.get("username", [])
-            accounts = query_params.get("account", [])
-            if usernames:
-                username_param = usernames[0]
-            if accounts:
-                account_param = accounts[0]
-            if username_param and account_param:
-                self._send_json(
-                    {
-                        "error": "bad_request",
-                        "message": "username and account are mutually exclusive",
-                    },
-                    status=HTTPStatus.BAD_REQUEST,
-                )
-                return
-            try:
-                if not os.path.exists(slurm_quota.DB_PATH):
-                    self._send_json({"users": [], "accounts": []}, status=200)
-                    return
-                with sqlite3.connect(slurm_quota.DB_PATH) as conn:
-                    users = query_users_aggregate(conn, username_param or None)
-                    # When a username is provided, filter accounts to that user's associations
-                    accounts_filter: Optional[set[str]] = None
-                    if username_param:
-                        try:
-                            accounts_filter = slurm_integration.get_user_accounts(
-                                username_param
-                            )
-                        except Exception:
-                            accounts_filter = set()
-                    if account_param:
-                        accounts_filter = {account_param}
-                        # Account selection is account-centric; do not include user rows.
-                        users = []
-                    accounts = query_accounts_aggregate(conn, accounts_filter)
-                self._send_json({"users": users, "accounts": accounts}, status=200)
-            except sqlite3.Error as e:
-                logger.error("/stats query failed: %s", e)
-                self._send_json({"error": "db_error"}, status=500)
-            return
-
-        # Default 404
-        self._send_json({"error": "not_found"}, status=404)
+app = Flask(__name__)
+_last_activity = time.monotonic()
 
 
-class InactivityHTTPServer(HTTPServer):
-    def __init__(self, server_address, RequestHandlerClass, idle_timeout: int = 600):
-        super().__init__(server_address, RequestHandlerClass)
-        # Get idle timeout from command line or environment variable. Special value 0
-        # disables idle shutdown (infinite timeout).
-        self._idle_timeout = max(0, int(idle_timeout))
-        self._last_activity = time.monotonic()
+def _touch_activity() -> None:
+    global _last_activity
+    _last_activity = time.monotonic()
 
-    def touch_activity(self) -> None:
-        self._last_activity = time.monotonic()
 
-    def serve_until_idle(self) -> None:
-        self.timeout = 1.0  # seconds
-        while True:
-            # handle_request() blocks up to self.timeout
-            self.handle_request()
-            # If idle timeout is disabled, continue to the next iteration.
-            if self._idle_timeout == 0:
-                continue
-            # If idle timeout is enabled, check if the last activity was too long ago.
-            if time.monotonic() - self._last_activity > self._idle_timeout:
-                logger.info("Idle timeout reached; exiting")
-                break
+@app.before_request
+def _record_activity() -> None:
+    _touch_activity()
+
+
+def _fetch_stats(
+    username_param: Optional[str], account_param: Optional[str]
+) -> Tuple[Optional[Dict[str, Any]], Optional[Tuple[Any, int]]]:
+    """Return (payload, None) on success or (None, (response, status)) on error."""
+    if username_param and account_param:
+        return None, (
+            jsonify(
+                {
+                    "error": "bad_request",
+                    "message": "username and account are mutually exclusive",
+                }
+            ),
+            400,
+        )
+
+    try:
+        if not os.path.exists(slurm_quota.DB_PATH):
+            return {"users": [], "accounts": []}, None
+        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+            users = query_users_aggregate(conn, username_param or None)
+            accounts_filter: Optional[set[str]] = None
+            if username_param:
+                try:
+                    accounts_filter = slurm_integration.get_user_accounts(
+                        username_param
+                    )
+                except Exception:
+                    accounts_filter = set()
+            if account_param:
+                accounts_filter = {account_param}
+                users = []
+            accounts = query_accounts_aggregate(conn, accounts_filter)
+        return {"users": users, "accounts": accounts}, None
+    except sqlite3.Error as exc:
+        logger.error("/stats query failed: %s", exc)
+        return None, (jsonify({"error": "db_error"}), 500)
+
+
+@app.get("/health")
+def health() -> Any:
+    return jsonify({"status": "ok"})
+
+
+@app.get("/stats")
+def stats() -> Any:
+    username_param = (request.args.get("username") or "").strip() or None
+    account_param = (request.args.get("account") or "").strip() or None
+    payload, error = _fetch_stats(username_param, account_param)
+    if error is not None:
+        response, status = error
+        return response, status
+    return jsonify(payload)
+
+
+@app.errorhandler(404)
+def not_found(_exc: Any) -> Any:
+    return jsonify({"error": "not_found"}), 404
+
+
+def _idle_watcher(server: Any, idle_timeout: int) -> None:
+    while idle_timeout > 0:
+        time.sleep(1.0)
+        if time.monotonic() - _last_activity > idle_timeout:
+            logger.info("Idle timeout reached; exiting")
+            server.shutdown()
+            break
+
+
+def _run_server(
+    host: str, port: int, idle_timeout: int, sd_sock: Optional[socket.socket] = None
+) -> None:
+    idle_timeout = max(0, int(idle_timeout))
+    _touch_activity()
+
+    if sd_sock is not None:
+        server = make_server("0.0.0.0", 0, app, fd=sd_sock.fileno())
+    else:
+        server = make_server(host, int(port), app)
+
+    if idle_timeout > 0:
+        threading.Thread(
+            target=_idle_watcher,
+            args=(server, idle_timeout),
+            daemon=True,
+        ).start()
+
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
 
 
 def _systemd_listen_socket() -> Optional[socket.socket]:
@@ -159,13 +170,8 @@ def run_serve_command(host: str, port: int, idle_timeout: int) -> None:
     sd_sock = _systemd_listen_socket()
     if sd_sock is not None:
         logger.info("Starting HTTP JSON service on systemd socket")
-        httpd = InactivityHTTPServer(("0.0.0.0", 0), _RequestHandler, idle_timeout)
-        httpd.socket = sd_sock
-        # essential: prevent server from closing sd_sock on shutdown duplication issues
-        httpd.server_bind = lambda: None  # ty: ignore[invalid-assignment]
-        httpd.server_activate = lambda: None  # ty: ignore[invalid-assignment]
         try:
-            httpd.serve_until_idle()
+            _run_server(host, port, idle_timeout, sd_sock=sd_sock)
         finally:
             try:
                 sd_sock.close()
@@ -173,17 +179,9 @@ def run_serve_command(host: str, port: int, idle_timeout: int) -> None:
                 pass
         return
 
-    # Fallback: bind our own TCP socket (useful for manual runs)
-    addr = (host, int(port))
+    # Fallback to own socket
     logger.info("Starting HTTP JSON service on %s:%s", host, port)
-    httpd = InactivityHTTPServer(addr, _RequestHandler, idle_timeout)
-    try:
-        httpd.serve_until_idle()
-    finally:
-        try:
-            httpd.server_close()
-        except Exception:
-            pass
+    _run_server(host, port, idle_timeout)
 
 
 def main() -> None:

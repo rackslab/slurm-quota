@@ -18,6 +18,9 @@ slurm-quota-migrate = "slurm_quota.migrate:main"
 slurm-quota-web = "slurm_quota.web:main"
 
 [project.optional-dependencies]
+serve = [
+  "flask>=2",
+]
 web = [
   "flask>=2",
   "jinja2>=2",
