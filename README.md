@@ -235,8 +235,10 @@ sudo chmod 0755 /var/lib/state/slurm-quota
 
 3) Installation of the application
 
+On the controller, include the `serve` extra for the HTTP JSON API (`slurm-quota-serve`):
+
 ```bash
-sudo python3 -m pip install .
+sudo python3 -m pip install ".[serve]"
 ```
 
 Optional: install Bash completion for `slurm-quota`:
@@ -335,19 +337,13 @@ export SLURM_QUOTA_URL=http://controller:9911/
 
 #### Web dashboard (optional)
 
-1) Install dependencies:
-
-```bash
-sudo dnf install python3-flask python3-jinja2 httpd mod_wsgi httpd-tools
-```
-
-2) Install the web dashboard:
+1) Install the web dashboard:
 
 ```bash
 sudo python3 -m pip install ".[web]"
 ```
 
-3) Run standalone (HTTP built-in server, for testing only):
+2) Run standalone (HTTP built-in server, for testing only):
 
 ```bash
 SLURM_QUOTA_URL=http://127.0.0.1:9911/ slurm-quota-web
@@ -356,7 +352,13 @@ SLURM_QUOTA_URL=http://127.0.0.1:9911/ slurm-quota-web
 > [!NOTE]
 > Templates and static files are resolved automatically: repo-root `web/` when running from a git checkout, then the pip-installed data directory (for example `{prefix}/slurm-quota/web/`), then `/usr/share/slurm-quota/web`. If needed, set `SLURM_QUOTA_WEB_ASSETS_DIR` environment variable to use a custom directory containing `templates/` and `static/` (for example in Apache: `SetEnv SLURM_QUOTA_WEB_ASSETS_DIR /path/to/assets`).
 
-4) Configure Apache with this manual installation:
+3) Configure Apache with this manual installation:
+
+Install Apache/mod_wsgi packages:
+
+```bash
+sudo dnf install httpd mod_wsgi httpd-tools
+```
 
 Use the bundled WSGI entry script (`web/wsgi/slurm-quota-web.wsgi` in a git checkout, or `{prefix}/slurm-quota/web/wsgi/slurm-quota-web.wsgi` after `pip install`, with `{prefix}` from `python3 -c "import sys; print(sys.prefix)"`):
 
