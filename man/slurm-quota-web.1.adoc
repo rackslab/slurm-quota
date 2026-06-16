@@ -19,7 +19,7 @@ slurm-quota-web - HTTP server for Slurm quota statistics web dashboard
 statistics in HTML web dashboard.
 
 The dashboard is read-only and consumes the existing `slurm-quota` HTTP API
-(`/stats`) exposed by `slurm-quota serve`.
+(`/stats`) exposed by `slurm-quota-serve`.
 
 == Environment
 
@@ -67,4 +67,4 @@ SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 slurm-quota-web
 
 == See Also
 
-`slurm-quota(1)`, `httpd(8)`, `mod_wsgi(8)`, `systemd.service(5)`
+`slurm-quota(1)`, `slurm-quota-serve(1)`, `httpd(8)`, `mod_wsgi(8)`, `systemd.service(5)`

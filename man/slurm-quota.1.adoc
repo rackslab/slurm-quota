@@ -16,8 +16,8 @@ slurm-quota - manage Slurm CPU/GPU quota accounting, limits, and stats
 == Description
 
 *slurm-quota* manages CPU and GPU minute quotas for Slurm users and accounts.
-It updates consumed resources, configures quota and GPU charging settings, prunes
-unused data, and can expose a JSON API used by the `stats` command.
+It configures quota and GPU charging settings, prunes unused data, and displays
+statistics from the HTTP service started by `slurm-quota-serve`.
 
 The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 
@@ -36,14 +36,6 @@ The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
   Show program version and exit.
 
 == Commands
-
-=== charge
-
-*slurm-quota charge*
-
-Update consumed CPU/GPU minutes for a completed job using Slurm job completion
-environment variables and `sacct`. This command is designed to be executed by
-Slurm as a JobCompType=jobcomp/script with `slurm` system user.
 
 === stats
 
@@ -257,36 +249,6 @@ sudo slurm-quota prune --accounts --account hpc
 sudo slurm-quota prune --all
 ....
 
-=== serve
-
-*slurm-quota serve* [*--host* <host>] [*--port* <port>] [*--idle-timeout* <seconds>]
-
-Run an HTTP JSON service exposing `/health` and `/stats`.
-
-Options:
-
-*--host* <host>::
-  Bind host when not socket-activated (default: `127.0.0.1`).
-
-*--port* <port>::
-  Bind port when not socket-activated (default: `9911`).
-
-*--idle-timeout* <seconds>::
-  Exit after inactivity (default: `600`). `0` disables idle shutdown.
-
-Notes:
-
-- If systemd socket activation is active (`LISTEN_PID`/`LISTEN_FDS`), inherited FD 3 is used and `--host`/`--port` are ignored.
-- The command exits with error if the database file does not exist.
-
-Examples:
-
-....
-slurm-quota serve --host 127.0.0.1 --port 9911 --idle-timeout 600
-curl http://127.0.0.1:9911/health
-curl http://127.0.0.1:9911/stats?username=alice
-....
-
 == Environment
 
 *SLURM_QUOTA_URL*::
@@ -299,12 +261,6 @@ curl http://127.0.0.1:9911/stats?username=alice
 *SLURM_QUOTA_WEB_ASSETS_DIR*, *SLURM_QUOTA_WEB_HOST*, *SLURM_QUOTA_WEB_PORT*::
   Optional variables used by `slurm-quota-web` to locate templates/static assets
   and configure standalone test server bind host/port.
-
-*LISTEN_PID*, *LISTEN_FDS*::
-  Used by `serve` to detect systemd socket activation.
-
-*JOBID*, *ARRAYJOBID*, *ARRAYTASKID*, *USERNAME*, *ACCOUNT*, *PROCS*, *START*, *END*::
-  Used by `charge` to compute job identity and consumed CPU minutes.
 
 == Files
 
@@ -324,4 +280,4 @@ curl http://127.0.0.1:9911/stats?username=alice
 
 == See Also
 
-`slurm-quota-web(1)`, `sacct(1)`, `sacctmgr(1)`, `sbatch(1)`, `srun(1)`, `slurmctld(8)`, `systemd.socket(5)`
+`slurm-quota-charge(1)`, `slurm-quota-serve(1)`, `slurm-quota-web(1)`, `sacct(1)`, `sacctmgr(1)`, `sbatch(1)`, `srun(1)`, `slurmctld(8)`, `systemd.socket(5)`
