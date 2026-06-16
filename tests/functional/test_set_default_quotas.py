@@ -15,7 +15,7 @@ class TestSetDefaultQuotasCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(
+                    self.run_cli_main(
                         [
                             "slurm-quota",
                             "set-default-quotas",
@@ -51,7 +51,7 @@ class TestSetDefaultQuotasCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(
+                    self.run_cli_main(
                         ["slurm-quota", "set-default-quotas", "--user-cpu", "999"]
                     )
         self.assertEqual(
@@ -70,7 +70,7 @@ class TestSetDefaultQuotasCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    self.run_main(
+                    self.run_cli_main(
                         [
                             "slurm-quota",
                             "set-default-quotas",
@@ -92,7 +92,7 @@ class TestSetDefaultQuotasCommand(FunctionalCLIBase):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                     with self.assertRaises(SystemExit) as cm:
-                        self.run_main(["slurm-quota", "set-default-quotas"])
+                        self.run_cli_main(["slurm-quota", "set-default-quotas"])
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,

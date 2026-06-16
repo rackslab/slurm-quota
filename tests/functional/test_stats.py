@@ -48,7 +48,7 @@ class TestStatsCommand(FunctionalCLIBase):
             current_user_ctx,
             self.capture_stdout() as out,
         ):
-            self.run_main(argv)
+            self.run_cli_main(argv)
         self.assertEqual(out.getvalue(), expected)
 
     def test_stats_uses_current_user_when_username_omitted(self):
@@ -314,12 +314,12 @@ class TestStatsCommand(FunctionalCLIBase):
         )
 
     def test_stats_rejects_positional_and_user_option(self):
-        self.run_main_exit(["slurm-quota", "stats", "alice", "--user", "bob"], 2)
+        self.run_cli_main_exit(["slurm-quota", "stats", "alice", "--user", "bob"], 2)
 
     def test_stats_rejects_user_and_account_options(self):
-        self.run_main_exit(
+        self.run_cli_main_exit(
             ["slurm-quota", "stats", "--user", "alice", "--account", "hpc"], 2
         )
 
     def test_stats_rejects_positional_and_account_options(self):
-        self.run_main_exit(["slurm-quota", "stats", "alice", "--account", "hpc"], 2)
+        self.run_cli_main_exit(["slurm-quota", "stats", "alice", "--account", "hpc"], 2)

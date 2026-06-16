@@ -14,7 +14,7 @@ class TestAccountGpuQuotaCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(
+                    self.run_cli_main(
                         ["slurm-quota", "account-gpu-quota", "genomics_facility", "200"]
                     )
         self.assertEqual(
@@ -34,7 +34,7 @@ class TestAccountGpuQuotaCommand(FunctionalCLIBase):
         self.update_settings(default_account_quota_cpu_minutes=6666)
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
-                self.run_main(
+                self.run_cli_main(
                     ["slurm-quota", "account-gpu-quota", "neuro_render", "80"]
                 )
         with self.db_connection() as conn:
@@ -59,7 +59,7 @@ class TestAccountGpuQuotaCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(
+                    self.run_cli_main(
                         ["slurm-quota", "account-gpu-quota", "weather_cluster", "200"]
                     )
         self.assertEqual(
@@ -77,7 +77,7 @@ class TestAccountGpuQuotaCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    self.run_main(
+                    self.run_cli_main(
                         ["slurm-quota", "account-gpu-quota", "legacy_archive", "200"]
                     )
         self.assertEqual(cm.exception.code, 1)

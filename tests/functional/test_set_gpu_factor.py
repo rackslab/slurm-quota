@@ -12,9 +12,9 @@ class TestSetGpuFactorCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with patch("slurm_quota.database.set_database_permissions"):
                 with self.capture_stdout() as out:
-                    self.run_main(["slurm-quota", "set-gpu-factor", "h100", "0.25"])
+                    self.run_cli_main(["slurm-quota", "set-gpu-factor", "h100", "0.25"])
                 self.assertIn("h100", out.getvalue())
 
     def test_set_gpu_factor_non_positive_exits(self):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
-            self.run_main_exit(["slurm-quota", "set-gpu-factor", "x", "0"], 1)
+            self.run_cli_main_exit(["slurm-quota", "set-gpu-factor", "x", "0"], 1)
