@@ -6,7 +6,7 @@ PartOf=slurm-quota.socket
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/slurm-quota serve --idle-timeout=600
+ExecStart=/usr/local/bin/slurm-quota-serve --idle-timeout=600
 DynamicUser=yes
 NoNewPrivileges=yes
 LockPersonality=yes

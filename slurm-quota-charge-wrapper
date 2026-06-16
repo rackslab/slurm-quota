@@ -4,7 +4,7 @@
 # Copyright (c) 2025 Université de Montpellier
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
-# Wrapper script for the slurm-quota charge command, designed to be executed
+# Wrapper script for the slurm-quota-charge command, designed to be executed
 # by Slurm as a JobCompType=jobcomp/script. The wrapper is required because
 # Slurm cannot directly execute the slurm-quota command with arguments as a
 # JobCompType=jobcomp/script.
@@ -14,5 +14,5 @@
 # charge command, including errors.
 exec &>>/var/log/slurm/charge/slurm-quota-charge.log
 
-# Execute the slurm-quota charge command
-exec /usr/local/bin/slurm-quota charge "$@"
+# Execute the slurm-quota-charge command
+exec /usr/local/bin/slurm-quota-charge "$@"

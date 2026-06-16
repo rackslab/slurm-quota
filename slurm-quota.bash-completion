@@ -103,11 +103,6 @@ _slurm_quota() {
         return 0
     fi
 
-    # Intentionally do not autocomplete internal/service subcommands.
-    if [[ "$subcmd" == "charge" || "$subcmd" == "serve" ]]; then
-        return 0
-    fi
-
     case "$prev" in
         --user)
             COMPREPLY=($(_slurm_quota_complete_users "$cur"))
@@ -117,14 +112,14 @@ _slurm_quota() {
             COMPREPLY=($(_slurm_quota_complete_accounts "$cur"))
             return 0
             ;;
-        --minutes|--hours|--port|--idle-timeout|--host|--user-cpu|--user-gpu|--account-cpu|--account-gpu)
+        --minutes|--hours|--user-cpu|--user-gpu|--account-cpu|--account-gpu)
             return 0
             ;;
     esac
 
     local base_opts="-h --help --version"
     case "$subcmd" in
-        charge|gpu-factors|default-quotas)
+        gpu-factors|default-quotas)
             COMPREPLY=($(compgen -W "$base_opts" -- "$cur"))
             ;;
         stats)
@@ -158,9 +153,6 @@ _slurm_quota() {
             ;;
         prune)
             COMPREPLY=($(compgen -W "$base_opts --preallocs --users --accounts --all --dry-run --user --account" -- "$cur"))
-            ;;
-        serve)
-            COMPREPLY=($(compgen -W "$base_opts --host --port --idle-timeout" -- "$cur"))
             ;;
     esac
 
