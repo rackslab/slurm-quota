@@ -9,7 +9,6 @@ import re
 import sys
 
 from slurm_quota import APP_VERSION
-from slurm_quota.charge import charge_command
 from slurm_quota.commands import (
     adjust_command,
     prune_command,
@@ -24,7 +23,6 @@ from slurm_quota.commands import (
     show_user_stats,
 )
 from slurm_quota.log import setup_logging
-from slurm_quota.serve import run_serve_command
 
 
 def parse_signed_int(value: str) -> int:
@@ -78,11 +76,6 @@ def main():
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    # Charge command
-    subparsers.add_parser(
-        "charge", help="Update user resource consumption (for Slurm job completion)"
-    )
 
     # Stats command
     stats_parser = subparsers.add_parser(
@@ -268,37 +261,12 @@ def main():
         help="Limit accounts pruning to a specific account",
     )
 
-    # Serve command (HTTP JSON API for stats, designed for systemd socket activation)
-    serve_parser = subparsers.add_parser(
-        "serve",
-        help="Serve HTTP JSON API (socket-activated by systemd; falls back to host/port)",
-    )
-    serve_parser.add_argument(
-        "--host",
-        default="127.0.0.1",
-        help="Host to bind if not socket-activated (default: 127.0.0.1)",
-    )
-    serve_parser.add_argument(
-        "--port",
-        type=int,
-        default=9911,
-        help="Port to bind if not socket-activated (default: 9911)",
-    )
-    serve_parser.add_argument(
-        "--idle-timeout",
-        type=int,
-        default=600,
-        help="Exit after N seconds of inactivity (0 disables idle timeout; default: 600)",
-    )
-
     args = parser.parse_args()
 
     # Setup logging with selected log verbosity
     setup_logging(debug=args.debug, quiet=args.quiet)
 
-    if args.command == "charge":
-        charge_command()
-    elif args.command == "stats":
+    if args.command == "stats":
         if args.username and args.user:
             parser.error("stats: positional username and --user are mutually exclusive")
         selected_username = args.user or args.username
@@ -342,8 +310,6 @@ def main():
             user_filter=args.user,
             account_filter=args.account,
         )
-    elif args.command == "serve":
-        run_serve_command(args.host, args.port, args.idle_timeout)
     else:
         parser.print_help()
         sys.exit(1)

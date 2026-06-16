@@ -4,6 +4,7 @@
 
 """HTTP JSON API server for stats."""
 
+import argparse
 import json
 
 import os
@@ -17,7 +18,9 @@ from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
 import slurm_quota
+from slurm_quota import APP_VERSION
 from slurm_quota.database import query_accounts_aggregate, query_users_aggregate
+from slurm_quota.log import setup_logging
 from slurm_quota import slurm as slurm_integration
 
 import logging
@@ -181,3 +184,52 @@ def run_serve_command(host: str, port: int, idle_timeout: int) -> None:
             httpd.server_close()
         except Exception:
             pass
+
+
+def main() -> None:
+    """Main entry point for the slurm-quota-serve script."""
+    parser = argparse.ArgumentParser(
+        prog="slurm-quota-serve",
+        description="Serve HTTP JSON API for Slurm quota",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    log_level_group = parser.add_mutually_exclusive_group()
+    log_level_group.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print debug output",
+    )
+    log_level_group.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Only print errors and warnings",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {APP_VERSION}",
+        help="Show program version and exit",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind if not socket-activated (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=9911,
+        help="Port to bind if not socket-activated (default: 9911)",
+    )
+    parser.add_argument(
+        "--idle-timeout",
+        type=int,
+        default=600,
+        help="Exit after N seconds of inactivity (0 disables idle timeout; default: 600)",
+    )
+
+    args = parser.parse_args()
+    setup_logging(debug=args.debug, quiet=args.quiet)
+    run_serve_command(args.host, args.port, args.idle_timeout)
