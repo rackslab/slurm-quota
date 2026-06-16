@@ -614,13 +614,13 @@ When using RPM packages, migration is automatically run during `slurm-quota-cont
 To force migration manually with RPM packages, run:
 
 ```bash
-sudo /usr/libexec/slurm-quota/migrate-slurm-quota
+sudo /usr/libexec/slurm-quota/slurm-quota-migrate
 ```
 
 For manual/source-based deployments, the database migration script must be executed before updating other components:
 
 ```bash
-sudo migrate-slurm-quota
+sudo slurm-quota-migrate
 ```
 
 Example output:
