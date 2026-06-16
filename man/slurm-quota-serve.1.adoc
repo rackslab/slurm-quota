@@ -1,0 +1,80 @@
+= slurm-quota-serve(1)
+:doctype: manpage
+:manmanual: Slurm Quota HTTP Service
+:mansource: slurm-quota-serve
+:revnumber: 2.0.0
+:revdate: 2026-04-20
+
+== Name
+
+slurm-quota-serve - HTTP JSON API for Slurm quota
+
+== Synopsis
+
+*slurm-quota-serve* [*-h*] [*--debug* | *-q* | *--quiet*] [*--version*] [*--host* <host>] [*--port* <port>] [*--idle-timeout* <seconds>]
+
+== Description
+
+*slurm-quota-serve* runs an HTTP JSON service exposing `/health` and `/stats`.
+It is designed to work with systemd socket activation and is consumed by
+`slurm-quota stats` and `slurm-quota-web`.
+
+The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
+
+== Options
+
+*-h*, *--help*::
+  Show help and exit.
+
+*--debug*::
+  Enable debug output.
+
+*-q*, *--quiet*::
+  Only print errors and warnings.
+
+*--version*::
+  Show program version and exit.
+
+*--host* <host>::
+  Bind host when not socket-activated (default: `127.0.0.1`).
+
+*--port* <port>::
+  Bind port when not socket-activated (default: `9911`).
+
+*--idle-timeout* <seconds>::
+  Exit after inactivity (default: `600`). `0` disables idle shutdown.
+
+Notes:
+
+- If systemd socket activation is active (`LISTEN_PID`/`LISTEN_FDS`), inherited FD 3 is used and `--host`/`--port` are ignored.
+- The command exits with error if the database file does not exist.
+
+== Environment
+
+*LISTEN_PID*, *LISTEN_FDS*::
+  Used to detect systemd socket activation.
+
+== Examples
+
+....
+slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 600
+curl http://127.0.0.1:9911/health
+curl http://127.0.0.1:9911/stats?username=alice
+....
+
+== Files
+
+`/var/lib/state/slurm-quota/slurm-quota.db`::
+  SQLite database for quotas, consumed/preallocated counters, GPU factors, and default settings.
+
+== Exit Status
+
+*0*::
+  Success.
+
+*1*::
+  Runtime/permission/operational error.
+
+== See Also
+
+`slurm-quota(1)`, `slurm-quota-web(1)`, `systemd.socket(5)`

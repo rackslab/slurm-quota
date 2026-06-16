@@ -1,0 +1,59 @@
+= slurm-quota-charge(1)
+:doctype: manpage
+:manmanual: Slurm Quota Charge
+:mansource: slurm-quota-charge
+:revnumber: 2.0.0
+:revdate: 2026-04-20
+
+== Name
+
+slurm-quota-charge - update consumed CPU/GPU minutes on Slurm job completion
+
+== Synopsis
+
+*slurm-quota-charge* [*-h*] [*--debug* | *-q* | *--quiet*] [*--version*]
+
+== Description
+
+*slurm-quota-charge* updates consumed CPU/GPU minutes for a completed job using
+Slurm job completion environment variables and `sacct`. This command is designed
+to be executed by Slurm as a JobCompType=jobcomp/script with the `slurm` system
+user.
+
+The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
+
+== Options
+
+*-h*, *--help*::
+  Show help and exit.
+
+*--debug*::
+  Enable debug output.
+
+*-q*, *--quiet*::
+  Only print errors and warnings.
+
+*--version*::
+  Show program version and exit.
+
+== Environment
+
+*JOBID*, *ARRAYJOBID*, *ARRAYTASKID*, *USERNAME*, *ACCOUNT*, *PROCS*, *START*, *END*::
+  Used to compute job identity and consumed CPU minutes.
+
+== Files
+
+`/var/lib/state/slurm-quota/slurm-quota.db`::
+  SQLite database for quotas, consumed/preallocated counters, GPU factors, and default settings.
+
+== Exit Status
+
+*0*::
+  Success.
+
+*1*::
+  Runtime/permission/operational error.
+
+== See Also
+
+`slurm-quota(1)`, `sacct(1)`, `slurmctld(8)`
