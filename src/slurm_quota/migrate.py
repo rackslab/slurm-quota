@@ -168,8 +168,9 @@ def migrate_database() -> None:
 
 
 def main() -> None:
-    """Main entry point for the migration script."""
+    """Main entry point for the slurm-quota-migrate script."""
     parser = argparse.ArgumentParser(
+        prog="slurm-quota-migrate",
         description="Migrate slurm-quota database schema",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
