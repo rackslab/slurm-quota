@@ -15,7 +15,7 @@ The solution is built around a SQLite database located at `/var/lib/state/slurm-
 This database is used by 2 programs:
 
 - `job_submit.lua`, a Lua script designed to be used as a Slurm submission plugin.
-- `slurm-quota`, a Python application with several subcommands intended to be executed by Slurm, administrators, and cluster users.
+- `slurm-quota`, a Python application with several commands intended to be executed by Slurm, administrators, and cluster users.
 
 When the Lua submission plugin is enabled in the Slurm configuration, the `job_submit.lua` script is automatically called during each job submission or modification (`sbatch`, `srun`, `scontrol`, etc.) to validate the request before it is accepted into the system. The script can thus apply custom rules (such as quota control for example) and reject jobs that do not comply with the defined policies.
 
@@ -25,12 +25,12 @@ When a job submission is accepted, the Lua script creates a corresponding preall
 
 The Lua script generates a UUID at submission time to uniquely identify jobs and to be able to track the preallocated time until their completion. The job ID unfortunately cannot be used for this purpose because it is not yet available at the time of the `job_submit` callback (Slurm assigns a job ID later only if the job is accepted by the `job_submit.lua` script). The generated UUID identifier is stored in the job's `admin_comment` field, so it can be retrieved by the solution to reassociate the preallocation with the job during other steps.
 
-The `slurm-quota-charge-wrapper` wrapper script is designed to be executed by Slurm's job completion _script_ plugin (`JobCompType=script`). When this functionality is enabled, Slurm executes this script every time a job completes or is cancelled. This wrapper script actually executes the `slurm-quota charge` command. The wrapper is used for 2 reasons:
+The `slurm-quota-charge-wrapper` wrapper script is designed to be executed by Slurm's job completion _script_ plugin (`JobCompType=script`). When this functionality is enabled, Slurm executes this script every time a job completes or is cancelled. This wrapper script actually executes the `slurm-quota-charge` command. The wrapper is used for 2 reasons:
 
 - Slurm does not allow directly specifying arguments to the command executed by the _script_ completion plugin. The wrapper allows this limitation to be bypassed.
-- Slurm systematically redirects JobComp script output to `/dev/null`. By using the wrapper as an intermediate layer, it is possible to redirect the output of the `slurm-quota charge` command to a dedicated log file (`/var/log/slurm/charge/slurm-quota-charge.log`) to ensure that all processing information and any errors are preserved to trace operations.
+- Slurm systematically redirects JobComp script output to `/dev/null`. By using the wrapper as an intermediate layer, it is possible to redirect the output of the `slurm-quota-charge` command to a dedicated log file (`/var/log/slurm/charge/slurm-quota-charge.log`) to ensure that all processing information and any errors are preserved to trace operations.
 
-Upon job completion, the `slurm-quota charge` command retrieves the UUID from `admin_comment` and the allocated GPU resources from `AllocTRES` (via `sacct`). It calculates the effective consumption in CPU minutes according to `PROCS × (END − START) / 60` and in GPU minutes according to the allocated GPUs, their type, and the configured load factors. It credits these consumptions to the user and to the account, and deletes the corresponding preallocation in the database. This step ensures that the difference between "reserved" and "actually used" is correctly reconciled for both dimensions (CPU and GPU).
+Upon job completion, the `slurm-quota-charge` command retrieves the UUID from `admin_comment` and the allocated GPU resources from `AllocTRES` (via `sacct`). It calculates the effective consumption in CPU minutes according to `PROCS × (END − START) / 60` and in GPU minutes according to the allocated GPUs, their type, and the configured load factors. It credits these consumptions to the user and to the account, and deletes the corresponding preallocation in the database. This step ensures that the difference between "reserved" and "actually used" is correctly reconciled for both dimensions (CPU and GPU).
 
 In the SQLite database, there are 4 tables:
 
@@ -41,7 +41,7 @@ In the SQLite database, there are 4 tables:
 
 We record the amount of preallocated time per job rather than a global value per user to allow fine-grained updates during modifications (increase or decrease of `time_limit`/`num_tasks`), targeted deletion of the preallocation upon completion, and robust cleanup of orphans. A global value would hide the detail per job and significantly complicate adjustments and cancellations, with an increased risk of inconsistencies.
 
-The SQLite database file must have the system user `slurm` as owner, with mode `0644` to restrict modification permission to the `slurm` user (used by `slurmctld` for the Lua script and the jobcomp script) and to administrators with the `root` account. Other users only have read-only access to the database. The `slurm-quota` script automatically creates the database with the `charge`, `user-quota`, and `account-quota` commands (intended for Slurm and administrators), setting the correct permissions on the file.
+The SQLite database file must have the system user `slurm` as owner, with mode `0644` to restrict modification permission to the `slurm` user (used by `slurmctld` for the Lua script and the jobcomp script) and to administrators with the `root` account. Other users only have read-only access to the database. The `slurm-quota` script and `slurm-quota-charge` automatically create the database with the `user-quota` and `account-quota` commands (intended for Slurm and administrators), setting the correct permissions on the file.
 
 The commands `slurm-quota user-quota`, `slurm-quota account-quota`, `slurm-quota user-gpu-quota`, and `slurm-quota account-gpu-quota` respectively allow assigning CPU and GPU quotas to users and accounts.
 The `slurm-quota adjust` command (restricted to root) allows manually adjusting consumed CPU/GPU time for one user or account with an explicitly signed delta.
@@ -52,7 +52,7 @@ The solution allows setting GPU load factors. This is a multiplicative coefficie
 
 The `slurm-quota set-gpu-factor` command allows configuring load factors by GPU type (restricted to root). The `slurm-quota gpu-factors` command displays the currently configured GPU load factors.
 
-The `slurm-quota serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes a single `/stats` route that returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters can be used to filter responses: `username` filters users and limits accounts to this user's Slurm associations (e.g. `/stats?username=alice`), while `account` returns only the requested account stats in the `accounts` array (e.g. `/stats?account=hpc`).
+The `slurm-quota-serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes a single `/stats` route that returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters can be used to filter responses: `username` filters users and limits accounts to this user's Slurm associations (e.g. `/stats?username=alice`), while `account` returns only the requested account stats in the `accounts` array (e.g. `/stats?account=hpc`).
 
 The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a user (`--user` or positional username), an account (`--account`), or the `--all` option, the command transmits the appropriate filters to the service. User and account selectors are mutually exclusive. If the service is not available or in case of connection failure to the server, execution fails with an error message.
 
@@ -113,7 +113,7 @@ JobSubmitPlugins=lua
 AccountingStorageTRES=gres/gpu:<type1>,gres/gpu:<type2>
 ```
 
-The `AccountingStorageTRES` parameter enables recording of complementary resource allocations (e.g., GPU, licenses) in addition to generic resources (e.g., nodes, cores, memory) in the Slurm accounting database. It is necessary to enable tracking of all GPU types in the cluster so that the `slurm-quota charge` command can determine the GPUs allocated to completed jobs and account for the time consumed on these GPUs.
+The `AccountingStorageTRES` parameter enables recording of complementary resource allocations (e.g., GPU, licenses) in addition to generic resources (e.g., nodes, cores, memory) in the Slurm accounting database. It is necessary to enable tracking of all GPU types in the cluster so that the `slurm-quota-charge` command can determine the GPUs allocated to completed jobs and account for the time consumed on these GPUs.
 
 On compute/login nodes:
 
@@ -293,7 +293,7 @@ JobSubmitPlugins=lua
 AccountingStorageTRES=gres/gpu:<type1>,gres/gpu:<type2>
 ```
 
-The `AccountingStorageTRES` parameter enables recording of complementary resource allocations (e.g., GPU, licenses) in addition to generic resources (e.g., nodes, cores, memory) in the Slurm accounting database. It is necessary to enable tracking of all GPU types in the cluster so that the `slurm-quota charge` command can determine the GPUs allocated to completed jobs and account for the time consumed on these GPUs.
+The `AccountingStorageTRES` parameter enables recording of complementary resource allocations (e.g., GPU, licenses) in addition to generic resources (e.g., nodes, cores, memory) in the Slurm accounting database. It is necessary to enable tracking of all GPU types in the cluster so that the `slurm-quota-charge` command can determine the GPUs allocated to completed jobs and account for the time consumed on these GPUs.
 
 8) Logrotate configuration (recommended)
 
@@ -425,35 +425,6 @@ Note: `--account` is mutually exclusive with user selection (`--user` or positio
 Color display of the status bar can be disabled by setting the `NO_COLOR` environment variable.
 The `--hours` option changes only the displayed unit in the `stats` output; stored values and API values remain in minutes.
 
-- `serve`: Launches an HTTP JSON server to expose statistics via a REST API. Designed to work with systemd socket activation.
-
-Examples:
-
-```bash
-# Manual launch (testing)
-slurm-quota serve --host 127.0.0.1 --port 9911 --idle-timeout 600
-slurm-quota serve --host 127.0.0.1 --port 9911 --idle-timeout 0    # no idle timeout
-
-# Via systemd (recommended)
-sudo systemctl start slurm-quota.socket
-curl http://127.0.0.1:9911/health
-curl http://127.0.0.1:9911/stats
-curl http://127.0.0.1:9911/stats?username=alice
-curl http://127.0.0.1:9911/stats?account=hpc
-```
-
-The service automatically stops after a period of inactivity (600 seconds, ie. 10 minutes by default). This can be disabled with `--idle-timeout 0` argument. The `stats` command queries this HTTP service (URL configurable via the `SLURM_QUOTA_URL` environment variable).
-
-- `slurm-quota-web`: Starts the web dashboard with the built-in HTTP server (intended for local testing; production should use Apache/mod_wsgi or another WSGI server).
-
-Examples:
-
-```bash
-slurm-quota-web
-SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 slurm-quota-web
-SLURM_QUOTA_URL=http://controller:9911/ slurm-quota-web
-```
-
 - `user-quota` (restricted to root): Sets a CPU quota for a user.
 
 Examples:
@@ -562,7 +533,41 @@ sudo slurm-quota prune --accounts --account hpc  # prune only this eligible acco
 sudo slurm-quota prune --dry-run        # preview removals without applying them
 ```
 
-It is normally not necessary to execute this `prune` command under normal conditions. It may be useful in case of malfunction of the call to the `slurm-quota charge` command by Slurm. Its execution is nevertheless safe, it can be executed if in doubt about the preallocated durations assigned to users.
+It is normally not necessary to execute this `prune` command under normal conditions. It may be useful in case of malfunction of the call to the `slurm-quota-charge` command by Slurm. Its execution is nevertheless safe, it can be executed if in doubt about the preallocated durations assigned to users.
+
+
+### `slurm-quota-serve` Command
+
+Launches an HTTP REST API JSON server. Designed to work with systemd socket activation.
+
+Examples:
+
+```bash
+# Manual launch (testing)
+slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 600
+slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 0    # no idle timeout
+
+# Via systemd (recommended)
+sudo systemctl start slurm-quota.socket
+curl http://127.0.0.1:9911/health
+curl http://127.0.0.1:9911/stats
+curl http://127.0.0.1:9911/stats?username=alice
+curl http://127.0.0.1:9911/stats?account=hpc
+```
+
+The service automatically stops after a period of inactivity (600 seconds, ie. 10 minutes by default). This can be disabled with `--idle-timeout 0` argument. The `stats` command queries this HTTP service (URL configurable via the `SLURM_QUOTA_URL` environment variable).
+
+### `slurm-quota-web` Command
+
+Launches web application:
+
+Examples:
+
+```bash
+slurm-quota-web
+SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 slurm-quota-web
+SLURM_QUOTA_URL=http://controller:9911/ slurm-quota-web
+```
 
 ## Upgrade
 
@@ -591,6 +596,8 @@ On all nodes:
 ```bash
 # Legacy manual binary/completion/manpage copies (RPM will reinstall managed files)
 sudo rm -f /usr/local/bin/slurm-quota
+sudo rm -f /usr/local/bin/slurm-quota-charge
+sudo rm -f /usr/local/bin/slurm-quota-serve
 sudo rm -f /usr/local/bin/slurm-quota-web
 sudo rm -f /etc/bash_completion.d/slurm-quota
 sudo rm -f /usr/local/share/man/man1/slurm-quota.1
@@ -666,12 +673,16 @@ sudo systemctl reload httpd
 Manpages are maintained in AsciiDoc format:
 
 - `man/slurm-quota.1.adoc` for `slurm-quota`
+- `man/slurm-quota-charge.1.adoc` for `slurm-quota-charge`
+- `man/slurm-quota-serve.1.adoc` for `slurm-quota-serve`
 - `man/slurm-quota-web.1.adoc` for `slurm-quota-web`
 
 To generate roff manpages from these files, use:
 
 ```bash
 asciidoctor -b manpage -o slurm-quota.1 man/slurm-quota.1.adoc
+asciidoctor -b manpage -o slurm-quota-charge.1 man/slurm-quota-charge.1.adoc
+asciidoctor -b manpage -o slurm-quota-serve.1 man/slurm-quota-serve.1.adoc
 asciidoctor -b manpage -o slurm-quota-web.1 man/slurm-quota-web.1.adoc
 ```
 
@@ -679,6 +690,8 @@ To preview generated files locally:
 
 ```bash
 man -l ./slurm-quota.1
+man -l ./slurm-quota-charge.1
+man -l ./slurm-quota-serve.1
 man -l ./slurm-quota-web.1
 ```
 
@@ -686,6 +699,8 @@ Optional user-local installation:
 
 ```bash
 install -Dm644 slurm-quota.1 ~/.local/share/man/man1/slurm-quota.1
+install -Dm644 slurm-quota-charge.1 ~/.local/share/man/man1/slurm-quota-charge.1
+install -Dm644 slurm-quota-serve.1 ~/.local/share/man/man1/slurm-quota-serve.1
 install -Dm644 slurm-quota-web.1 ~/.local/share/man/man1/slurm-quota-web.1
 ```
 
@@ -693,7 +708,7 @@ install -Dm644 slurm-quota-web.1 ~/.local/share/man/man1/slurm-quota-web.1
 
 ### Tests
 
-The repository includes unit tests under `tests/unit/` (one module per source module under `src/slurm_quota/`, with one `TestCase` class per function) and functional CLI tests under `tests/functional/` (one module per `slurm-quota` subcommand). They are standard `unittest.TestCase` classes; the recommended runner is **pytest** (as in CI), with optional coverage reports configured in `pyproject.toml`.
+The repository includes unit tests under `tests/unit/` (one module per source module under `src/slurm_quota/`, with one `TestCase` class per function) and functional CLI tests under `tests/functional/` (one module per command). They are standard `unittest.TestCase` classes; the recommended runner is **pytest** (as in CI), with optional coverage reports configured in `pyproject.toml`.
 
 From the repository root, use a virtual environment (recommended on distributions that restrict system-wide `pip`, e.g. PEP 668):
 
