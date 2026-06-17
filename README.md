@@ -52,9 +52,9 @@ The solution allows setting GPU load factors. This is a multiplicative coefficie
 
 The `slurm-quota set-gpu-factor` command allows configuring load factors by GPU type (restricted to root). The `slurm-quota gpu-factors` command displays the currently configured GPU load factors.
 
-The `slurm-quota-serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes `GET /health` for liveness probes and `GET /stats`, which returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters can be used to filter responses: `username` filters users and limits accounts to this user's Slurm associations (e.g. `/stats?username=alice`), while `account` returns only the requested account stats in the `accounts` array (e.g. `/stats?account=hpc`). When LDAP authentication is enabled in site configuration, `POST /login` issues JWT tokens.
+The `slurm-quota-serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes `GET /health` for liveness probes and `GET /stats`, which returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters can be used to filter responses: `username` filters users and limits accounts to this user's Slurm associations (e.g. `/stats?username=alice`), while `account` returns only the requested account stats in the `accounts` array (e.g. `/stats?account=hpc`). When LDAP authentication is enabled in site configuration, `POST /login` issues JWT tokens and `GET /stats` requires a valid Bearer token.
 
-The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a user (`--user` or positional username), an account (`--account`), or the `--all` option, the command transmits the appropriate filters to the service. User and account selectors are mutually exclusive. If the service is not available or in case of connection failure to the server, execution fails with an error message.
+The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a user (`--user` or positional username), an account (`--account`), or the `--all` option, the command transmits the appropriate filters to the service. User and account selectors are mutually exclusive. If the service is not available or in case of connection failure to the server, execution fails with an error message. When LDAP authentication is enabled, the `slurm-quota login` command obtains a JWT from `POST /login`. By default it prints the token to stdout; with `--save`, it persists the token to `$XDG_CONFIG_HOME/slurm-quota/token` (default `~/.config/slurm-quota/token`), and `stats` automatically sends a saved token as a Bearer token (override with `SLURM_QUOTA_TOKEN` if needed).
 
 Additionally, a logrotate configuration file is provided (`slurm-quota-charge.logrotate`) to prevent the log file fed by the `slurm-quota-charge-wrapper` wrapper from growing too large over time.
 
@@ -423,6 +423,18 @@ sudo htpasswd -c /etc/httpd/conf.d/slurm-quota-web.htpasswd admin
 
 ### `slurm-quota` Command
 
+- `login`: Obtains a JWT from the HTTP service when LDAP authentication is enabled.
+
+Examples:
+
+```bash
+slurm-quota login              # prompts for password, prints token to stdout
+slurm-quota login bob          # same for LDAP user bob
+slurm-quota login --save       # save token for automatic use by stats
+```
+
+Use `--save` to store the token in `$XDG_CONFIG_HOME/slurm-quota/token` (default `~/.config/slurm-quota/token`). Set `SLURM_QUOTA_TOKEN` to override the saved token for a single command.
+
 - `stats`: Displays consumed CPU times, preallocated CPU times (with the number of jobs considered), and quotas for users and accounts.
 
 Examples:
@@ -582,9 +594,24 @@ slurm-quota-serve --dump-config
 LDAP login when authentication is enabled (setup described in the [Controller node](#controller-node) installation section):
 
 ```bash
+slurm-quota login --save
+```
+
+Or with `curl`:
+
+```bash
 curl -s -X POST http://127.0.0.1:9911/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"alice","password":"secret"}'
+```
+
+After `slurm-quota login --save`, `slurm-quota stats` automatically uses the saved token.
+
+When authentication is enabled, query `/stats` with the token:
+
+```bash
+TOKEN=$(slurm-quota login)
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9911/stats
 ```
 
 ### `slurm-quota-web` Command
