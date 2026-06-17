@@ -13,18 +13,50 @@ jobs:
     container:
       image: rockylinux:9
     steps:
-      - name: Install git
-        run: dnf -y install git
       - uses: actions/checkout@v5
-      - name: Install Python 3.9 and pip
-        run: dnf -y install python3.9 python3.9-pip
+
+      - name: Enable EPEL and CRB repositories
+        run: |
+          dnf -y install 'dnf-command(config-manager)'
+          dnf config-manager --set-enabled crb
+          dnf -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+
+      - name: Add Rackslab repository
+        run: |
+          curl --silent https://pkgs.rackslab.io/keyring.asc --output /etc/pki/rpm-gpg/RPM-GPG-KEY-Rackslab
+          cat <<EOF > /etc/yum.repos.d/rackslab.repo
+          [rackslab]
+          name=Rackslab
+          baseurl=https://pkgs.rackslab.io/rpm/el9/main/x86_64/
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-Rackslab
+          EOF
+
+      - name: Install test dependencies
+        run: |
+          dnf -y install \
+            git \
+            python3 \
+            python3-pip \
+            python3-flask \
+            python3-jinja2 \
+            python3-pytest \
+            python3-rfl-authentication \
+            python3-rfl-authentication+jwt \
+            python3-rfl-authentication+ldap \
+            python3-rfl-settings \
+            python3-rfl-web
+
       - name: Create non-root test user
         run: |
           useradd -m -u 1001 ciuser
           chown -R ciuser:ciuser "$GITHUB_WORKSPACE"
-      - name: Install dev dependencies as non-root
+
+      - name: Install application and pytest-cov as non-root
         run: |
-          su -s /bin/bash ciuser -c "cd \"$GITHUB_WORKSPACE\" && python3.9 -m pip install --user -U pip"
-          su -s /bin/bash ciuser -c "cd \"$GITHUB_WORKSPACE\" && python3.9 -m pip install --user \".[dev]\""
+          su -s /bin/bash ciuser -c "cd \"$GITHUB_WORKSPACE\" && python3 -m venv --system-site-packages ~/venv"
+          su -s /bin/bash ciuser -c "cd \"$GITHUB_WORKSPACE\" && ~/venv/bin/pip install -U pip"
+          su -s /bin/bash ciuser -c "cd \"$GITHUB_WORKSPACE\" && ~/venv/bin/pip install -e . pytest-cov"
+
       - name: Run all tests as non-root
-        run: su -s /bin/bash ciuser -c "cd \"$GITHUB_WORKSPACE\" && python3.9 -m pytest"
+        run: su -s /bin/bash ciuser -c "cd \"$GITHUB_WORKSPACE\" && ~/venv/bin/python -m pytest"
