@@ -37,6 +37,31 @@ The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 
 == Commands
 
+=== login
+
+*slurm-quota login* [<username>] [*--save*]
+
+Obtain a JWT from the HTTP service (`POST /login`). LDAP authentication must be
+enabled on `slurm-quota-serve`.
+
+Options:
+
+*<username>*::
+  Optional LDAP username. Defaults to the current OS user when omitted.
+
+*--save*::
+  Save the token to `$XDG_CONFIG_HOME/slurm-quota/token` (default:
+  `~/.config/slurm-quota/token`). Without this option, the token is printed to
+  stdout.
+
+Examples:
+
+....
+slurm-quota login
+slurm-quota login bob
+slurm-quota login --save
+....
+
 === stats
 
 *slurm-quota stats* [<username>] [*--user* <username>] [*--account* <account>] [*--all*] [*--hours*]
@@ -252,8 +277,17 @@ sudo slurm-quota prune --all
 == Environment
 
 *SLURM_QUOTA_URL*::
-  Base URL used by `stats` when querying the HTTP API.
+  Base URL used by `stats` and `login` when querying the HTTP API.
   Default: `http://127.0.0.1:9911/`
+
+*SLURM_QUOTA_TOKEN*::
+  Optional JWT override for HTTP API authentication. When set, takes precedence
+  over the token file saved by `login`.
+
+*XDG_CONFIG_HOME*::
+  Base directory for user-specific configuration. The token saved by `login` is
+  stored in `$XDG_CONFIG_HOME/slurm-quota/token` (default:
+  `~/.config/slurm-quota/token`).
 
 *NO_COLOR*::
   If set, disables colored status bars in `stats` output.
@@ -263,6 +297,10 @@ sudo slurm-quota prune --all
   and configure standalone test server bind host/port.
 
 == Files
+
+`$XDG_CONFIG_HOME/slurm-quota/token`::
+  JWT saved by `login` for HTTP API authentication (default:
+  `~/.config/slurm-quota/token`).
 
 `/var/lib/state/slurm-quota/slurm-quota.db`::
   SQLite database for quotas, consumed/preallocated counters, GPU factors, and default settings.
