@@ -50,7 +50,7 @@ def _stats_rows():
 class TestWebDashboard(SlurmQuotaTestCase):
     def test_dashboard_renders_user_and_account_rows(self):
         with patch(
-            "slurm_quota.client.fetch_stats_from_service",
+            "slurm_quota.client.fetch_stats",
             return_value=_stats_rows(),
         ):
             client = web.app.test_client()
@@ -62,7 +62,7 @@ class TestWebDashboard(SlurmQuotaTestCase):
 
     def test_forwards_username_filter_to_stats_api(self):
         with patch(
-            "slurm_quota.client.fetch_stats_from_service",
+            "slurm_quota.client.fetch_stats",
             return_value=_stats_rows(),
         ) as m_fetch:
             client = web.app.test_client()
@@ -72,7 +72,7 @@ class TestWebDashboard(SlurmQuotaTestCase):
 
     def test_forwards_account_filter_to_stats_api(self):
         with patch(
-            "slurm_quota.client.fetch_stats_from_service",
+            "slurm_quota.client.fetch_stats",
             return_value=_stats_rows(),
         ) as m_fetch:
             client = web.app.test_client()
@@ -81,7 +81,7 @@ class TestWebDashboard(SlurmQuotaTestCase):
         m_fetch.assert_called_once_with(None, "hpc", show_all=True)
 
     def test_username_and_account_are_mutually_exclusive(self):
-        with patch("slurm_quota.client.fetch_stats_from_service") as m_fetch:
+        with patch("slurm_quota.client.fetch_stats") as m_fetch:
             client = web.app.test_client()
             resp = client.get("/?username=alice&account=hpc")
         self.assertEqual(resp.status_code, 200)
@@ -91,7 +91,7 @@ class TestWebDashboard(SlurmQuotaTestCase):
 
     def test_urlerror_is_rendered_in_page(self):
         with patch(
-            "slurm_quota.client.fetch_stats_from_service",
+            "slurm_quota.client.fetch_stats",
             side_effect=URLError("boom"),
         ):
             client = web.app.test_client()
@@ -102,7 +102,7 @@ class TestWebDashboard(SlurmQuotaTestCase):
 
     def test_unit_hours_displays_decimal_hours(self):
         with patch(
-            "slurm_quota.client.fetch_stats_from_service",
+            "slurm_quota.client.fetch_stats",
             return_value=_stats_rows(),
         ):
             client = web.app.test_client()

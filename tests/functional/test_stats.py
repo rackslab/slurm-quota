@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from contextlib import nullcontext
+from pathlib import Path
 from typing import Optional
 from unittest.mock import patch
+
+from slurm_quota.token import service_token_path
 
 from tests.functional import functional_base
 from tests.functional.functional_base import FunctionalCLIBase
@@ -323,3 +326,29 @@ class TestStatsCommand(FunctionalCLIBase):
 
     def test_stats_rejects_positional_and_account_options(self):
         self.run_cli_main_exit(["slurm-quota", "stats", "alice", "--account", "hpc"], 2)
+
+    def test_stats_sends_bearer_when_token_file_exists(self):
+        config_home = Path(self._tmp.name) / "xdg-config"
+        self.env({"NO_COLOR": "1", "XDG_CONFIG_HOME": str(config_home)})
+        token_path = service_token_path()
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text("saved-jwt", encoding="utf-8")
+        with (
+            patch.object(
+                functional_base,
+                "_STATS_REST_PAYLOAD",
+                deepcopy(functional_base.stats_payload_full()),
+            ),
+            patch(
+                "slurm_quota.client.urlopen",
+                side_effect=FunctionalCLIBase.stats_urlopen_side_effect,
+            ) as m_urlopen,
+            patch(
+                "slurm_quota.commands.format_timestamp_with_timezone",
+                return_value="TS_FIXED",
+            ),
+            self.capture_stdout(),
+        ):
+            self.run_cli_main(["slurm-quota", "stats", "alice"])
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.get_header("Authorization"), "Bearer saved-jwt")

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from urllib.error import URLError
 
-from slurm_quota.client import StatsHTTPError
+from slurm_quota.client import ServiceHTTPError
 from slurm_quota.commands import (
     create_status_bar,
     format_timestamp_with_timezone,
@@ -72,7 +72,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
 
     def test_no_data_for_explicit_username(self):
         with patch(
-            "slurm_quota.client.fetch_stats_from_service",
+            "slurm_quota.client.fetch_stats",
             return_value=([], []),
         ):
             out = self._run_show(username="bob", show_all=False)
@@ -81,7 +81,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
 
     def test_no_data_for_explicit_account(self):
         with patch(
-            "slurm_quota.client.fetch_stats_from_service",
+            "slurm_quota.client.fetch_stats",
             return_value=([], []),
         ):
             out = self._run_show(account="projX", show_all=False)
@@ -90,7 +90,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
 
     def test_no_users_when_show_all_empty(self):
         with patch(
-            "slurm_quota.client.fetch_stats_from_service",
+            "slurm_quota.client.fetch_stats",
             return_value=([], []),
         ):
             out = self._run_show(show_all=True)
@@ -102,7 +102,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
         users, accounts = _sample_users_and_accounts()
         with (
             patch(
-                "slurm_quota.client.fetch_stats_from_service",
+                "slurm_quota.client.fetch_stats",
                 return_value=(users, accounts),
             ),
             patch(
@@ -130,7 +130,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
         _, accounts = _sample_users_and_accounts()
         with (
             patch(
-                "slurm_quota.client.fetch_stats_from_service",
+                "slurm_quota.client.fetch_stats",
                 return_value=([], accounts),
             ),
             patch(
@@ -162,7 +162,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
         }
         with (
             patch(
-                "slurm_quota.client.fetch_stats_from_service",
+                "slurm_quota.client.fetch_stats",
                 return_value=([user], []),
             ),
             patch(
@@ -198,7 +198,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
         }
         with (
             patch(
-                "slurm_quota.client.fetch_stats_from_service",
+                "slurm_quota.client.fetch_stats",
                 return_value=([user], []),
             ),
             patch(
@@ -249,7 +249,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
         ]
         with (
             patch(
-                "slurm_quota.client.fetch_stats_from_service",
+                "slurm_quota.client.fetch_stats",
                 return_value=(users, accounts),
             ),
             patch(
@@ -276,7 +276,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.auth.get_current_user", return_value="carol") as m_gc,
             patch(
-                "slurm_quota.client.fetch_stats_from_service",
+                "slurm_quota.client.fetch_stats",
                 return_value=([], []),
             ) as m_fetch,
         ):
@@ -289,7 +289,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.auth.get_current_user") as m_gc,
             patch(
-                "slurm_quota.client.fetch_stats_from_service",
+                "slurm_quota.client.fetch_stats",
                 return_value=([], []),
             ) as m_fetch,
         ):
@@ -306,8 +306,8 @@ class TestShowUserStats(SlurmQuotaTestCase):
 
     def test_stats_http_error_exits(self):
         with patch(
-            "slurm_quota.client.fetch_stats_from_service",
-            side_effect=StatsHTTPError(502),
+            "slurm_quota.client.fetch_stats",
+            side_effect=ServiceHTTPError(502),
         ):
             with self.assertRaises(SystemExit) as cm:
                 show_user_stats(username="x", show_all=False)
@@ -315,7 +315,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
 
     def test_urlerror_exits(self):
         with patch(
-            "slurm_quota.client.fetch_stats_from_service",
+            "slurm_quota.client.fetch_stats",
             side_effect=URLError("down"),
         ):
             with self.assertRaises(SystemExit) as cm:
@@ -324,7 +324,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
 
     def test_generic_exception_exits(self):
         with patch(
-            "slurm_quota.client.fetch_stats_from_service",
+            "slurm_quota.client.fetch_stats",
             side_effect=ValueError("bad json"),
         ):
             with self.assertRaises(SystemExit) as cm:
