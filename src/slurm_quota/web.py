@@ -16,7 +16,7 @@ from urllib.error import URLError
 from flask import Flask, render_template, request
 
 from slurm_quota import client as stats_client
-from slurm_quota.client import StatsHTTPError
+from slurm_quota.client import ServiceHTTPError
 
 
 def _assets_root() -> Path:
@@ -156,12 +156,12 @@ def dashboard() -> str:
         error = "username and account filters are mutually exclusive."
     else:
         try:
-            users_raw, accounts_raw = stats_client.fetch_stats_from_service(
+            users_raw, accounts_raw = stats_client.fetch_stats(
                 username, account, show_all=username is None
             )
             users = _decorate_rows(users_raw, "username", display_hours)
             accounts = _decorate_rows(accounts_raw, "account", display_hours)
-        except (URLError, StatsHTTPError) as exc:
+        except (URLError, ServiceHTTPError) as exc:
             error = f"Failed to retrieve stats from service: {exc}"
 
     return render_template(

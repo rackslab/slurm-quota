@@ -4,6 +4,7 @@
 
 """CLI command implementations."""
 
+import getpass
 import os
 import sqlite3
 import sys
@@ -13,7 +14,8 @@ from urllib.error import URLError
 
 from slurm_quota import auth
 import slurm_quota
-from slurm_quota import client as stats_client
+from slurm_quota import client
+from slurm_quota.token import save_service_token
 from slurm_quota.database import (
     adjust_consumed_minutes,
     get_default_quota_settings,
@@ -488,6 +490,50 @@ def prune_command(
         sys.exit(1)
 
 
+def login_command(username: Optional[str] = None, save: bool = False) -> None:
+    """
+    Obtain a JWT from the HTTP service.
+
+    By default, prints the token to stdout. When save is True, persists the
+    token for subsequent API calls.
+    """
+    selected_username = username
+    if not selected_username:
+        try:
+            selected_username = auth.get_current_user()
+        except KeyError:
+            sys.exit(1)
+
+    password = getpass.getpass(f"Password for {selected_username}: ")
+    try:
+        token = client.fetch_token(selected_username, password)
+        if save:
+            token_path = save_service_token(token)
+            print(f"Authentication token saved to {token_path}")
+        else:
+            print(token)
+    except client.ServiceHTTPError as e:
+        if e.status == 401:
+            logger.error("Invalid user or password")
+        elif e.status == 404:
+            logger.error(
+                "Authentication is not enabled on the slurm-quota service "
+                "(POST /login returned HTTP 404)"
+            )
+        else:
+            logger.error(f"Login failed: HTTP {e.status}")
+        sys.exit(1)
+    except OSError as e:
+        logger.error(f"Failed to save authentication token: {e}")
+        sys.exit(1)
+    except URLError as e:
+        logger.error(f"Failed to contact slurm-quota service: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Login failed: {e}")
+        sys.exit(1)
+
+
 def show_user_stats(
     username: Optional[str] = None,
     account: Optional[str] = None,
@@ -529,7 +575,7 @@ def show_user_stats(
         return min(longest_label, max_width)
 
     try:
-        users_data, accounts_data = stats_client.fetch_stats_from_service(
+        users_data, accounts_data = client.fetch_stats(
             selected_username, account, show_all
         )
 
@@ -644,7 +690,7 @@ def show_user_stats(
                 f"{format_first_column(account_name)} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
                 f"| {gpu_consumed_str:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
             )
-    except stats_client.StatsHTTPError as e:
+    except client.ServiceHTTPError as e:
         logger.error(f"Failed to fetch stats: HTTP {e.status}")
         sys.exit(1)
     except URLError as e:

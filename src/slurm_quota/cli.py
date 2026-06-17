@@ -11,6 +11,7 @@ import sys
 from slurm_quota import APP_VERSION
 from slurm_quota.commands import (
     adjust_command,
+    login_command,
     prune_command,
     set_account_gpu_quota_command,
     set_account_quota_command,
@@ -23,6 +24,7 @@ from slurm_quota.commands import (
     show_user_stats,
 )
 from slurm_quota.log import setup_logging
+from slurm_quota.token import service_token_path
 
 
 def parse_signed_int(value: str) -> int:
@@ -76,6 +78,22 @@ def main():
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # Login command
+    login_parser = subparsers.add_parser(
+        "login",
+        help=("Authenticate with LDAP on REST API service and obtain a JWT token"),
+    )
+    login_parser.add_argument(
+        "username",
+        nargs="?",
+        help="LDAP username (default: current OS user)",
+    )
+    login_parser.add_argument(
+        "--save",
+        action="store_true",
+        help=f"Save token to {service_token_path()}",
+    )
 
     # Stats command
     stats_parser = subparsers.add_parser(
@@ -266,7 +284,9 @@ def main():
     # Setup logging with selected log verbosity
     setup_logging(debug=args.debug, quiet=args.quiet)
 
-    if args.command == "stats":
+    if args.command == "login":
+        login_command(args.username, args.save)
+    elif args.command == "stats":
         if args.username and args.user:
             parser.error("stats: positional username and --user are mutually exclusive")
         selected_username = args.user or args.username
