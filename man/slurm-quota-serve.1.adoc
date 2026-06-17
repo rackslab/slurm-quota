@@ -84,6 +84,7 @@ slurm-quota-serve --dump-config
 curl -s -X POST http://127.0.0.1:9911/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"alice","password":"secret"}'
+curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/stats
 ....
 
 == Files
