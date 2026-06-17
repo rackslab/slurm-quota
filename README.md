@@ -52,7 +52,7 @@ The solution allows setting GPU load factors. This is a multiplicative coefficie
 
 The `slurm-quota set-gpu-factor` command allows configuring load factors by GPU type (restricted to root). The `slurm-quota gpu-factors` command displays the currently configured GPU load factors.
 
-The `slurm-quota-serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes a single `/stats` route that returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters can be used to filter responses: `username` filters users and limits accounts to this user's Slurm associations (e.g. `/stats?username=alice`), while `account` returns only the requested account stats in the `accounts` array (e.g. `/stats?account=hpc`).
+The `slurm-quota-serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes `GET /health` for liveness probes and `GET /stats`, which returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters can be used to filter responses: `username` filters users and limits accounts to this user's Slurm associations (e.g. `/stats?username=alice`), while `account` returns only the requested account stats in the `accounts` array (e.g. `/stats?account=hpc`). When LDAP authentication is enabled in site configuration, `POST /login` issues JWT tokens.
 
 The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a user (`--user` or positional username), an account (`--account`), or the `--all` option, the command transmits the appropriate filters to the service. User and account selectors are mutually exclusive. If the service is not available or in case of connection failure to the server, execution fails with an error message.
 
@@ -88,7 +88,7 @@ The following packages are available:
 - `slurm-quota-controller`: controller-only files (`job_submit.lua`, wrapper, systemd units, logrotate, migration script)
 - `slurm-quota-web`: optional web application with HTML dashboard
 
-On the controller node:
+#### Controller node
 
 1) Install controller and common packages:
 
@@ -115,7 +115,19 @@ AccountingStorageTRES=gres/gpu:<type1>,gres/gpu:<type2>
 
 The `AccountingStorageTRES` parameter enables recording of complementary resource allocations (e.g., GPU, licenses) in addition to generic resources (e.g., nodes, cores, memory) in the Slurm accounting database. It is necessary to enable tracking of all GPU types in the cluster so that the `slurm-quota-charge` command can determine the GPUs allocated to completed jobs and account for the time consumed on these GPUs.
 
-On compute/login nodes:
+For optional LDAP authentication of the REST API, edit `/etc/slurm-quota/serve.ini`:
+
+```ini
+[authentication]
+enabled=yes
+
+[ldap]
+uri=ldap://ldap.example.org
+user_base=ou=people,dc=example,dc=org
+group_base=ou=groups,dc=example,dc=org
+```
+
+#### Compute and login nodes
 
 1) Install the common package:
 
@@ -129,7 +141,7 @@ sudo dnf install slurm-quota
 export SLURM_QUOTA_URL=http://controller:9911/
 ```
 
-For the optional web dashboard:
+#### Web dashboard
 
 1) Install the web dashboard package on the node running Apache:
 
@@ -269,6 +281,8 @@ curl http://127.0.0.1:9911/health
 ```
 
 The service automatically stops after 10 minutes of inactivity (configurable via `--idle-timeout` in `slurm-quota.service`, with `0` meaning no idle timeout).
+
+For optional LDAP authentication of the REST API, edit `/etc/slurm-quota/serve.ini` (see [Controller node](#controller-node) in the RPM installation section).
 
 5) Installation of the wrapper script
 
@@ -540,7 +554,7 @@ It is normally not necessary to execute this `prune` command under normal condit
 
 ### `slurm-quota-serve` Command
 
-Launches an HTTP REST API JSON server. Designed to work with systemd socket activation.
+Launches an HTTP REST API JSON server with `GET /health`, `GET /stats`, and optional `POST /login` when LDAP authentication is enabled. Designed to work with systemd socket activation.
 
 Examples:
 
@@ -558,6 +572,20 @@ curl http://127.0.0.1:9911/stats?account=hpc
 ```
 
 The service automatically stops after a period of inactivity (600 seconds, ie. 10 minutes by default). This can be disabled with `--idle-timeout 0` argument. The `stats` command queries this HTTP service (URL configurable via the `SLURM_QUOTA_URL` environment variable).
+
+Dump resolved configuration (passwords masked) and exit:
+
+```bash
+slurm-quota-serve --dump-config
+```
+
+LDAP login when authentication is enabled (setup described in the [Controller node](#controller-node) installation section):
+
+```bash
+curl -s -X POST http://127.0.0.1:9911/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"secret"}'
+```
 
 ### `slurm-quota-web` Command
 
