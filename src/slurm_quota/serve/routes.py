@@ -17,6 +17,7 @@ from rfl.authentication.errors import LDAPAuthenticationError
 import slurm_quota
 from slurm_quota.database import query_accounts_aggregate, query_users_aggregate
 from slurm_quota import slurm as slurm_integration
+from slurm_quota.serve.auth import require_jwt_if_auth_enabled
 
 if TYPE_CHECKING:
     from slurm_quota.serve.app import SlurmQuotaServeApp
@@ -96,6 +97,7 @@ def login() -> Any:
     return jsonify({"token": token})
 
 
+@require_jwt_if_auth_enabled
 def stats() -> Any:
     username_param = (request.args.get("username") or "").strip() or None
     account_param = (request.args.get("account") or "").strip() or None

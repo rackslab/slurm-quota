@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from flask import Flask, jsonify
-from werkzeug.exceptions import Unauthorized
+from werkzeug.exceptions import Forbidden, Unauthorized
 from rfl.authentication.ldap import LDAPAuthentifier
 from rfl.settings import RuntimeSettings
 from rfl.web.tokens import RFLTokenizedWebApp
@@ -41,6 +41,7 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
 
         self.before_request(self.touch_activity)
         self.register_error_handler(401, self.unauthorized)
+        self.register_error_handler(403, self.forbidden)
         self.register_error_handler(404, self.not_found)
         self.add_url_rule("/health", view_func=routes.health, methods=["GET"])
         self.add_url_rule("/login", view_func=routes.login, methods=["POST"])
@@ -107,4 +108,15 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
                 }
             ),
             401,
+        )
+
+    def forbidden(self, exc: Forbidden) -> Any:
+        return (
+            jsonify(
+                {
+                    "error": "forbidden",
+                    "message": exc.description or "Forbidden",
+                }
+            ),
+            403,
         )
