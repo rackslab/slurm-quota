@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from slurm_quota.database import init_database
+from slurm_quota.serve.settings import conf_defs_path
 
 import http.client
 import json
 import os
 import socket
+import tempfile
+import textwrap
 import threading
 import time
+from pathlib import Path
 from unittest.mock import patch
+
+from rfl.authentication.user import AuthenticatedUser
 
 from tests.functional.functional_base import FunctionalCLIBase
 
@@ -22,25 +28,56 @@ class TestServeCommand(FunctionalCLIBase):
             return int(s.getsockname()[1])
 
     def _start_serve_thread(
-        self, host: str, port: int, idle_timeout: int = 1
+        self,
+        host: str,
+        port: int,
+        idle_timeout: int = 1,
+        extra_args: list[str] | None = None,
     ) -> threading.Thread:
+        argv = [
+            "slurm-quota-serve",
+            "--host",
+            host,
+            "--port",
+            str(port),
+            "--idle-timeout",
+            str(idle_timeout),
+            "--conf-defs",
+            str(conf_defs_path()),
+        ]
+        if extra_args:
+            argv.extend(extra_args)
         thread = threading.Thread(
             target=self.run_serve_main,
-            args=(
-                [
-                    "slurm-quota-serve",
-                    "--host",
-                    host,
-                    "--port",
-                    str(port),
-                    "--idle-timeout",
-                    str(idle_timeout),
-                ],
-            ),
+            args=(argv,),
             daemon=True,
         )
         thread.start()
         return thread
+
+    def _write_auth_site_ini(self, directory: Path) -> Path:
+        jwt_key = directory / "jwt.key"
+        site_ini = directory / "serve.ini"
+        site_ini.write_text(
+            textwrap.dedent(
+                f"""\
+                [authentication]
+                enabled=yes
+
+                [ldap]
+                uri=ldap://localhost
+                user_base=ou=people,dc=example,dc=org
+                group_base=ou=groups,dc=example,dc=org
+
+                [jwt]
+                key={jwt_key}
+                create=yes
+                create_parent=yes
+                """
+            ),
+            encoding="utf-8",
+        )
+        return site_ini
 
     def _wait_until_ready(self, host: str, port: int) -> None:
         deadline = time.monotonic() + 2.0
@@ -308,3 +345,77 @@ class TestServeCommand(FunctionalCLIBase):
         self._wait_until_ready(host, port)
         time.sleep(1.2)
         self.assertTrue(thread.is_alive())
+
+    def test_serve_auth_login_returns_token(self):
+        init_database()
+        host = "127.0.0.1"
+        port = self._free_tcp_port()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            site_ini = self._write_auth_site_ini(Path(tmpdir))
+            with patch("slurm_quota.serve.app.LDAPAuthentifier") as m_ldap_cls:
+                m_ldap_cls.return_value.login.return_value = AuthenticatedUser(
+                    login="alice", groups=["users"]
+                )
+                thread = self._start_serve_thread(
+                    host,
+                    port,
+                    extra_args=["--config", str(site_ini)],
+                )
+                self._wait_until_ready(host, port)
+
+                conn = http.client.HTTPConnection(host, port, timeout=2)
+                try:
+                    body = json.dumps(
+                        {"username": "alice", "password": "secret"}
+                    ).encode("utf-8")
+                    conn.request(
+                        "POST",
+                        "/login",
+                        body=body,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    login_resp = conn.getresponse()
+                    self.assertEqual(login_resp.status, 200)
+                    login_body = json.loads(login_resp.read().decode("utf-8"))
+                    self.assertIn("token", login_body)
+                finally:
+                    conn.close()
+
+                self._join_after_idle(thread)
+
+    def test_serve_auth_login_rejects_bad_credentials(self):
+        init_database()
+        host = "127.0.0.1"
+        port = self._free_tcp_port()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            site_ini = self._write_auth_site_ini(Path(tmpdir))
+            from rfl.authentication.errors import LDAPAuthenticationError
+
+            with patch("slurm_quota.serve.app.LDAPAuthentifier") as m_ldap_cls:
+                m_ldap_cls.return_value.login.side_effect = LDAPAuthenticationError(
+                    "Invalid user or password"
+                )
+                thread = self._start_serve_thread(
+                    host,
+                    port,
+                    extra_args=["--config", str(site_ini)],
+                )
+                self._wait_until_ready(host, port)
+
+                conn = http.client.HTTPConnection(host, port, timeout=2)
+                try:
+                    body = json.dumps(
+                        {"username": "alice", "password": "wrong"}
+                    ).encode("utf-8")
+                    conn.request(
+                        "POST",
+                        "/login",
+                        body=body,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    resp = conn.getresponse()
+                    self.assertEqual(resp.status, 401)
+                finally:
+                    conn.close()
+
+                self._join_after_idle(thread)
