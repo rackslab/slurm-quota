@@ -3,7 +3,7 @@
 :manmanual: Slurm Quota HTTP Service
 :mansource: slurm-quota-serve
 :revnumber: 2.0.0
-:revdate: 2026-04-20
+:revdate: 2026-06-16
 
 == Name
 
@@ -11,13 +11,13 @@ slurm-quota-serve - HTTP JSON API for Slurm quota
 
 == Synopsis
 
-*slurm-quota-serve* [*-h*] [*--debug* | *-q* | *--quiet*] [*--version*] [*--host* <host>] [*--port* <port>] [*--idle-timeout* <seconds>]
+*slurm-quota-serve* [*-h*] [*--debug* | *-q* | *--quiet*] [*--version*] [*--host* <host>] [*--port* <port>] [*--idle-timeout* <seconds>] [*--conf-defs* <path>] [*--config* <path>] [*--dump-config*]
 
 == Description
 
-*slurm-quota-serve* runs an HTTP JSON service exposing `/health` and `/stats`.
-It is designed to work with systemd socket activation and is consumed by
-`slurm-quota stats` and `slurm-quota-web`.
+*slurm-quota-serve* runs an HTTP JSON service. It is designed to work with
+systemd socket activation and is consumed by `slurm-quota stats` and
+`slurm-quota-web`.
 
 The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 
@@ -44,6 +44,15 @@ The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 *--idle-timeout* <seconds>::
   Exit after inactivity (default: `600`). `0` disables idle shutdown.
 
+*--conf-defs* <path>::
+  Path to YAML settings definition file (default: bundled `serve.yml`).
+
+*--config* <path>::
+  Path to site INI configuration file (default: `/etc/slurm-quota/serve.ini`).
+
+*--dump-config*::
+  Dump resolved configuration values and exit. Passwords are masked.
+
 Notes:
 
 - If systemd socket activation is active (`LISTEN_PID`/`LISTEN_FDS`), inherited FD 3 is used and `--host`/`--port` are ignored.
@@ -54,18 +63,42 @@ Notes:
 *LISTEN_PID*, *LISTEN_FDS*::
   Used to detect systemd socket activation.
 
+*SLURM_QUOTA_SERVE_CONF_DEFS*::
+  Override path to the YAML settings definition file.
+
+*SLURM_QUOTA_SERVE_CONFIG*::
+  Override path to the site INI configuration file.
+
 == Examples
 
 ....
 slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 600
 curl http://127.0.0.1:9911/health
+curl http://127.0.0.1:9911/stats
 curl http://127.0.0.1:9911/stats?username=alice
+curl http://127.0.0.1:9911/stats?account=hpc
+
+slurm-quota-serve --dump-config
+
+# With LDAP authentication enabled in /etc/slurm-quota/serve.ini
+curl -s -X POST http://127.0.0.1:9911/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"secret"}'
 ....
 
 == Files
 
 `/var/lib/state/slurm-quota/slurm-quota.db`::
   SQLite database for quotas, consumed/preallocated counters, GPU factors, and default settings.
+
+`/usr/share/slurm-quota/conf/serve.yml`::
+  YAML settings definition for the HTTP service.
+
+`/etc/slurm-quota/serve.ini`::
+  Site configuration overrides (authentication, LDAP, JWT).
+
+`/var/lib/slurm-quota/jwt.key`::
+  Default path for the JWT signing key when authentication is enabled.
 
 == Exit Status
 
