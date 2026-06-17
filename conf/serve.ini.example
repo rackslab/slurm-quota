@@ -1,0 +1,13 @@
+# Example site configuration for slurm-quota-serve.
+#
+# Copy to /etc/slurm-quota/serve.ini and adapt to your site.
+# Parameter reference is in conf/serve.yml (installed as
+# /usr/share/slurm-quota/conf/serve.yml).
+
+[authentication]
+enabled=yes
+
+[ldap]
+uri=ldap://localhost
+user_base=ou=people,dc=example,dc=org
+group_base=ou=groups,dc=example,dc=org

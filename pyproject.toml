@@ -13,13 +13,16 @@ license = { text = "GPL-2.0-or-later" }
 [project.scripts]
 slurm-quota = "slurm_quota.cli:main"
 slurm-quota-charge = "slurm_quota.charge:main"
-slurm-quota-serve = "slurm_quota.serve:main"
+slurm-quota-serve = "slurm_quota.serve.cli:main"
 slurm-quota-migrate = "slurm_quota.migrate:main"
 slurm-quota-web = "slurm_quota.web:main"
 
 [project.optional-dependencies]
 serve = [
   "flask>=2",
+  "RFL.authentication[jwt,ldap]>=1.8.0",
+  "RFL.settings>=1.8.0",
+  "RFL.web>=1.8.0",
 ]
 web = [
   "flask>=2",
@@ -30,12 +33,16 @@ dev = [
   "pytest-cov>=5",
   "flask>=2",
   "jinja2>=2",
+  "RFL.authentication[jwt,ldap]>=1.8.0",
+  "RFL.settings>=1.8.0",
+  "RFL.web>=1.8.0",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.data-files]
+"slurm-quota/conf" = ["conf/serve.yml", "conf/serve.ini.example"]
 "slurm-quota/web/wsgi" = ["web/wsgi/slurm-quota-web.wsgi"]
 "slurm-quota/web/templates" = ["web/templates/*"]
 "slurm-quota/web/static" = ["web/static/*"]

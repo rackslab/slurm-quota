@@ -1,0 +1,117 @@
+authentication:
+  _doc: REST API authentication settings
+  enabled:
+    type: bool
+    default: false
+    doc: Enable LDAP authentication and JWT token issuance for POST /login
+  method:
+    type: str
+    choices:
+      - ldap
+    default: ldap
+    doc: Authentication backend (only ldap is supported)
+
+ldap:
+  _doc: LDAP directory settings
+  uri:
+    type: uri
+    doc: LDAP server URI (for example ldap://ldap.example.org or ldaps://ldap.example.org)
+  user_base:
+    type: str
+    doc: Base DN for user entries (for example ou=people,dc=example,dc=org)
+  group_base:
+    type: str
+    doc: Base DN for group entries (for example ou=groups,dc=example,dc=org)
+  cacert:
+    type: path
+    doc: Path to CA certificate file used to validate LDAP server TLS certificate
+  starttls:
+    type: bool
+    default: false
+    doc: Use STARTTLS on plain LDAP connections instead of LDAPS
+  user_class:
+    type: str
+    default: posixAccount
+    doc: LDAP object class used to identify user entries
+  user_name_attribute:
+    type: str
+    default: uid
+    doc: LDAP attribute that contains the user login name
+  user_fullname_attribute:
+    type: str
+    default: cn
+    doc: LDAP attribute that contains the user full name
+  user_primary_group_attribute:
+    type: str
+    default: gidNumber
+    doc: LDAP attribute that contains the user primary group identifier
+  group_name_attribute:
+    type: str
+    default: cn
+    doc: LDAP attribute that contains the group name
+  group_object_classes:
+    type: list
+    content: str
+    default:
+      - posixGroup
+      - groupOfNames
+    doc: LDAP object classes used to identify group entries
+  lookup_user_dn:
+    type: bool
+    default: true
+    doc: Lookup the user DN under user_base before authentication
+  bind_dn:
+    type: str
+    doc: Service account DN used for LDAP searches when bind credentials are required
+  bind_password:
+    type: password
+    doc: Password for bind_dn (mutually exclusive with bind_password_file)
+  bind_password_file:
+    type: path
+    doc: Path to a file containing the password for bind_dn
+  restricted_groups:
+    type: list
+    content: str
+    doc: Allow login only for users belonging to at least one of these LDAP groups
+
+jwt:
+  _doc: JWT token settings
+  key:
+    type: path
+    default: /var/lib/slurm-quota/jwt.key
+    doc: Path to the JWT signing key file
+  duration:
+    type: int
+    default: 1
+    doc: Token validity duration in days
+  algorithm:
+    type: str
+    choices:
+      - HS256
+      - HS384
+      - HS512
+      - ES256
+      - ES256K
+      - ES384
+      - ES512
+      - RS256
+      - RS384
+      - RS512
+      - PS256
+      - PS384
+      - PS512
+      - EdDSA
+    default: HS256
+    doc: JWT signing algorithm
+  audience:
+    type: str
+    default: slurm-quota
+    doc: Expected JWT audience claim value
+  create:
+    type: bool
+    default: true
+    doc: Create the signing key file automatically if it does not exist
+  create_parent:
+    type: bool
+    default: false
+    doc: Create parent directories when automatically creating the signing key file
