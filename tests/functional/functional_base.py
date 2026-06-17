@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from slurm_quota.cli import main as cli_main
 from slurm_quota.charge import main as charge_main
-from slurm_quota.serve import main as serve_main
+from slurm_quota.serve.cli import main as serve_main
 
 from tests.test_support import SlurmQuotaTestCase
 
