@@ -138,16 +138,28 @@ class TestRoutes(SlurmQuotaTestCase):
         self.assertEqual(resp.status_code, 500)
         self.assertEqual(json.loads(resp.data), {"error": "db_error"})
 
-    def test_stats_accessible_when_auth_enabled(self):
+    def test_stats_rejects_missing_token_when_auth_enabled(self):
         init_database()
         with tempfile.TemporaryDirectory() as tmp:
             self._enable_auth(Path(tmp))
             client = app.test_client()
             resp = client.get("/stats")
-        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.status_code, 403)
         body = json.loads(resp.data)
-        self.assertIn("users", body)
-        self.assertIn("accounts", body)
+        self.assertEqual(body["error"], "forbidden")
+
+    def test_stats_rejects_invalid_token_when_auth_enabled(self):
+        init_database()
+        with tempfile.TemporaryDirectory() as tmp:
+            self._enable_auth(Path(tmp))
+            client = app.test_client()
+            resp = client.get(
+                "/stats",
+                headers={"Authorization": "Bearer invalid"},
+            )
+        self.assertEqual(resp.status_code, 401)
+        body = json.loads(resp.data)
+        self.assertEqual(body["error"], "unauthorized")
 
     def test_auth_login_returns_token(self):
         with tempfile.TemporaryDirectory() as tmp:
