@@ -39,6 +39,7 @@ _slurm_quota() {
     local -a public_subcommands restricted_subcommands subcommands
     public_subcommands=(
         stats
+        login
         gpu-factors
         default-quotas
     )
@@ -121,6 +122,13 @@ _slurm_quota() {
     case "$subcmd" in
         gpu-factors|default-quotas)
             COMPREPLY=($(compgen -W "$base_opts" -- "$cur"))
+            ;;
+        login)
+            if (( cword == subcmd_idx + 1 )); then
+                COMPREPLY=($(_slurm_quota_complete_users "$cur"))
+            else
+                COMPREPLY=($(compgen -W "$base_opts --save" -- "$cur"))
+            fi
             ;;
         stats)
             COMPREPLY=($(compgen -W "$base_opts --user --account --all --hours" -- "$cur"))
