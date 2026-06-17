@@ -7,7 +7,12 @@ from unittest.mock import patch
 
 from urllib.error import URLError
 
-from slurm_quota.client import StatsHTTPError, fetch_stats_from_service
+from slurm_quota.client import (
+    ServiceHTTPError,
+    fetch_stats,
+    fetch_token,
+)
+from slurm_quota.token import save_service_token
 
 from tests.test_support import SlurmQuotaTestCase
 
@@ -64,7 +69,7 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
         with patch(
             "slurm_quota.client.urlopen", return_value=_FakeUrlopenResponse(payload)
         ):
-            users, accounts = fetch_stats_from_service("alice", None, False)
+            users, accounts = fetch_stats("alice", None, False)
         self.assertEqual(len(users), 1)
         self.assertEqual(users[0]["username"], "alice")
         self.assertEqual(len(accounts), 1)
@@ -72,7 +77,7 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
 
     def test_empty_payload_lists_when_keys_missing(self):
         with patch("slurm_quota.client.urlopen", return_value=_FakeUrlopenResponse({})):
-            users, accounts = fetch_stats_from_service(None, None, True)
+            users, accounts = fetch_stats(None, None, True)
         self.assertEqual(users, [])
         self.assertEqual(accounts, [])
 
@@ -81,7 +86,7 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            fetch_stats_from_service("alice", None, False)
+            fetch_stats("alice", None, False)
         req = m_urlopen.call_args[0][0]
         self.assertIn("username=alice", req.full_url)
 
@@ -90,7 +95,7 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            fetch_stats_from_service("alice", None, True)
+            fetch_stats("alice", None, True)
         req = m_urlopen.call_args[0][0]
         self.assertNotIn("username=", req.full_url)
 
@@ -99,7 +104,7 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            fetch_stats_from_service(None, "projX", False)
+            fetch_stats(None, "projX", False)
         req = m_urlopen.call_args[0][0]
         self.assertIn("account=projX", req.full_url)
 
@@ -109,7 +114,7 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            fetch_stats_from_service(None, None, True)
+            fetch_stats(None, None, True)
         req = m_urlopen.call_args[0][0]
         self.assertTrue(
             req.full_url.startswith("http://custom.example:9999/api/"),
@@ -122,11 +127,95 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse({}, status=500),
         ):
-            with self.assertRaises(StatsHTTPError) as cm:
-                fetch_stats_from_service(None, None, True)
+            with self.assertRaises(ServiceHTTPError) as cm:
+                fetch_stats(None, None, True)
         self.assertEqual(cm.exception.status, 500)
 
     def test_urlerror_propagates(self):
         with patch("slurm_quota.client.urlopen", side_effect=URLError("boom")):
             with self.assertRaises(URLError):
-                fetch_stats_from_service(None, None, True)
+                fetch_stats(None, None, True)
+
+    def test_adds_authorization_header_when_env_token_set(self):
+        self.env({"SLURM_QUOTA_TOKEN": "env-jwt"})
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
+        ) as m_urlopen:
+            fetch_stats(None, None, True)
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.get_header("Authorization"), "Bearer env-jwt")
+
+    def test_adds_authorization_header_when_token_file_exists(self):
+        config_home = self._tmp.name + "/xdg-config"
+        self.env({"XDG_CONFIG_HOME": config_home})
+        save_service_token("file-jwt")
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
+        ) as m_urlopen:
+            fetch_stats(None, None, True)
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.get_header("Authorization"), "Bearer file-jwt")
+
+    def test_omits_authorization_header_when_no_token(self):
+        config_home = self._tmp.name + "/empty-config"
+        self.env({"XDG_CONFIG_HOME": config_home})
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
+        ) as m_urlopen:
+            fetch_stats(None, None, True)
+        req = m_urlopen.call_args[0][0]
+        self.assertIsNone(req.get_header("Authorization"))
+
+
+class TestFetchTokenFromService(SlurmQuotaTestCase):
+    def test_returns_token_from_login_response(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"token": "jwt-token"}),
+        ) as m_urlopen:
+            token = fetch_token("alice", "secret")
+        self.assertEqual(token, "jwt-token")
+        req = m_urlopen.call_args[0][0]
+        self.assertTrue(req.full_url.endswith("/login"))
+        self.assertEqual(req.get_method(), "POST")
+        self.assertEqual(req.get_header("Content-type"), "application/json")
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body, {"username": "alice", "password": "secret"})
+
+    def test_respects_slurm_quota_url(self):
+        self.env({"SLURM_QUOTA_URL": "http://custom.example:9999/api/"})
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"token": "jwt-token"}),
+        ) as m_urlopen:
+            fetch_token("alice", "secret")
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(
+            req.full_url,
+            "http://custom.example:9999/api/login",
+        )
+
+    def test_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=401),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                fetch_token("alice", "wrong")
+        self.assertEqual(cm.exception.status, 401)
+
+    def test_raises_value_error_when_token_missing(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}),
+        ):
+            with self.assertRaises(ValueError):
+                fetch_token("alice", "secret")
+
+    def test_urlerror_propagates(self):
+        with patch("slurm_quota.client.urlopen", side_effect=URLError("boom")):
+            with self.assertRaises(URLError):
+                fetch_token("alice", "secret")
