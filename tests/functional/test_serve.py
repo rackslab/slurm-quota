@@ -419,3 +419,56 @@ class TestServeCommand(FunctionalCLIBase):
                     conn.close()
 
                 self._join_after_idle(thread)
+
+    def test_serve_auth_stats_requires_token(self):
+        init_database()
+        host = "127.0.0.1"
+        port = self._free_tcp_port()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            site_ini = self._write_auth_site_ini(Path(tmpdir))
+            with patch("slurm_quota.serve.app.LDAPAuthentifier") as m_ldap_cls:
+                m_ldap_cls.return_value.login.return_value = AuthenticatedUser(
+                    login="alice", groups=["users"]
+                )
+                thread = self._start_serve_thread(
+                    host,
+                    port,
+                    extra_args=["--config", str(site_ini)],
+                )
+                self._wait_until_ready(host, port)
+
+                conn = http.client.HTTPConnection(host, port, timeout=2)
+                try:
+                    conn.request("GET", "/stats")
+                    stats_resp = conn.getresponse()
+                    self.assertEqual(stats_resp.status, 403)
+                    stats_body = json.loads(stats_resp.read().decode("utf-8"))
+                    self.assertEqual(stats_body["error"], "forbidden")
+
+                    login_body = json.dumps(
+                        {"username": "alice", "password": "secret"}
+                    ).encode("utf-8")
+                    conn.request(
+                        "POST",
+                        "/login",
+                        body=login_body,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    login_resp = conn.getresponse()
+                    self.assertEqual(login_resp.status, 200)
+                    token = json.loads(login_resp.read().decode("utf-8"))["token"]
+
+                    conn.request(
+                        "GET",
+                        "/stats",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                    authed_resp = conn.getresponse()
+                    self.assertEqual(authed_resp.status, 200)
+                    authed_body = json.loads(authed_resp.read().decode("utf-8"))
+                    self.assertIn("users", authed_body)
+                    self.assertIn("accounts", authed_body)
+                finally:
+                    conn.close()
+
+                self._join_after_idle(thread)
