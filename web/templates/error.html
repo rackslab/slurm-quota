@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Service unavailable — slurm-quota{% endblock %}
+
+{% block body %}
+<div class="login-panel">
+  <h1 class="page-title">Service unavailable</h1>
+  <p class="subtitle">The dashboard cannot complete your request right now.</p>
+
+  <div class="error">
+  Please contact your cluster administrator and ask them to check the
+  slurm-quota-web server logs.
+  </div>
+
+  <p class="error-actions">
+    <a href="{{ url_for('dashboard') }}" class="retry-button">Retry</a>
+  </p>
+</div>
+{% endblock %}
