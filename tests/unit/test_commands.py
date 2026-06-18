@@ -70,45 +70,41 @@ class TestShowUserStats(SlurmQuotaTestCase):
             show_user_stats(**kwargs)
         return buf.getvalue()
 
+    def _mock_stats(self, return_value=None, side_effect=None):
+        patcher = patch("slurm_quota.commands.APIClient")
+        m_api = patcher.start()
+        self.addCleanup(patcher.stop)
+        if side_effect is not None:
+            m_api.return_value.stats.side_effect = side_effect
+        else:
+            m_api.return_value.stats.return_value = return_value
+        return m_api
+
     def test_no_data_for_explicit_username(self):
-        with patch(
-            "slurm_quota.client.fetch_stats",
-            return_value=([], []),
-        ):
-            out = self._run_show(username="bob", show_all=False)
+        self._mock_stats(return_value=([], []))
+        out = self._run_show(username="bob", show_all=False)
         expected = dedent_lines("No data found for user: bob")
         self.assertEqual(out, expected)
 
     def test_no_data_for_explicit_account(self):
-        with patch(
-            "slurm_quota.client.fetch_stats",
-            return_value=([], []),
-        ):
-            out = self._run_show(account="projX", show_all=False)
+        self._mock_stats(return_value=([], []))
+        out = self._run_show(account="projX", show_all=False)
         expected = dedent_lines("No data found for account: projX")
         self.assertEqual(out, expected)
 
     def test_no_users_when_show_all_empty(self):
-        with patch(
-            "slurm_quota.client.fetch_stats",
-            return_value=([], []),
-        ):
-            out = self._run_show(show_all=True)
+        self._mock_stats(return_value=([], []))
+        out = self._run_show(show_all=True)
         expected = dedent_lines("No users found in service")
         self.assertEqual(out, expected)
 
     def test_prints_user_and_account_tables(self):
         self.env({"NO_COLOR": "1"})
         users, accounts = _sample_users_and_accounts()
-        with (
-            patch(
-                "slurm_quota.client.fetch_stats",
-                return_value=(users, accounts),
-            ),
-            patch(
-                "slurm_quota.commands.format_timestamp_with_timezone",
-                return_value="TS_FIXED",
-            ),
+        self._mock_stats(return_value=(users, accounts))
+        with patch(
+            "slurm_quota.commands.format_timestamp_with_timezone",
+            return_value="TS_FIXED",
         ):
             out = self._run_show(username="alice", show_all=False)
         expected = dedent_lines(
@@ -128,15 +124,10 @@ class TestShowUserStats(SlurmQuotaTestCase):
         """Account-filtered responses omit user rows; only the accounts table is printed."""
         self.env({"NO_COLOR": "1"})
         _, accounts = _sample_users_and_accounts()
-        with (
-            patch(
-                "slurm_quota.client.fetch_stats",
-                return_value=([], accounts),
-            ),
-            patch(
-                "slurm_quota.commands.format_timestamp_with_timezone",
-                return_value="TS_FIXED",
-            ),
+        self._mock_stats(return_value=([], accounts))
+        with patch(
+            "slurm_quota.commands.format_timestamp_with_timezone",
+            return_value="TS_FIXED",
         ):
             out = self._run_show(account="acct1", show_all=False)
         expected = dedent_lines(
@@ -160,15 +151,10 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "total_preallocated_gpu_minutes": 0,
             "quota_gpu_minutes": -1,
         }
-        with (
-            patch(
-                "slurm_quota.client.fetch_stats",
-                return_value=([user], []),
-            ),
-            patch(
-                "slurm_quota.commands.format_timestamp_with_timezone",
-                return_value="TS_FIXED",
-            ),
+        self._mock_stats(return_value=([user], []))
+        with patch(
+            "slurm_quota.commands.format_timestamp_with_timezone",
+            return_value="TS_FIXED",
         ):
             out = self._run_show(username="u1", show_all=False, display_hours=True)
         expected = dedent_lines(
@@ -196,15 +182,10 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "total_preallocated_gpu_minutes": 0,
             "quota_gpu_minutes": -1,
         }
-        with (
-            patch(
-                "slurm_quota.client.fetch_stats",
-                return_value=([user], []),
-            ),
-            patch(
-                "slurm_quota.commands.format_timestamp_with_timezone",
-                return_value="TS_FIXED",
-            ),
+        self._mock_stats(return_value=([user], []))
+        with patch(
+            "slurm_quota.commands.format_timestamp_with_timezone",
+            return_value="TS_FIXED",
         ):
             out = self._run_show(username="u1", show_all=False)
         expected = dedent_lines(
@@ -247,15 +228,10 @@ class TestShowUserStats(SlurmQuotaTestCase):
                 "quota_gpu_minutes": -1,
             }
         ]
-        with (
-            patch(
-                "slurm_quota.client.fetch_stats",
-                return_value=(users, accounts),
-            ),
-            patch(
-                "slurm_quota.commands.format_timestamp_with_timezone",
-                return_value="TS_FIXED",
-            ),
+        self._mock_stats(return_value=(users, accounts))
+        with patch(
+            "slurm_quota.commands.format_timestamp_with_timezone",
+            return_value="TS_FIXED",
         ):
             out = self._run_show(show_all=True)
 
@@ -273,29 +249,19 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.assertEqual(out, expected)
 
     def test_uses_get_current_user_when_username_omitted(self):
-        with (
-            patch("slurm_quota.auth.get_current_user", return_value="carol") as m_gc,
-            patch(
-                "slurm_quota.client.fetch_stats",
-                return_value=([], []),
-            ) as m_fetch,
-        ):
+        with patch("slurm_quota.auth.get_current_user", return_value="carol") as m_gc:
+            m_api = self._mock_stats(return_value=([], []))
             out = self._run_show(show_all=False)
         m_gc.assert_called_once()
-        m_fetch.assert_called_once_with("carol", None, False)
+        m_api.return_value.stats.assert_called_once_with("carol", None, False)
         self.assertEqual(out, dedent_lines("No users found in service"))
 
     def test_skips_get_current_user_when_account_requested(self):
-        with (
-            patch("slurm_quota.auth.get_current_user") as m_gc,
-            patch(
-                "slurm_quota.client.fetch_stats",
-                return_value=([], []),
-            ) as m_fetch,
-        ):
+        with patch("slurm_quota.auth.get_current_user") as m_gc:
+            m_api = self._mock_stats(return_value=([], []))
             out = self._run_show(account="hpc", show_all=False)
         m_gc.assert_not_called()
-        m_fetch.assert_called_once_with(None, "hpc", False)
+        m_api.return_value.stats.assert_called_once_with(None, "hpc", False)
         self.assertEqual(out, dedent_lines("No data found for account: hpc"))
 
     def test_get_current_user_keyerror_exits(self):
@@ -305,28 +271,19 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.assertEqual(cm.exception.code, 1)
 
     def test_stats_http_error_exits(self):
-        with patch(
-            "slurm_quota.client.fetch_stats",
-            side_effect=ServiceHTTPError(502),
-        ):
-            with self.assertRaises(SystemExit) as cm:
-                show_user_stats(username="x", show_all=False)
+        self._mock_stats(side_effect=ServiceHTTPError(502))
+        with self.assertRaises(SystemExit) as cm:
+            show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
 
     def test_urlerror_exits(self):
-        with patch(
-            "slurm_quota.client.fetch_stats",
-            side_effect=URLError("down"),
-        ):
-            with self.assertRaises(SystemExit) as cm:
-                show_user_stats(username="x", show_all=False)
+        self._mock_stats(side_effect=URLError("down"))
+        with self.assertRaises(SystemExit) as cm:
+            show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
 
     def test_generic_exception_exits(self):
-        with patch(
-            "slurm_quota.client.fetch_stats",
-            side_effect=ValueError("bad json"),
-        ):
-            with self.assertRaises(SystemExit) as cm:
-                show_user_stats(username="x", show_all=False)
+        self._mock_stats(side_effect=ValueError("bad json"))
+        with self.assertRaises(SystemExit) as cm:
+            show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)

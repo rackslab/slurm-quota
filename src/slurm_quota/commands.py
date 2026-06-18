@@ -14,8 +14,8 @@ from urllib.error import URLError
 
 from slurm_quota import auth
 import slurm_quota
-from slurm_quota import client
-from slurm_quota.token import save_service_token
+from slurm_quota.client import APIClient, ServiceHTTPError
+from slurm_quota.token import load_service_token, save_service_token
 from slurm_quota.database import (
     adjust_consumed_minutes,
     get_default_quota_settings,
@@ -506,13 +506,14 @@ def login_command(username: Optional[str] = None, save: bool = False) -> None:
 
     password = getpass.getpass(f"Password for {selected_username}: ")
     try:
-        token = client.fetch_token(selected_username, password)
+        api = APIClient()
+        token = api.login(selected_username, password)
         if save:
             token_path = save_service_token(token)
             print(f"Authentication token saved to {token_path}")
         else:
             print(token)
-    except client.ServiceHTTPError as e:
+    except ServiceHTTPError as e:
         if e.status == 401:
             logger.error("Invalid user or password")
         elif e.status == 404:
@@ -575,9 +576,8 @@ def show_user_stats(
         return min(longest_label, max_width)
 
     try:
-        users_data, accounts_data = client.fetch_stats(
-            selected_username, account, show_all
-        )
+        api = APIClient(token=load_service_token())
+        users_data, accounts_data = api.stats(selected_username, account, show_all)
 
         if not users_data and not accounts_data:
             if username:
@@ -690,7 +690,7 @@ def show_user_stats(
                 f"{format_first_column(account_name)} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
                 f"| {gpu_consumed_str:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
             )
-    except client.ServiceHTTPError as e:
+    except ServiceHTTPError as e:
         logger.error(f"Failed to fetch stats: HTTP {e.status}")
         sys.exit(1)
     except URLError as e:

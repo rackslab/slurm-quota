@@ -7,11 +7,7 @@ from unittest.mock import patch
 
 from urllib.error import URLError
 
-from slurm_quota.client import (
-    ServiceHTTPError,
-    fetch_stats,
-    fetch_token,
-)
+from slurm_quota.client import APIClient, ServiceHTTPError
 from slurm_quota.token import save_service_token
 
 from tests.test_support import SlurmQuotaTestCase
@@ -63,13 +59,13 @@ def _sample_payload():
     }
 
 
-class TestFetchStatsFromService(SlurmQuotaTestCase):
+class TestAPIClientStats(SlurmQuotaTestCase):
     def test_returns_users_and_accounts(self):
         payload = _sample_payload()
         with patch(
             "slurm_quota.client.urlopen", return_value=_FakeUrlopenResponse(payload)
         ):
-            users, accounts = fetch_stats("alice", None, False)
+            users, accounts = APIClient().stats("alice", None, False)
         self.assertEqual(len(users), 1)
         self.assertEqual(users[0]["username"], "alice")
         self.assertEqual(len(accounts), 1)
@@ -77,7 +73,7 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
 
     def test_empty_payload_lists_when_keys_missing(self):
         with patch("slurm_quota.client.urlopen", return_value=_FakeUrlopenResponse({})):
-            users, accounts = fetch_stats(None, None, True)
+            users, accounts = APIClient().stats(None, None, True)
         self.assertEqual(users, [])
         self.assertEqual(accounts, [])
 
@@ -86,7 +82,7 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            fetch_stats("alice", None, False)
+            APIClient().stats("alice", None, False)
         req = m_urlopen.call_args[0][0]
         self.assertIn("username=alice", req.full_url)
 
@@ -95,7 +91,7 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            fetch_stats("alice", None, True)
+            APIClient().stats("alice", None, True)
         req = m_urlopen.call_args[0][0]
         self.assertNotIn("username=", req.full_url)
 
@@ -104,17 +100,18 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            fetch_stats(None, "projX", False)
+            APIClient().stats(None, "projX", False)
         req = m_urlopen.call_args[0][0]
         self.assertIn("account=projX", req.full_url)
 
-    def test_respects_slurm_quota_url(self):
-        self.env({"SLURM_QUOTA_URL": "http://custom.example:9999/api/"})
+    def test_respects_base_url(self):
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            fetch_stats(None, None, True)
+            APIClient(base_url="http://custom.example:9999/api/").stats(
+                None, None, True
+            )
         req = m_urlopen.call_args[0][0]
         self.assertTrue(
             req.full_url.startswith("http://custom.example:9999/api/"),
@@ -128,56 +125,69 @@ class TestFetchStatsFromService(SlurmQuotaTestCase):
             return_value=_FakeUrlopenResponse({}, status=500),
         ):
             with self.assertRaises(ServiceHTTPError) as cm:
-                fetch_stats(None, None, True)
+                APIClient().stats(None, None, True)
         self.assertEqual(cm.exception.status, 500)
 
     def test_urlerror_propagates(self):
         with patch("slurm_quota.client.urlopen", side_effect=URLError("boom")):
             with self.assertRaises(URLError):
-                fetch_stats(None, None, True)
+                APIClient().stats(None, None, True)
 
-    def test_adds_authorization_header_when_env_token_set(self):
+    def test_adds_authorization_header_when_token_set(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
+        ) as m_urlopen:
+            APIClient(token="session-jwt").stats(None, None, True)
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.get_header("Authorization"), "Bearer session-jwt")
+
+    def test_omits_authorization_header_when_token_is_none(self):
         self.env({"SLURM_QUOTA_TOKEN": "env-jwt"})
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            fetch_stats(None, None, True)
-        req = m_urlopen.call_args[0][0]
-        self.assertEqual(req.get_header("Authorization"), "Bearer env-jwt")
-
-    def test_adds_authorization_header_when_token_file_exists(self):
-        config_home = self._tmp.name + "/xdg-config"
-        self.env({"XDG_CONFIG_HOME": config_home})
-        save_service_token("file-jwt")
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse(_sample_payload()),
-        ) as m_urlopen:
-            fetch_stats(None, None, True)
-        req = m_urlopen.call_args[0][0]
-        self.assertEqual(req.get_header("Authorization"), "Bearer file-jwt")
-
-    def test_omits_authorization_header_when_no_token(self):
-        config_home = self._tmp.name + "/empty-config"
-        self.env({"XDG_CONFIG_HOME": config_home})
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse(_sample_payload()),
-        ) as m_urlopen:
-            fetch_stats(None, None, True)
+            APIClient(token=None).stats(None, None, True)
         req = m_urlopen.call_args[0][0]
         self.assertIsNone(req.get_header("Authorization"))
 
 
-class TestFetchTokenFromService(SlurmQuotaTestCase):
+class TestAPIClientAuthRequired(SlurmQuotaTestCase):
+    def test_returns_false_when_stats_is_public(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
+        ):
+            self.assertFalse(APIClient.auth_required())
+
+    def test_returns_true_when_stats_requires_auth(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            self.assertTrue(APIClient.auth_required())
+
+    def test_raises_on_unexpected_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=500),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient.auth_required()
+        self.assertEqual(cm.exception.status, 500)
+
+
+class TestAPIClientLogin(SlurmQuotaTestCase):
     def test_returns_token_from_login_response(self):
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse({"token": "jwt-token"}),
         ) as m_urlopen:
-            token = fetch_token("alice", "secret")
+            client = APIClient()
+            token = client.login("alice", "secret")
         self.assertEqual(token, "jwt-token")
+        self.assertEqual(client.token, "jwt-token")
         req = m_urlopen.call_args[0][0]
         self.assertTrue(req.full_url.endswith("/login"))
         self.assertEqual(req.get_method(), "POST")
@@ -185,13 +195,14 @@ class TestFetchTokenFromService(SlurmQuotaTestCase):
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"username": "alice", "password": "secret"})
 
-    def test_respects_slurm_quota_url(self):
-        self.env({"SLURM_QUOTA_URL": "http://custom.example:9999/api/"})
+    def test_respects_base_url(self):
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse({"token": "jwt-token"}),
         ) as m_urlopen:
-            fetch_token("alice", "secret")
+            APIClient(base_url="http://custom.example:9999/api/").login(
+                "alice", "secret"
+            )
         req = m_urlopen.call_args[0][0]
         self.assertEqual(
             req.full_url,
@@ -204,7 +215,7 @@ class TestFetchTokenFromService(SlurmQuotaTestCase):
             return_value=_FakeUrlopenResponse({}, status=401),
         ):
             with self.assertRaises(ServiceHTTPError) as cm:
-                fetch_token("alice", "wrong")
+                APIClient().login("alice", "wrong")
         self.assertEqual(cm.exception.status, 401)
 
     def test_raises_value_error_when_token_missing(self):
@@ -213,9 +224,40 @@ class TestFetchTokenFromService(SlurmQuotaTestCase):
             return_value=_FakeUrlopenResponse({}),
         ):
             with self.assertRaises(ValueError):
-                fetch_token("alice", "secret")
+                APIClient().login("alice", "secret")
 
     def test_urlerror_propagates(self):
         with patch("slurm_quota.client.urlopen", side_effect=URLError("boom")):
             with self.assertRaises(URLError):
-                fetch_token("alice", "secret")
+                APIClient().login("alice", "secret")
+
+    def test_stats_uses_token_from_login(self):
+        users_payload = _sample_payload()
+
+        def urlopen_side_effect(request):
+            if request.full_url.endswith("/login"):
+                return _FakeUrlopenResponse({"token": "jwt-token"})
+            return _FakeUrlopenResponse(users_payload)
+
+        with patch(
+            "slurm_quota.client.urlopen", side_effect=urlopen_side_effect
+        ) as m_urlopen:
+            client = APIClient()
+            client.login("alice", "secret")
+            client.stats(None, None, True)
+        stats_req = m_urlopen.call_args[0][0]
+        self.assertEqual(stats_req.get_header("Authorization"), "Bearer jwt-token")
+
+    def test_cli_pattern_loads_token_from_file(self):
+        config_home = self._tmp.name + "/xdg-config"
+        self.env({"XDG_CONFIG_HOME": config_home})
+        save_service_token("file-jwt")
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
+        ) as m_urlopen:
+            from slurm_quota.token import load_service_token
+
+            APIClient(token=load_service_token()).stats(None, None, True)
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.get_header("Authorization"), "Bearer file-jwt")
