@@ -21,11 +21,33 @@ statistics in HTML web dashboard.
 The dashboard is read-only and consumes the existing `slurm-quota` HTTP API
 (`/stats`) exposed by `slurm-quota-serve`.
 
+When LDAP authentication is enabled on the REST API, the dashboard presents a
+login page. Users authenticate with their LDAP credentials; the application
+obtains a JWT from `POST /login` and stores it in a signed, HttpOnly session
+cookie. Each browser session is independent. When API authentication is
+disabled, the dashboard is available without login.
+
 == Environment
 
 *SLURM_QUOTA_URL*::
   Base URL of the slurm-quota HTTP API queried by the dashboard.
   Default: `http://127.0.0.1:9911/`
+
+*SLURM_QUOTA_WEB_SESSION_KEY_FILE*::
+  Path to a file containing the session signing key. See *Session key*
+  section for details.
+
+*SLURM_QUOTA_WEB_SESSION_KEY*::
+  Session signing key passed directly in the environment. Alternative to
+  `SLURM_QUOTA_WEB_SESSION_KEY_FILE`. See *Session key* section for details.
+
+*SLURM_QUOTA_WEB_SECURE_COOKIES*::
+  When set to `1`, session cookies are marked `Secure`. Recommended when the
+  dashboard is served over HTTPS.
+
+*SLURM_QUOTA_WEB_SESSION_DAYS*::
+  Session cookie lifetime in days. Default: `1` (aligned with default JWT
+  duration on the REST API).
 
 *SLURM_QUOTA_WEB_ASSETS_DIR*::
   Optional directory containing `templates/` and `static/` subdirectories.
@@ -44,6 +66,41 @@ The dashboard is read-only and consumes the existing `slurm-quota` HTTP API
 *SLURM_QUOTA_WEB_DEBUG*::
   If set to `1`, enables Flask debug mode in standalone execution.
 
+== Session key
+
+When REST API LDAP authentication is enabled, the dashboard stores each user's
+API JWT in a signed session cookie. A server-side session key is required to sign
+those cookies so they cannot be forged or altered by clients. When API
+authentication is disabled, no session key is needed.
+
+The key can be provided in two ways:
+
+*SLURM_QUOTA_WEB_SESSION_KEY*::
+  Session key value passed directly in the environment.
+
+*SLURM_QUOTA_WEB_SESSION_KEY_FILE*::
+  Path to a file containing the session key. A single trailing newline is ignored.
+  Prefer this method in production so the key is not embedded in process listings
+  or web server configuration.
+
+If both variables are set, *SLURM_QUOTA_WEB_SESSION_KEY* takes precedence over
+*SLURM_QUOTA_WEB_SESSION_KEY_FILE*.
+
+To generate a new key:
+
+....
+openssl rand -hex 32
+....
+
+For production deployment behind Apache, store the key in a restricted file::
+
+....
+sudo sh -c 'openssl rand -hex 32 > /etc/slurm-quota/web-session.key'
+sudo chmod 0400 /etc/slurm-quota/web-session.key
+sudo chown apache:apache /etc/slurm-quota/web-session.key
+SetEnv SLURM_QUOTA_WEB_SESSION_KEY_FILE /etc/slurm-quota/web-session.key
+....
+
 == Examples
 
 ....
@@ -52,6 +109,9 @@ slurm-quota-web
 
 # custom API endpoint
 SLURM_QUOTA_URL=http://controller:9911/ slurm-quota-web
+
+# with REST API LDAP authentication enabled (preferred: key file)
+SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key slurm-quota-web
 
 # custom bind host/port
 SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 slurm-quota-web
