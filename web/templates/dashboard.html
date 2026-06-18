@@ -5,7 +5,17 @@
 {% block body %}
 <div class="page-header">
   <h1 class="page-title">slurm-quota</h1>
-  <div class="refresh-standalone">
+  <div class="page-header-actions">
+    {% if auth_required and logged_in_username %}
+    <div class="user-session">
+      <span class="user-label">Signed in as <strong>{{ logged_in_username }}</strong></span>
+      <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="logout-button">Sign out</button>
+      </form>
+    </div>
+    {% endif %}
+    <div class="refresh-standalone">
     <label class="refresh-enable">
       <input type="checkbox" id="refresh-enabled">
       Enable auto-refresh

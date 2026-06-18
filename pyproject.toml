@@ -15,7 +15,7 @@ slurm-quota = "slurm_quota.cli:main"
 slurm-quota-charge = "slurm_quota.charge:main"
 slurm-quota-serve = "slurm_quota.serve.cli:main"
 slurm-quota-migrate = "slurm_quota.migrate:main"
-slurm-quota-web = "slurm_quota.web:main"
+slurm-quota-web = "slurm_quota.web.cli:main"
 
 [project.optional-dependencies]
 serve = [

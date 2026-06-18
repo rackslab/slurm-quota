@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Sign in — slurm-quota{% endblock %}
+
+{% block body %}
+<div class="login-panel">
+  <h1 class="page-title">Sign in</h1>
+  <p class="subtitle">Authenticate with your LDAP credentials to view quota statistics.</p>
+
+  {% if info_message %}
+  <div class="info">{{ info_message }}</div>
+  {% endif %}
+
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('login_post') }}" class="login-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <label>Username
+      <input type="text" name="username" autocomplete="username" required autofocus>
+    </label>
+    <label>Password
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">Sign in</button>
+  </form>
+</div>
+{% endblock %}
