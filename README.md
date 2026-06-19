@@ -41,7 +41,7 @@ In the SQLite database, there are 4 tables:
 
 We record the amount of preallocated time per job rather than a global value per user to allow fine-grained updates during modifications (increase or decrease of `time_limit`/`num_tasks`), targeted deletion of the preallocation upon completion, and robust cleanup of orphans. A global value would hide the detail per job and significantly complicate adjustments and cancellations, with an increased risk of inconsistencies.
 
-The SQLite database file must have the system user `slurm` as owner, with mode `0644` to restrict modification permission to the `slurm` user (used by `slurmctld` for the Lua script and the jobcomp script) and to administrators with the `root` account. Other users only have read-only access to the database. The `slurm-quota` script and `slurm-quota-charge` automatically create the database with the `user-quota` and `account-quota` commands (intended for Slurm and administrators), setting the correct permissions on the file.
+The SQLite database file must have the system user `slurm` as owner, with mode `0644` to restrict modification permission to the `slurm` user (used by `slurmctld` for the Lua script, the jobcomp script, and `slurm-quota-serve`) and to administrators with the `root` account. Other users only have read-only access to the database. The `slurm-quota` script, `slurm-quota-charge`, and `slurm-quota-serve` automatically create the database when it is missing (with `user-quota` and `account-quota` commands for administrators, or on first service start for the HTTP API), setting the correct permissions on the file.
 
 The commands `slurm-quota user-quota`, `slurm-quota account-quota`, `slurm-quota user-gpu-quota`, and `slurm-quota account-gpu-quota` respectively allow assigning CPU and GPU quotas to users and accounts.
 The `slurm-quota adjust` command (restricted to root) allows manually adjusting consumed CPU/GPU time for one user or account with an explicitly signed delta.
@@ -52,7 +52,7 @@ The solution allows setting GPU load factors. This is a multiplicative coefficie
 
 The `slurm-quota set-gpu-factor` command allows configuring load factors by GPU type (restricted to root). The `slurm-quota gpu-factors` command displays the currently configured GPU load factors.
 
-The `slurm-quota-serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes `GET /health` for liveness probes and `GET /stats`, which returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters can be used to filter responses: `username` filters users and limits accounts to this user's Slurm associations (e.g. `/stats?username=alice`), while `account` returns only the requested account stats in the `accounts` array (e.g. `/stats?account=hpc`). When LDAP authentication is enabled in site configuration, `POST /login` issues JWT tokens and `GET /stats` requires a valid Bearer token.
+The `slurm-quota-serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". It must run as the `slurm` system user and creates the SQLite database on first start if it does not exist yet. A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes `GET /health` for liveness probes and `GET /stats`, which returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters can be used to filter responses: `username` filters users and limits accounts to this user's Slurm associations (e.g. `/stats?username=alice`), while `account` returns only the requested account stats in the `accounts` array (e.g. `/stats?account=hpc`). When LDAP authentication is enabled in site configuration, `POST /login` issues JWT tokens and `GET /stats` requires a valid Bearer token.
 
 The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a user (`--user` or positional username), an account (`--account`), or the `--all` option, the command transmits the appropriate filters to the service. User and account selectors are mutually exclusive. If the service is not available or in case of connection failure to the server, execution fails with an error message. When LDAP authentication is enabled, the `slurm-quota login` command obtains a JWT from `POST /login`. By default it prints the token to stdout; with `--save`, it persists the token to `$XDG_CONFIG_HOME/slurm-quota/token` (default `~/.config/slurm-quota/token`), and `stats` automatically sends a saved token as a Bearer token (override with `SLURM_QUOTA_TOKEN` if needed).
 
@@ -599,9 +599,9 @@ Launches an HTTP REST API JSON server with `GET /health`, `GET /stats`, and opti
 Examples:
 
 ```bash
-# Manual launch (testing)
-slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 600
-slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 0    # no idle timeout
+# Manual launch (testing; must run as slurm user)
+sudo -u slurm slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 600
+sudo -u slurm slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 0    # no idle timeout
 
 # Via systemd (recommended)
 sudo systemctl start slurm-quota.socket
