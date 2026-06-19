@@ -16,14 +16,14 @@ class TestSlurmQuotaWebApp(SlurmQuotaTestCase):
         configure_web_app()
 
     def test_dashboard_redirects_to_login_without_session(self):
-        client = web.app.test_client()
+        client = web.application.test_client()
         resp = client.get("/")
         self.assertEqual(resp.status_code, 302)
         self.assertIn("/login", resp.headers["Location"])
 
     def test_missing_session_key_shows_error_page(self):
-        web.app.secret_key = None
-        client = web.app.test_client()
+        web.application.secret_key = None
+        client = web.application.test_client()
         resp = client.get("/")
         self.assertEqual(resp.status_code, 503)
         body = resp.get_data(as_text=True)
@@ -36,6 +36,6 @@ class TestSlurmQuotaWebApp(SlurmQuotaTestCase):
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
             m_client.return_value.stats.return_value = ([], [])
-            client = web.app.test_client()
+            client = web.application.test_client()
             resp = client.get("/")
         self.assertEqual(resp.status_code, 200)

@@ -56,7 +56,7 @@ def auth_enabled():
 
 
 def configure_web_app() -> None:
-    web.app.config["SECRET_KEY"] = "test-secret"
+    web.application.config["SECRET_KEY"] = "test-secret"
 
 
 def extract_csrf(html: str) -> str:
