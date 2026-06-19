@@ -19,19 +19,26 @@ slurm-quota-web - HTTP server for Slurm quota statistics web dashboard
 statistics in HTML web dashboard.
 
 The dashboard is read-only and consumes the existing `slurm-quota` HTTP API
-(`/stats`) exposed by `slurm-quota-serve`.
+(`/stats`) exposed by `slurm-quota-serve`. A valid JWT is always required to
+query `/stats`.
 
-When LDAP authentication is enabled on the REST API, the dashboard presents a
-login page. Users authenticate with their LDAP credentials; the application
-obtains a JWT from `POST /login` and stores it in a signed, HttpOnly session
-cookie. Each browser session is independent. When API authentication is
-disabled, the dashboard is available without login.
+When `authentication.method=ldap`, the dashboard presents a login page. Users
+authenticate with their LDAP credentials; the application obtains a JWT from
+`POST /login` and stores it in a signed, HttpOnly session cookie. Each browser
+session is independent.
+
+Alternatively, set *SLURM_QUOTA_TOKEN* in the web server environment to
+authenticate API calls with a service token (no per-user login page).
 
 == Environment
 
 *SLURM_QUOTA_URL*::
   Base URL of the slurm-quota HTTP API queried by the dashboard.
   Default: `http://127.0.0.1:9911/`
+
+*SLURM_QUOTA_TOKEN*::
+  JWT for HTTP API authentication. When set, the dashboard uses this token for
+  `/stats` requests and skips the login page.
 
 *SLURM_QUOTA_WEB_SESSION_KEY_FILE*::
   Path to a file containing the session signing key. See *Session key*
@@ -68,10 +75,11 @@ disabled, the dashboard is available without login.
 
 == Session key
 
-When REST API LDAP authentication is enabled, the dashboard stores each user's
-API JWT in a signed session cookie. A server-side session key is required to sign
-those cookies so they cannot be forged or altered by clients. When API
-authentication is disabled, no session key is needed.
+When `authentication.method=ldap` and users sign in through the browser, the
+dashboard stores each user's API JWT in a signed session cookie. A server-side
+session key is required to sign those cookies so they cannot be forged or
+altered by clients. When only *SLURM_QUOTA_TOKEN* is used, no session key is
+needed.
 
 The key can be provided in two ways:
 

@@ -41,8 +41,8 @@ The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 
 *slurm-quota login* [<username>] [*--save*]
 
-Obtain a JWT from the HTTP service (`POST /login`). LDAP authentication must be
-enabled on `slurm-quota-serve`.
+Obtain a JWT from the HTTP service (`POST /login`). Requires
+`authentication.method=ldap` on `slurm-quota-serve`.
 
 Options:
 
@@ -60,6 +60,20 @@ Examples:
 slurm-quota login
 slurm-quota login bob
 slurm-quota login --save
+....
+
+=== token
+
+*slurm-quota token*
+
+Save the JWT from the *SLURM_QUOTA_TOKEN* environment variable to
+`$XDG_CONFIG_HOME/slurm-quota/token` for automatic use by `stats`.
+
+Example:
+
+....
+export SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice)
+slurm-quota token
 ....
 
 === stats
@@ -281,8 +295,8 @@ sudo slurm-quota prune --all
   Default: `http://127.0.0.1:9911/`
 
 *SLURM_QUOTA_TOKEN*::
-  Optional JWT override for HTTP API authentication. When set, takes precedence
-  over the token file saved by `login`.
+  JWT for HTTP API authentication. When set, takes precedence over the token
+  file saved by `login` or `token`. Also accepted by `slurm-quota-web`.
 
 *XDG_CONFIG_HOME*::
   Base directory for user-specific configuration. The token saved by `login` is
@@ -299,8 +313,8 @@ sudo slurm-quota prune --all
 == Files
 
 `$XDG_CONFIG_HOME/slurm-quota/token`::
-  JWT saved by `login` for HTTP API authentication (default:
-  `~/.config/slurm-quota/token`).
+  JWT saved by `login --save` or `token` for HTTP API authentication
+  (default: `~/.config/slurm-quota/token`).
 
 `/var/lib/state/slurm-quota/slurm-quota.db`::
   SQLite database for quotas, consumed/preallocated counters, GPU factors, and default settings.
@@ -318,4 +332,4 @@ sudo slurm-quota prune --all
 
 == See Also
 
-`slurm-quota-charge(1)`, `slurm-quota-serve(1)`, `slurm-quota-web(1)`, `sacct(1)`, `sacctmgr(1)`, `sbatch(1)`, `srun(1)`, `slurmctld(8)`, `systemd.socket(5)`
+`slurm-quota-charge(1)`, `slurm-quota-serve(1)`, `slurm-quota-token(1)`, `slurm-quota-web(1)`, `sacct(1)`, `sacctmgr(1)`, `sbatch(1)`, `srun(1)`, `slurmctld(8)`, `systemd.socket(5)`

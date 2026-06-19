@@ -74,13 +74,14 @@ Notes:
 ....
 slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 600
 curl http://127.0.0.1:9911/health
-curl http://127.0.0.1:9911/stats
-curl http://127.0.0.1:9911/stats?username=alice
-curl http://127.0.0.1:9911/stats?account=hpc
+TOKEN=$(sudo slurm-quota-token alice)
+curl -H 'Authorization: Bearer '"$TOKEN" http://127.0.0.1:9911/stats
+curl -H 'Authorization: Bearer '"$TOKEN" 'http://127.0.0.1:9911/stats?username=alice'
+curl -H 'Authorization: Bearer '"$TOKEN" 'http://127.0.0.1:9911/stats?account=hpc'
 
 slurm-quota-serve --dump-config
 
-# With LDAP authentication enabled in /etc/slurm-quota/serve.ini
+# With authentication.method=ldap in /etc/slurm-quota/serve.ini
 curl -s -X POST http://127.0.0.1:9911/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"alice","password":"secret"}'
@@ -99,7 +100,7 @@ curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/stats
   Site configuration overrides (authentication, LDAP, JWT).
 
 `/var/lib/slurm-quota/jwt.key`::
-  Default path for the JWT signing key when authentication is enabled.
+  Default path for the JWT signing key.
 
 == Exit Status
 
@@ -111,4 +112,4 @@ curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/stats
 
 == See Also
 
-`slurm-quota(1)`, `slurm-quota-web(1)`, `systemd.socket(5)`
+`slurm-quota(1)`, `slurm-quota-token(1)`, `slurm-quota-web(1)`, `systemd.socket(5)`
