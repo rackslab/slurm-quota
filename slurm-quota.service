@@ -7,8 +7,11 @@ PartOf=slurm-quota.socket
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/slurm-quota-serve --idle-timeout=600
+User=slurm
+Group=slurm
 StateDirectory=slurm-quota
-DynamicUser=yes
+ReadWritePaths=/var/lib/state/slurm-quota
+ReadOnlyPaths=/etc/slurm-quota
 NoNewPrivileges=yes
 LockPersonality=yes
 PrivateTmp=yes
