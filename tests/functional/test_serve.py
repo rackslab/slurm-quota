@@ -22,6 +22,12 @@ from tests.functional.functional_base import FunctionalCLIBase
 
 
 class TestServeCommand(FunctionalCLIBase):
+    def setUp(self):
+        super().setUp()
+        self._patch_slurm = patch("slurm_quota.serve.app.auth.require_slurm_user")
+        self._patch_slurm.start()
+        self.addCleanup(self._patch_slurm.stop)
+
     def _free_tcp_port(self) -> int:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("127.0.0.1", 0))

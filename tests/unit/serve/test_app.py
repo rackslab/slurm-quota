@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 import textwrap
 from pathlib import Path
@@ -11,7 +12,7 @@ from rfl.authentication.user import AuthenticatedUser
 
 from slurm_quota.database import init_database
 from slurm_quota.serve.app import SlurmQuotaServeApp
-from slurm_quota.serve.settings import conf_defs_path
+from slurm_quota.serve.settings import ServeSetupError, conf_defs_path
 
 from tests.test_support import SlurmQuotaTestCase
 
@@ -77,12 +78,29 @@ class TestSetup(SlurmQuotaTestCase):
     def setUp(self):
         super().setUp()
         self.defs_path = conf_defs_path()
+        self._patch_slurm = patch("slurm_quota.serve.app.auth.require_slurm_user")
+        self._patch_slurm.start()
+        self.addCleanup(self._patch_slurm.stop)
 
     def test_does_nothing_when_auth_disabled(self):
         init_database()
         app = SlurmQuotaServeApp()
         app.setup(self.defs_path, Path("/no/such/site.ini"))
         self.assertIsNone(app.authentifier)
+
+    def test_rejects_non_slurm_user(self):
+        self._patch_slurm.stop()
+        with patch("slurm_quota.serve.app.auth.get_current_user", return_value="root"):
+            app = SlurmQuotaServeApp()
+            with self.assertRaises(ServeSetupError) as cm:
+                app.setup(self.defs_path, Path("/no/such/site.ini"))
+        self.assertIn("Must be run as slurm user", str(cm.exception))
+
+    def test_creates_database_when_missing(self):
+        self.assertFalse(os.path.exists(self.db_path))
+        app = SlurmQuotaServeApp()
+        app.setup(self.defs_path, Path("/no/such/site.ini"))
+        self.assertTrue(os.path.exists(self.db_path))
 
     @patch("slurm_quota.serve.app.LDAPAuthentifier")
     def test_sets_jwt_and_authentifier_when_auth_enabled(self, m_ldap_cls):

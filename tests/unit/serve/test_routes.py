@@ -23,6 +23,9 @@ app = registered_app()
 class TestRoutes(SlurmQuotaTestCase):
     def setUp(self):
         super().setUp()
+        self._patch_slurm = patch("slurm_quota.serve.app.auth.require_slurm_user")
+        self._patch_slurm.start()
+        self.addCleanup(self._patch_slurm.stop)
         init_database()
         app.setup(conf_defs_path(), Path("/no/such/site.ini"))
 
