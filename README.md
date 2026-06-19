@@ -52,13 +52,17 @@ The solution allows setting GPU load factors. This is a multiplicative coefficie
 
 The `slurm-quota set-gpu-factor` command allows configuring load factors by GPU type (restricted to root). The `slurm-quota gpu-factors` command displays the currently configured GPU load factors.
 
-The `slurm-quota-serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". It must run as the `slurm` system user and creates the SQLite database on first start if it does not exist yet. A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes `GET /health` for liveness probes and `GET /stats`, which returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters can be used to filter responses: `username` filters users and limits accounts to this user's Slurm associations (e.g. `/stats?username=alice`), while `account` returns only the requested account stats in the `accounts` array (e.g. `/stats?account=hpc`). When LDAP authentication is enabled in site configuration, `POST /login` issues JWT tokens and `GET /stats` requires a valid Bearer token.
+The `slurm-quota-serve` command starts a small HTTP/JSON server designed to work with systemd "socket activation". It must run as the `slurm` system user and creates the SQLite database on first start if it does not exist yet. A `slurm-quota.socket` socket unit listens on TCP port 9911 and launches the `slurm-quota.service` service on demand upon the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by default). The API exposes `GET /health` for liveness probes and `GET /stats`, which returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters can be used to filter responses: `username` filters users and limits accounts to this user's Slurm associations (e.g. `/stats?username=alice`), while `account` returns only the requested account stats in the `accounts` array (e.g. `/stats?account=hpc`).
 
-The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a user (`--user` or positional username), an account (`--account`), or the `--all` option, the command transmits the appropriate filters to the service. User and account selectors are mutually exclusive. If the service is not available or in case of connection failure to the server, execution fails with an error message. When LDAP authentication is enabled, the `slurm-quota login` command obtains a JWT from `POST /login`. By default it prints the token to stdout; with `--save`, it persists the token to `$XDG_CONFIG_HOME/slurm-quota/token` (default `~/.config/slurm-quota/token`), and `stats` automatically sends a saved token as a Bearer token (override with `SLURM_QUOTA_TOKEN` if needed).
+REST API authentication is required: `GET /stats` always requires a valid Bearer JWT. With `authentication.method=ldap` in site configuration, `POST /login` issues JWT tokens from LDAP credentials. With `authentication.method=jwt`, tokens are issued offline by the root-only `slurm-quota-token` command.
+
+The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a user (`--user` or positional username), an account (`--account`), or the `--all` option, the command transmits the appropriate filters to the service. User and account selectors are mutually exclusive. If the service is not available or in case of connection failure to the server, execution fails with an error message.
+
+`slurm-quota stats` needs a JWT token sent as a Bearer header. It reads a saved token from `$XDG_CONFIG_HOME/slurm-quota/token` (default `~/.config/slurm-quota/token`), or `SLURM_QUOTA_TOKEN` when set. When `authentication.method=ldap`, `slurm-quota login` obtains a JWT from `POST /login`; by default it prints the token to stdout, and with `--save` persists it for automatic use by `stats`. When tokens are issued with `slurm-quota-token`, set `SLURM_QUOTA_TOKEN` or run `slurm-quota token` to save the token to the same file.
 
 Additionally, a logrotate configuration file is provided (`slurm-quota-charge.logrotate`) to prevent the log file fed by the `slurm-quota-charge-wrapper` wrapper from growing too large over time.
 
-The `slurm-quota-web` application is a web dashboard that retrieves the same statistics from the HTTP API (`GET /stats`) and renders them as HTML tables and quota usage bars. When LDAP authentication is enabled on the REST API, the dashboard presents a login page and stores each user's API JWT in a signed, HttpOnly session cookie. It can run standalone with Flask built-in HTTP server for local testing, or be launched by a production-ready HTTP server (for example Apache with mod_wsgi) as a WSGI application.
+The `slurm-quota-web` application is a web dashboard that retrieves the same statistics from the HTTP API (`GET /stats`) and renders them as HTML tables and quota usage bars. When `authentication.method=ldap`, the dashboard presents a login page and stores each user's API JWT in a signed, HttpOnly session cookie. Alternatively, set `SLURM_QUOTA_TOKEN` in the web server environment to authenticate API calls with a service token (no per-user login). It can run standalone with Flask built-in HTTP server for local testing, or be launched by a production-ready HTTP server (for example Apache with mod_wsgi) as a WSGI application.
 
 ## Installation
 
@@ -115,17 +119,30 @@ AccountingStorageTRES=gres/gpu:<type1>,gres/gpu:<type2>
 
 The `AccountingStorageTRES` parameter enables recording of complementary resource allocations (e.g., GPU, licenses) in addition to generic resources (e.g., nodes, cores, memory) in the Slurm accounting database. It is necessary to enable tracking of all GPU types in the cluster so that the `slurm-quota-charge` command can determine the GPUs allocated to completed jobs and account for the time consumed on these GPUs.
 
-For optional LDAP authentication of the REST API, edit `/etc/slurm-quota/serve.ini`:
+4) Configure REST API authentication
+
+Authentication is required for `GET /stats`. Copy and adapt `/etc/slurm-quota/serve.ini` (from `conf/serve.ini.example` or `/usr/share/slurm-quota/conf/serve.ini.example`):
 
 ```ini
 [authentication]
-enabled=yes
+method=ldap
 
 [ldap]
 uri=ldap://ldap.example.org
 user_base=ou=people,dc=example,dc=org
 group_base=ou=groups,dc=example,dc=org
 ```
+
+With `method=ldap`, the service exposes `POST /login` and issues JWT tokens after LDAP bind. The JWT signing key is created automatically at `/var/lib/slurm-quota/jwt.key` on first start (override in `[jwt]` if needed). Additional LDAP options (`bind_dn`, `restricted_groups`, TLS, and so on) are documented in `/usr/share/slurm-quota/conf/serve.yml`.
+
+Restart the API service after changing `serve.ini`:
+
+```bash
+sudo systemctl restart slurm-quota.socket
+```
+
+> [!NOTE]
+> **Alternative: JWT-only authentication.** Without LDAP, set `authentication.method=jwt` in `serve.ini` and issue tokens as root with `slurm-quota-token`. Clients use `SLURM_QUOTA_TOKEN` or `slurm-quota token` to configure `stats` and the web dashboard.
 
 #### Compute and login nodes
 
@@ -139,6 +156,12 @@ sudo dnf install slurm-quota
 
 ```bash
 export SLURM_QUOTA_URL=http://controller:9911/
+```
+
+3) Obtain an API token (when `authentication.method=ldap`):
+
+```bash
+slurm-quota login --save
 ```
 
 #### Web dashboard
@@ -155,9 +178,9 @@ sudo dnf install slurm-quota-web
 sudo dnf install httpd mod_wsgi httpd-tools
 ```
 
-3) Create the session signing key file (skip when REST API LDAP authentication is disabled):
+3) Create the session signing key file (skip when using `authentication.method=jwt`):
 
-When LDAP authentication is enabled on the REST API (`/etc/slurm-quota/serve.ini`), store a session key in `/etc/slurm-quota/web-session.key`. This directory is also used by `slurm-quota-serve` for `serve.ini` and is typically already present:
+When LDAP authentication is used on the REST API (`/etc/slurm-quota/serve.ini`), store a session key in `/etc/slurm-quota/web-session.key`. This directory is also used by `slurm-quota-serve` for `serve.ini` and is typically already present:
 
 ```bash
 sudo sh -c 'openssl rand -hex 32 > /etc/slurm-quota/web-session.key'
@@ -215,7 +238,7 @@ sudo apachectl configtest
 sudo systemctl reload httpd
 ```
 
-When LDAP authentication is enabled on the REST API, users sign in through the web dashboard with their LDAP credentials. Behind HTTPS, also set `SLURM_QUOTA_WEB_SECURE_COOKIES=1` so cookies are marked `Secure`. Session lifetime defaults to one day (`SLURM_QUOTA_WEB_SESSION_DAYS`) to match the default JWT duration. When API authentication is disabled, the dashboard remains open without a login page.
+When `authentication.method=ldap`, users sign in through the web dashboard with their LDAP credentials. Alternatively, set `SLURM_QUOTA_TOKEN` in the web server environment for service-account access without a login page. Behind HTTPS, also set `SLURM_QUOTA_WEB_SECURE_COOKIES=1` so cookies are marked `Secure`. Session lifetime defaults to one day (`SLURM_QUOTA_WEB_SESSION_DAYS`) to match the default JWT duration.
 
 Security recommendations:
 
@@ -263,7 +286,11 @@ sudo cp slurm-quota.bash-completion /etc/bash_completion.d/slurm-quota
 sudo chmod 0644 /etc/bash_completion.d/slurm-quota
 ```
 
-4) Installation of the HTTP JSON service (optional)
+4) Configure REST API authentication
+
+Authentication is required for `GET /stats`. Copy and adapt `/etc/slurm-quota/serve.ini` (see the [Controller node](#controller-node) RPM section for the recommended LDAP setup). With `method=ldap`, users obtain tokens through `slurm-quota login`; with `method=jwt`, tokens are issued by `slurm-quota-token` as root.
+
+5) Installation of the HTTP JSON service (optional)
 
 The HTTP JSON service allows exposing statistics via a REST API to facilitate integration with other tools. It is designed to work with systemd socket activation.
 
@@ -285,23 +312,21 @@ curl http://127.0.0.1:9911/health
 
 The service automatically stops after 10 minutes of inactivity (configurable via `--idle-timeout` in `slurm-quota.service`, with `0` meaning no idle timeout).
 
-For optional LDAP authentication of the REST API, edit `/etc/slurm-quota/serve.ini` (see [Controller node](#controller-node) in the RPM installation section).
-
-5) Installation of the wrapper script
+6) Installation of the wrapper script
 
 ```bash
 sudo cp slurm-quota-charge-wrapper /etc/slurm/slurm-quota-charge-wrapper
 sudo chmod 0755 /etc/slurm/slurm-quota-charge-wrapper
 ```
 
-6) Slurm submission plugin (`job_submit.lua`)
+7) Slurm submission plugin (`job_submit.lua`)
 
 ```bash
 sudo cp job_submit.lua /etc/slurm/job_submit.lua
 sudo chmod 0644 /etc/slurm/job_submit.lua
 ```
 
-7) Activation of Slurm plugins
+8) Activation of Slurm plugins
 
 Edit the Slurm configuration to set up these parameters:
 
@@ -314,7 +339,7 @@ AccountingStorageTRES=gres/gpu:<type1>,gres/gpu:<type2>
 
 The `AccountingStorageTRES` parameter enables recording of complementary resource allocations (e.g., GPU, licenses) in addition to generic resources (e.g., nodes, cores, memory) in the Slurm accounting database. It is necessary to enable tracking of all GPU types in the cluster so that the `slurm-quota-charge` command can determine the GPUs allocated to completed jobs and account for the time consumed on these GPUs.
 
-8) Logrotate configuration (recommended)
+9) Logrotate configuration (recommended)
 
 ```bash
 sudo cp slurm-quota-charge.logrotate /etc/logrotate.d/slurm-quota-charge
@@ -352,6 +377,8 @@ The `SLURM_QUOTA_URL` environment variable must point to the controller node to 
 export SLURM_QUOTA_URL=http://controller:9911/
 ```
 
+When the controller uses LDAP authentication, run `slurm-quota login --save` once per user to store a token for `slurm-quota stats`.
+
 #### Web dashboard (optional)
 
 1) Install the web dashboard:
@@ -366,7 +393,7 @@ sudo python3 -m pip install ".[web]"
 SLURM_QUOTA_URL=http://127.0.0.1:9911/ slurm-quota-web
 ```
 
-When REST API LDAP authentication is enabled, also configure a session signing key.
+When `authentication.method=ldap` and browser login is used, also configure a session signing key.
 
 > [!TIP]
 > Prefer a key file referenced by `SLURM_QUOTA_WEB_SESSION_KEY_FILE`:
@@ -387,9 +414,9 @@ When REST API LDAP authentication is enabled, also configure a session signing k
 > [!NOTE]
 > Templates and static files are resolved automatically: repo-root `web/` when running from a git checkout, then the pip-installed data directory (for example `{prefix}/slurm-quota/web/`), then `/usr/share/slurm-quota/web`. If needed, set `SLURM_QUOTA_WEB_ASSETS_DIR` environment variable to use a custom directory containing `templates/` and `static/` (for example in Apache: `SetEnv SLURM_QUOTA_WEB_ASSETS_DIR /path/to/assets`).
 
-3) Create the session signing key file (skip when REST API LDAP authentication is disabled):
+3) Create the session signing key file when using LDAP browser login (`authentication.method=ldap`):
 
-When LDAP authentication is enabled on the REST API (`/etc/slurm-quota/serve.ini`), store a session key in `/etc/slurm-quota/web-session.key`. This directory is also used by `slurm-quota-serve` for `serve.ini` and is typically already present:
+When LDAP authentication is used on the REST API (`/etc/slurm-quota/serve.ini`), store a session key in `/etc/slurm-quota/web-session.key`. This directory is also used by `slurm-quota-serve` for `serve.ini` and is typically already present:
 
 ```bash
 sudo sh -c 'openssl rand -hex 32 > /etc/slurm-quota/web-session.key'
@@ -445,23 +472,30 @@ Use the bundled WSGI entry script (`web/wsgi/slurm-quota-web.wsgi` in a git chec
 </VirtualHost>
 ```
 
-Enable and reload Apache as shown in the RPM installation section. When LDAP authentication is enabled on the REST API, include `SLURM_QUOTA_WEB_SESSION_KEY_FILE` (or `SLURM_QUOTA_WEB_SESSION_KEY` as an alternative) and `SLURM_QUOTA_WEB_SECURE_COOKIES` behind HTTPS in the virtual host as described above.
+Enable and reload Apache as shown in the RPM installation section. When using LDAP browser login or per-user sessions, include `SLURM_QUOTA_WEB_SESSION_KEY_FILE` (or `SLURM_QUOTA_WEB_SESSION_KEY` as an alternative) and `SLURM_QUOTA_WEB_SECURE_COOKIES` behind HTTPS in the virtual host as described above. For service-token access, set `SLURM_QUOTA_TOKEN` instead.
 
 ## Usage
 
 ### `slurm-quota` Command
 
-- `login`: Obtains a JWT from the HTTP service when LDAP authentication is enabled.
+- `login`: Obtains a JWT from `POST /login` when `authentication.method=ldap`.
 
-Examples:
+  ```bash
+  slurm-quota login              # prompts for password, prints token to stdout
+  slurm-quota login bob          # same for LDAP user bob
+  slurm-quota login --save       # save token for automatic use by stats
+  ```
 
-```bash
-slurm-quota login              # prompts for password, prints token to stdout
-slurm-quota login bob          # same for LDAP user bob
-slurm-quota login --save       # save token for automatic use by stats
-```
+  Use `--save` to store the token in `$XDG_CONFIG_HOME/slurm-quota/token` (default `~/.config/slurm-quota/token`).
 
-Use `--save` to store the token in `$XDG_CONFIG_HOME/slurm-quota/token` (default `~/.config/slurm-quota/token`). Set `SLURM_QUOTA_TOKEN` to override the saved token for a single command.
+- `token`: Saves the JWT from `SLURM_QUOTA_TOKEN` to the XDG config file.
+
+  ```bash
+  export SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice)
+  slurm-quota token              # persist env token for automatic use by stats
+  ```
+
+  Set `SLURM_QUOTA_TOKEN` to override the saved token for a single command.
 
 - `stats`: Displays consumed CPU times, preallocated CPU times (with the number of jobs considered), and quotas for users and accounts.
 
@@ -594,7 +628,7 @@ It is normally not necessary to execute this `prune` command under normal condit
 
 ### `slurm-quota-serve` Command
 
-Launches an HTTP REST API JSON server with `GET /health`, `GET /stats`, and optional `POST /login` when LDAP authentication is enabled. Designed to work with systemd socket activation.
+Launches an HTTP REST API JSON server with `GET /health`, `GET /stats` (JWT required), and `POST /login` when `authentication.method=ldap`. Designed to work with systemd socket activation.
 
 Examples:
 
@@ -606,9 +640,10 @@ sudo -u slurm slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 0   
 # Via systemd (recommended)
 sudo systemctl start slurm-quota.socket
 curl http://127.0.0.1:9911/health
-curl http://127.0.0.1:9911/stats
-curl http://127.0.0.1:9911/stats?username=alice
-curl http://127.0.0.1:9911/stats?account=hpc
+TOKEN=$(sudo slurm-quota-token alice)   # when authentication.method=jwt
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9911/stats
+curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:9911/stats?username=alice"
+curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:9911/stats?account=hpc"
 ```
 
 The service automatically stops after a period of inactivity (600 seconds, ie. 10 minutes by default). This can be disabled with `--idle-timeout 0` argument. The `stats` command queries this HTTP service (URL configurable via the `SLURM_QUOTA_URL` environment variable).
@@ -619,7 +654,7 @@ Dump resolved configuration (passwords masked) and exit:
 slurm-quota-serve --dump-config
 ```
 
-LDAP login when authentication is enabled (setup described in the [Controller node](#controller-node) installation section):
+LDAP login when `authentication.method=ldap` (setup described in the [Controller node](#controller-node) installation section):
 
 ```bash
 slurm-quota login --save
@@ -635,24 +670,35 @@ curl -s -X POST http://127.0.0.1:9911/login \
 
 After `slurm-quota login --save`, `slurm-quota stats` automatically uses the saved token.
 
-When authentication is enabled, query `/stats` with the token:
+Query `/stats` with a token:
 
 ```bash
-TOKEN=$(slurm-quota login)
+TOKEN=$(slurm-quota login)              # ldap method
+TOKEN=$(sudo slurm-quota-token alice)   # jwt method
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9911/stats
+```
+
+### `slurm-quota-token` Command
+
+Issues JWT tokens for `authentication.method=jwt` (root only).
+
+```bash
+sudo slurm-quota-token alice
+sudo slurm-quota-token --duration 7 bob
 ```
 
 ### `slurm-quota-web` Command
 
-Launches web application. When REST API LDAP authentication is enabled, users authenticate through a browser login form; the API JWT is stored in a signed session cookie (not in browser local storage).
+Launches the web dashboard.
 
 Environment variables:
 
 - `SLURM_QUOTA_URL`: base URL of the HTTP API (default `http://127.0.0.1:9911/`)
-- `SLURM_QUOTA_WEB_SESSION_KEY_FILE`: path to a file containing the session signing key
+- `SLURM_QUOTA_TOKEN`: service JWT for API calls; when set, the dashboard skips the browser login page; when not set, unauthenticated requests are redirected to the login form for LDAP authentication.
+- `SLURM_QUOTA_WEB_SESSION_KEY_FILE`: path to a file containing the session signing key (required for LDAP authentication).
 - `SLURM_QUOTA_WEB_SESSION_KEY`: session signing key passed directly (alternative to `SLURM_QUOTA_WEB_SESSION_KEY_FILE`)
-- `SLURM_QUOTA_WEB_SECURE_COOKIES`: set to `1` to mark session cookies `Secure` (recommended behind HTTPS)
-- `SLURM_QUOTA_WEB_SESSION_DAYS`: session lifetime in days (default `1`)
+- `SLURM_QUOTA_WEB_SECURE_COOKIES`: set to `1` to mark session cookies `Secure` (recommended behind HTTPS when using LDAP browser login)
+- `SLURM_QUOTA_WEB_SESSION_DAYS`: browser session lifetime in days (default `1`)
 - `SLURM_QUOTA_WEB_HOST`, `SLURM_QUOTA_WEB_PORT`, `SLURM_QUOTA_WEB_DEBUG`: standalone server options
 
 Examples:
@@ -660,7 +706,7 @@ Examples:
 ```bash
 slurm-quota-web
 SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 slurm-quota-web
-SLURM_QUOTA_URL=http://controller:9911/ SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key slurm-quota-web
+SLURM_QUOTA_URL=http://controller:9911/ SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice) slurm-quota-web
 ```
 
 ## Upgrade
