@@ -22,11 +22,12 @@ def charge_command() -> None:
     This command can only be executed by the slurm system user.
     """
     try:
-        current_user = auth.get_current_user()
-        if current_user != "slurm":
+        try:
+            auth.require_slurm_user()
+        except PermissionError:
             logger.error(
                 f"Charge command can only be executed by slurm user, not by "
-                f"{current_user}"
+                f"{auth.get_current_user()}"
             )
             sys.exit(1)
 

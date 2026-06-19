@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -18,7 +17,8 @@ from rfl.authentication.ldap import LDAPAuthentifier
 from rfl.settings import RuntimeSettings
 from rfl.web.tokens import RFLTokenizedWebApp
 
-import slurm_quota
+from slurm_quota import auth
+from slurm_quota.database import init_database
 from slurm_quota.serve.settings import (
     ServeSetupError,
     load_bind_password,
@@ -90,8 +90,11 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
                 create_parent=self.settings.jwt.create_parent,
             )
             logger.info("REST API authentication is enabled (LDAP + JWT)")
-        if not os.path.exists(slurm_quota.DB_PATH):
-            raise ServeSetupError(f"Database file not found: {slurm_quota.DB_PATH}")
+        try:
+            auth.require_slurm_user()
+        except PermissionError as exc:
+            raise ServeSetupError(str(exc)) from exc
+        init_database()
 
     def touch_activity(self) -> None:
         self._last_activity = time.monotonic()

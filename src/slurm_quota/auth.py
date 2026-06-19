@@ -24,3 +24,10 @@ def get_current_user() -> str:
     except KeyError:
         logger.error(f"Unable to get user name for UID {current_uid}")
         raise
+
+
+def require_slurm_user() -> None:
+    """Raise PermissionError unless the current process runs as the slurm user."""
+    current_user = get_current_user()
+    if current_user != "slurm":
+        raise PermissionError(f"Must be run as slurm user, not {current_user}")
