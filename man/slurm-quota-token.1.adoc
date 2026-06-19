@@ -1,0 +1,90 @@
+= slurm-quota-token(1)
+:doctype: manpage
+:manmanual: Slurm Quota JWT Issuance
+:mansource: slurm-quota-token
+:revnumber: 2.0.0
+:revdate: 2026-06-19
+
+== Name
+
+slurm-quota-token - Issue JWT tokens for slurm-quota-serve
+
+== Synopsis
+
+*slurm-quota-token* [*-h*] [*--debug* | *-q* | *--quiet*] [*--version*] [*--conf-defs* <path>] [*--config* <path>] [*--duration* <days>] <username>
+
+== Description
+
+*slurm-quota-token* issues JWT tokens for authenticating with *slurm-quota-serve*.
+It reads the same site configuration as *slurm-quota-serve* (`/etc/slurm-quota/serve.ini`
+by default) and requires `authentication.method=jwt`.
+
+The command must be run as the `root` user. Tokens are printed to stdout.
+
+== Options
+
+*-h*, *--help*::
+  Show help and exit.
+
+*--debug*::
+  Enable debug output.
+
+*-q*, *--quiet*::
+  Only print errors and warnings.
+
+*--version*::
+  Show program version and exit.
+
+*--conf-defs* <path>::
+  Path to YAML settings definition file (default: bundled `serve.yml`).
+
+*--config* <path>::
+  Path to site INI configuration file (default: `/etc/slurm-quota/serve.ini`).
+
+*--duration* <days>::
+  Token validity in days (default: `jwt.duration` from serve.ini).
+
+<username>::
+  Username to embed in the issued JWT.
+
+== Environment
+
+*SLURM_QUOTA_SERVE_CONF_DEFS*::
+  Override path to the YAML settings definition file.
+
+*SLURM_QUOTA_SERVE_CONFIG*::
+  Override path to the site INI configuration file.
+
+== Examples
+
+....
+# Issue a token for user alice (default duration from serve.ini)
+slurm-quota-token alice
+
+# Issue a token valid for 7 days
+slurm-quota-token --duration 7 bob
+
+# Use with stats
+export SLURM_QUOTA_TOKEN=$(slurm-quota-token alice)
+slurm-quota stats
+....
+
+== Files
+
+`/etc/slurm-quota/serve.ini`::
+  Site configuration (must set `authentication.method=jwt`).
+
+`/var/lib/slurm-quota/jwt.key`::
+  Default path for the JWT signing key.
+
+== Exit Status
+
+*0*::
+  Success.
+
+*1*::
+  Runtime/permission/operational error.
+
+== See Also
+
+`slurm-quota(1)`, `slurm-quota-serve(1)`
