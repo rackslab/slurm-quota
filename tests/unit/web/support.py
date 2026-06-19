@@ -46,19 +46,17 @@ def stats_rows():
 
 @contextmanager
 def auth_disabled():
-    with patch.object(web.app, "auth_required_cached", return_value=False):
+    with patch("slurm_quota.web.app.load_service_token", return_value="test-token"):
         yield
 
 
 @contextmanager
 def auth_enabled():
-    with patch.object(web.app, "auth_required_cached", return_value=True):
-        yield
+    yield
 
 
 def configure_web_app() -> None:
     web.app.config["SECRET_KEY"] = "test-secret"
-    web.app.config.pop(web.app.AUTH_REQUIRED_CACHE_KEY, None)
 
 
 def extract_csrf(html: str) -> str:

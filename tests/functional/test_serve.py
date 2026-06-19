@@ -10,7 +10,6 @@ import json
 import os
 import socket
 import tempfile
-import textwrap
 import threading
 import time
 from pathlib import Path
@@ -19,6 +18,11 @@ from unittest.mock import patch
 from rfl.authentication.user import AuthenticatedUser
 
 from tests.functional.functional_base import FunctionalCLIBase
+from tests.unit.serve.support import (
+    issue_test_token,
+    write_jwt_site_ini,
+    write_ldap_site_ini,
+)
 
 
 class TestServeCommand(FunctionalCLIBase):
@@ -27,6 +31,10 @@ class TestServeCommand(FunctionalCLIBase):
         self._patch_slurm = patch("slurm_quota.serve.app.auth.require_slurm_user")
         self._patch_slurm.start()
         self.addCleanup(self._patch_slurm.stop)
+        self._config_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._config_tmp.cleanup)
+        self._site_ini = write_jwt_site_ini(Path(self._config_tmp.name))
+        self._token = issue_test_token(self._site_ini)
 
     def _free_tcp_port(self) -> int:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -50,6 +58,8 @@ class TestServeCommand(FunctionalCLIBase):
             str(idle_timeout),
             "--conf-defs",
             str(conf_defs_path()),
+            "--config",
+            str(self._site_ini),
         ]
         if extra_args:
             argv.extend(extra_args)
@@ -61,29 +71,11 @@ class TestServeCommand(FunctionalCLIBase):
         thread.start()
         return thread
 
-    def _write_auth_site_ini(self, directory: Path) -> Path:
-        jwt_key = directory / "jwt.key"
-        site_ini = directory / "serve.ini"
-        site_ini.write_text(
-            textwrap.dedent(
-                f"""\
-                [authentication]
-                enabled=yes
+    def _write_ldap_site_ini(self, directory: Path) -> Path:
+        return write_ldap_site_ini(directory)
 
-                [ldap]
-                uri=ldap://localhost
-                user_base=ou=people,dc=example,dc=org
-                group_base=ou=groups,dc=example,dc=org
-
-                [jwt]
-                key={jwt_key}
-                create=yes
-                create_parent=yes
-                """
-            ),
-            encoding="utf-8",
-        )
-        return site_ini
+    def _auth_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._token}"}
 
     def _wait_until_ready(self, host: str, port: int) -> None:
         deadline = time.monotonic() + 2.0
@@ -144,7 +136,7 @@ class TestServeCommand(FunctionalCLIBase):
 
         conn = http.client.HTTPConnection(host, port, timeout=2)
         try:
-            conn.request("GET", "/stats")
+            conn.request("GET", "/stats", headers=self._auth_headers())
             resp = conn.getresponse()
             self.assertEqual(resp.status, 200)
             body = json.loads(resp.read().decode("utf-8"))
@@ -184,7 +176,9 @@ class TestServeCommand(FunctionalCLIBase):
 
             conn = http.client.HTTPConnection(host, port, timeout=2)
             try:
-                conn.request("GET", "/stats?username=alice")
+                conn.request(
+                    "GET", "/stats?username=alice", headers=self._auth_headers()
+                )
                 resp = conn.getresponse()
                 self.assertEqual(resp.status, 200)
                 body = json.loads(resp.read().decode("utf-8"))
@@ -221,7 +215,7 @@ class TestServeCommand(FunctionalCLIBase):
 
         conn = http.client.HTTPConnection(host, port, timeout=2)
         try:
-            conn.request("GET", "/stats?account=hpc")
+            conn.request("GET", "/stats?account=hpc", headers=self._auth_headers())
             resp = conn.getresponse()
             self.assertEqual(resp.status, 200)
             body = json.loads(resp.read().decode("utf-8"))
@@ -242,7 +236,11 @@ class TestServeCommand(FunctionalCLIBase):
 
         conn = http.client.HTTPConnection(host, port, timeout=2)
         try:
-            conn.request("GET", "/stats?username=alice&account=hpc")
+            conn.request(
+                "GET",
+                "/stats?username=alice&account=hpc",
+                headers=self._auth_headers(),
+            )
             resp = conn.getresponse()
             self.assertEqual(resp.status, 400)
             self.assertEqual(
@@ -342,6 +340,10 @@ class TestServeCommand(FunctionalCLIBase):
                     str(port),
                     "--idle-timeout",
                     "0",
+                    "--conf-defs",
+                    str(conf_defs_path()),
+                    "--config",
+                    str(self._site_ini),
                 ],
             ),
             daemon=True,
@@ -357,7 +359,7 @@ class TestServeCommand(FunctionalCLIBase):
         host = "127.0.0.1"
         port = self._free_tcp_port()
         with tempfile.TemporaryDirectory() as tmpdir:
-            site_ini = self._write_auth_site_ini(Path(tmpdir))
+            site_ini = self._write_ldap_site_ini(Path(tmpdir))
             with patch("slurm_quota.serve.app.LDAPAuthentifier") as m_ldap_cls:
                 m_ldap_cls.return_value.login.return_value = AuthenticatedUser(
                     login="alice", groups=["users"]
@@ -394,7 +396,7 @@ class TestServeCommand(FunctionalCLIBase):
         host = "127.0.0.1"
         port = self._free_tcp_port()
         with tempfile.TemporaryDirectory() as tmpdir:
-            site_ini = self._write_auth_site_ini(Path(tmpdir))
+            site_ini = self._write_ldap_site_ini(Path(tmpdir))
             from rfl.authentication.errors import LDAPAuthenticationError
 
             with patch("slurm_quota.serve.app.LDAPAuthentifier") as m_ldap_cls:
@@ -431,7 +433,7 @@ class TestServeCommand(FunctionalCLIBase):
         host = "127.0.0.1"
         port = self._free_tcp_port()
         with tempfile.TemporaryDirectory() as tmpdir:
-            site_ini = self._write_auth_site_ini(Path(tmpdir))
+            site_ini = self._write_ldap_site_ini(Path(tmpdir))
             with patch("slurm_quota.serve.app.LDAPAuthentifier") as m_ldap_cls:
                 m_ldap_cls.return_value.login.return_value = AuthenticatedUser(
                     login="alice", groups=["users"]

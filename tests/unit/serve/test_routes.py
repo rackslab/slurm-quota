@@ -15,7 +15,12 @@ from slurm_quota.database import init_database
 from slurm_quota.serve.settings import conf_defs_path
 
 from tests.test_support import SlurmQuotaTestCase
-from tests.unit.serve.support import registered_app, write_auth_site_ini
+from tests.unit.serve.support import (
+    issue_test_token,
+    registered_app,
+    write_ldap_site_ini,
+    write_jwt_site_ini,
+)
 
 app = registered_app()
 
@@ -27,10 +32,17 @@ class TestRoutes(SlurmQuotaTestCase):
         self._patch_slurm.start()
         self.addCleanup(self._patch_slurm.stop)
         init_database()
-        app.setup(conf_defs_path(), Path("/no/such/site.ini"))
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self._site_ini = write_jwt_site_ini(Path(self._tmpdir.name))
+        app.setup(conf_defs_path(), self._site_ini)
+        self._token = issue_test_token(self._site_ini)
 
-    def _enable_auth(self, tmp: Path) -> str:
-        site_ini = write_auth_site_ini(tmp)
+    def _auth_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._token}"}
+
+    def _enable_ldap_auth(self, tmp: Path) -> str:
+        site_ini = write_ldap_site_ini(tmp)
         with patch("slurm_quota.serve.app.LDAPAuthentifier") as m_ldap_cls:
             m_ldap_cls.return_value.login.return_value = AuthenticatedUser(
                 login="alice", groups=["users"]
@@ -48,7 +60,7 @@ class TestRoutes(SlurmQuotaTestCase):
     def test_stats_returns_users_and_accounts(self):
         init_database()
         client = app.test_client()
-        resp = client.get("/stats")
+        resp = client.get("/stats", headers=self._auth_headers())
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
         self.assertIn("users", body)
@@ -77,7 +89,7 @@ class TestRoutes(SlurmQuotaTestCase):
 
         with patch("slurm_quota.slurm.get_user_accounts", return_value={"hpc"}):
             client = app.test_client()
-            resp = client.get("/stats?username=alice")
+            resp = client.get("/stats?username=alice", headers=self._auth_headers())
 
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
@@ -104,7 +116,7 @@ class TestRoutes(SlurmQuotaTestCase):
             conn.commit()
 
         client = app.test_client()
-        resp = client.get("/stats?account=hpc")
+        resp = client.get("/stats?account=hpc", headers=self._auth_headers())
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
         self.assertEqual(body["users"], [])
@@ -114,7 +126,10 @@ class TestRoutes(SlurmQuotaTestCase):
     def test_stats_rejects_username_and_account_filters(self):
         init_database()
         client = app.test_client()
-        resp = client.get("/stats?username=alice&account=hpc")
+        resp = client.get(
+            "/stats?username=alice&account=hpc",
+            headers=self._auth_headers(),
+        )
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(
             json.loads(resp.data),
@@ -137,36 +152,32 @@ class TestRoutes(SlurmQuotaTestCase):
             side_effect=sqlite3.Error("boom"),
         ):
             client = app.test_client()
-            resp = client.get("/stats")
+            resp = client.get("/stats", headers=self._auth_headers())
         self.assertEqual(resp.status_code, 500)
         self.assertEqual(json.loads(resp.data), {"error": "db_error"})
 
-    def test_stats_rejects_missing_token_when_auth_enabled(self):
+    def test_stats_rejects_missing_token(self):
         init_database()
-        with tempfile.TemporaryDirectory() as tmp:
-            self._enable_auth(Path(tmp))
-            client = app.test_client()
-            resp = client.get("/stats")
+        client = app.test_client()
+        resp = client.get("/stats")
         self.assertEqual(resp.status_code, 403)
         body = json.loads(resp.data)
         self.assertEqual(body["error"], "forbidden")
 
-    def test_stats_rejects_invalid_token_when_auth_enabled(self):
+    def test_stats_rejects_invalid_token(self):
         init_database()
-        with tempfile.TemporaryDirectory() as tmp:
-            self._enable_auth(Path(tmp))
-            client = app.test_client()
-            resp = client.get(
-                "/stats",
-                headers={"Authorization": "Bearer invalid"},
-            )
+        client = app.test_client()
+        resp = client.get(
+            "/stats",
+            headers={"Authorization": "Bearer invalid"},
+        )
         self.assertEqual(resp.status_code, 401)
         body = json.loads(resp.data)
         self.assertEqual(body["error"], "unauthorized")
 
     def test_auth_login_returns_token(self):
         with tempfile.TemporaryDirectory() as tmp:
-            self._enable_auth(Path(tmp))
+            token = self._enable_ldap_auth(Path(tmp))
             client = app.test_client()
             resp = client.post(
                 "/login",
@@ -175,10 +186,11 @@ class TestRoutes(SlurmQuotaTestCase):
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
         self.assertIn("token", body)
+        self.assertIsInstance(token, str)
 
     def test_auth_login_invalid_credentials(self):
         with tempfile.TemporaryDirectory() as tmp:
-            site_ini = write_auth_site_ini(Path(tmp))
+            site_ini = write_ldap_site_ini(Path(tmp))
             with patch("slurm_quota.serve.app.LDAPAuthentifier") as m_ldap_cls:
                 m_ldap_cls.return_value.login.side_effect = LDAPAuthenticationError(
                     "Invalid user or password"
@@ -191,19 +203,13 @@ class TestRoutes(SlurmQuotaTestCase):
             )
         self.assertEqual(resp.status_code, 401)
 
-    def test_stats_with_token_when_auth_enabled(self):
+    def test_stats_with_token(self):
         init_database()
-        with tempfile.TemporaryDirectory() as tmp:
-            token = self._enable_auth(Path(tmp))
-            client = app.test_client()
-            resp = client.get(
-                "/stats",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        client = app.test_client()
+        resp = client.get("/stats", headers=self._auth_headers())
         self.assertEqual(resp.status_code, 200)
 
-    def test_auth_login_not_found_when_auth_disabled(self):
-        app.setup(conf_defs_path(), Path("/no/such/site.ini"))
+    def test_auth_login_not_found_for_jwt_method(self):
         client = app.test_client()
         resp = client.post(
             "/login",
@@ -211,10 +217,8 @@ class TestRoutes(SlurmQuotaTestCase):
         )
         self.assertEqual(resp.status_code, 404)
 
-    def test_health_stays_public_when_auth_enabled(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            self._enable_auth(Path(tmp))
-            client = app.test_client()
-            resp = client.get("/health")
+    def test_health_stays_public(self):
+        client = app.test_client()
+        resp = client.get("/health")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(json.loads(resp.data), {"status": "ok"})

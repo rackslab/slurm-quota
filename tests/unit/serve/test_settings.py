@@ -17,11 +17,13 @@ from slurm_quota.serve.settings import (
     ServeSetupError,
     conf_defs_path,
     load_bind_password,
+    load_serve_settings,
     site_config_path,
     validate_auth_settings,
 )
 
 from tests.test_support import SlurmQuotaTestCase
+from tests.unit.serve.support import write_jwt_site_ini
 
 
 def _load_settings(defs_path: Path, site_path: Path):
@@ -69,16 +71,22 @@ class TestValidateAuthSettings(SlurmQuotaTestCase):
         super().setUp()
         self.defs_path = conf_defs_path()
 
-    def test_raises_when_enabled_but_ldap_incomplete(self):
+    def test_raises_when_ldap_incomplete(self):
         with tempfile.TemporaryDirectory() as tmp:
             site_ini = Path(tmp) / "serve.ini"
             site_ini.write_text(
-                "[authentication]\nenabled=yes\n",
+                "[authentication]\nmethod=ldap\n",
                 encoding="utf-8",
             )
             settings = _load_settings(self.defs_path, site_ini)
         with self.assertRaises(ServeSetupError):
             validate_auth_settings(settings)
+
+    def test_accepts_jwt_method(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            site_ini = write_jwt_site_ini(Path(tmp))
+            settings = load_serve_settings(self.defs_path, site_ini)
+        self.assertEqual(settings.authentication.method, "jwt")
 
     def test_reads_bind_password_file(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -90,7 +98,7 @@ class TestValidateAuthSettings(SlurmQuotaTestCase):
                 textwrap.dedent(
                     f"""\
                     [authentication]
-                    enabled=yes
+                    method=ldap
 
                     [ldap]
                     uri=ldap://localhost

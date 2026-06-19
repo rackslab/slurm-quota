@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from slurm_quota.cli import main as cli_main
 from slurm_quota.charge import main as charge_main
 from slurm_quota.serve.cli import main as serve_main
+from slurm_quota.serve.token import main as token_main
 
 from tests.test_support import SlurmQuotaTestCase
 
@@ -47,10 +48,20 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
         with patch.object(sys, "argv", argv):
             serve_main()
 
+    def run_token_main(self, argv):
+        with patch.object(sys, "argv", argv):
+            token_main()
+
     def run_cli_main_exit(self, argv, code=1):
         with patch.object(sys, "argv", argv):
             with self.assertRaises(SystemExit) as cm:
                 cli_main()
+        self.assertEqual(cm.exception.code, code)
+
+    def run_token_main_exit(self, argv, code=1):
+        with patch.object(sys, "argv", argv):
+            with self.assertRaises(SystemExit) as cm:
+                token_main()
         self.assertEqual(cm.exception.code, code)
 
     @contextmanager

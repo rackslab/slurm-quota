@@ -153,31 +153,6 @@ class TestAPIClientStats(SlurmQuotaTestCase):
         self.assertIsNone(req.get_header("Authorization"))
 
 
-class TestAPIClientAuthRequired(SlurmQuotaTestCase):
-    def test_returns_false_when_stats_is_public(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse(_sample_payload()),
-        ):
-            self.assertFalse(APIClient.auth_required())
-
-    def test_returns_true_when_stats_requires_auth(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
-        ):
-            self.assertTrue(APIClient.auth_required())
-
-    def test_raises_on_unexpected_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=500),
-        ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient.auth_required()
-        self.assertEqual(cm.exception.status, 500)
-
-
 class TestAPIClientLogin(SlurmQuotaTestCase):
     def test_returns_token_from_login_response(self):
         with patch(

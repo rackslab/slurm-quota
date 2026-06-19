@@ -98,21 +98,23 @@ class TestAuthRoutes(SlurmQuotaTestCase):
         return mock_api
 
     def test_login_post_api_unreachable_shows_error_page(self):
-        with patch.object(
-            web.app,
-            "auth_required_cached",
-            side_effect=URLError("boom"),
-        ):
+        with patch("slurm_quota.web.routes.APIClient") as m_client_cls:
+            m_client_cls.return_value.login.side_effect = URLError("boom")
             client = web.app.test_client()
+            login_page = client.get("/login")
+            csrf = extract_csrf(login_page.get_data(as_text=True))
             resp = client.post(
                 "/login",
-                data={"username": "alice", "password": "secret"},
+                data={
+                    "_csrf": csrf,
+                    "username": "alice",
+                    "password": "secret",
+                },
             )
-        self.assertEqual(resp.status_code, 503)
+        self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
-        self.assertIn("administrator", body)
-        self.assertIn("server logs", body)
-        self.assertNotIn("boom", body)
+        self.assertIn("Login failed", body)
+        self.assertIn("boom", body)
 
     def test_login_success_sets_session_and_renders_dashboard(self):
         mock_api = self._mock_login_client()
