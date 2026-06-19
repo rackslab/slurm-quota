@@ -64,24 +64,45 @@ def load_bind_password(settings: RuntimeSettings) -> None:
         ) from exc
 
 
+def validate_jwt_key(settings: RuntimeSettings) -> None:
+    jwt_key = settings.jwt.key
+    if jwt_key.is_file() or settings.jwt.create:
+        return
+    raise ServeSetupError(
+        f"JWT signing key {jwt_key} does not exist and jwt.create is disabled"
+    )
+
+
 def validate_auth_settings(settings: RuntimeSettings) -> None:
-    if settings.authentication.method != "ldap":
-        raise ServeSetupError(
-            f"Unsupported authentication method: {settings.authentication.method}"
-        )
-    missing = []
-    if settings.ldap.uri is None:
-        missing.append("[ldap] uri")
-    if settings.ldap.user_base is None:
-        missing.append("[ldap] user_base")
-    if settings.ldap.group_base is None:
-        missing.append("[ldap] group_base")
-    if missing:
-        raise ServeSetupError(
-            "Authentication is enabled but required settings are missing: "
-            + ", ".join(missing)
-        )
-    if settings.ldap.bind_dn is not None and settings.ldap.bind_password is None:
-        raise ServeSetupError(
-            "LDAP bind_dn is set but bind_password or bind_password_file is missing"
-        )
+    method = settings.authentication.method
+    if method == "ldap":
+        missing = []
+        if settings.ldap.uri is None:
+            missing.append("[ldap] uri")
+        if settings.ldap.user_base is None:
+            missing.append("[ldap] user_base")
+        if settings.ldap.group_base is None:
+            missing.append("[ldap] group_base")
+        if missing:
+            raise ServeSetupError(
+                "LDAP authentication requires settings: " + ", ".join(missing)
+            )
+        if settings.ldap.bind_dn is not None and settings.ldap.bind_password is None:
+            raise ServeSetupError(
+                "LDAP bind_dn is set but bind_password or bind_password_file is missing"
+            )
+        validate_jwt_key(settings)
+        return
+    if method == "jwt":
+        validate_jwt_key(settings)
+        return
+    raise ServeSetupError(f"Unsupported authentication method: {method}")
+
+
+def load_serve_settings(conf_defs: Path, site_config: Path) -> RuntimeSettings:
+    """Load and validate serve configuration."""
+    settings = RuntimeSettings.yaml_definition(conf_defs)
+    if site_config.exists():
+        settings.override_ini(site_config)
+    validate_auth_settings(settings)
+    return settings

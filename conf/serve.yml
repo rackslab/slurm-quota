@@ -1,15 +1,12 @@
 authentication:
   _doc: REST API authentication settings
-  enabled:
-    type: bool
-    default: false
-    doc: Enable LDAP authentication and JWT token issuance for POST /login
   method:
     type: str
     choices:
       - ldap
+      - jwt
     default: ldap
-    doc: Authentication backend (only ldap is supported)
+    doc: Authentication backend (ldap for POST /login, jwt for slurm-quota-token issuance)
 
 ldap:
   _doc: LDAP directory settings

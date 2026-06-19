@@ -5,9 +5,14 @@
 # /usr/share/slurm-quota/conf/serve.yml).
 
 [authentication]
-enabled=yes
+method=ldap
 
 [ldap]
 uri=ldap://localhost
 user_base=ou=people,dc=example,dc=org
 group_base=ou=groups,dc=example,dc=org
+
+# JWT-only authentication (tokens issued by slurm-quota-token as root):
+#
+# [authentication]
+# method=jwt

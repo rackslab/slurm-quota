@@ -43,15 +43,6 @@ def _web_app() -> SlurmQuotaWebApp:
 
 
 def login() -> Response | str:
-    try:
-        auth_required = _web_app().auth_required_cached()
-    except (URLError, ServiceHTTPError) as exc:
-        logger.error("Failed to contact service: %s", exc)
-        abort(503, description=f"Failed to contact service: {exc}")
-
-    if not auth_required:
-        return redirect(url_for("dashboard"))
-
     if session_token() is not None:
         return redirect(request.args.get("next") or url_for("dashboard"))
 
@@ -71,13 +62,6 @@ def login() -> Response | str:
 
 
 def login_post() -> Any:
-    try:
-        if not _web_app().auth_required_cached():
-            return redirect(url_for("dashboard"))
-    except (URLError, ServiceHTTPError) as exc:
-        logger.error("Failed to contact service: %s", exc)
-        abort(503, description=f"Failed to contact service: {exc}")
-
     _web_app().ensure_session_key()
     next_url = request.form.get("next") or url_for("dashboard")
 
@@ -145,12 +129,7 @@ def logout() -> Any:
     if not validate_csrf():
         abort(400, description="Invalid or missing CSRF token.")
     session.clear()
-    try:
-        if _web_app().auth_required_cached(refresh=True):
-            return redirect(url_for("login"))
-    except (URLError, ServiceHTTPError):
-        pass
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("login"))
 
 
 def dashboard() -> Response | str:
@@ -169,20 +148,12 @@ def dashboard() -> Response | str:
     error: Optional[str] = None
     users: List[Dict[str, Any]] = []
     accounts: List[Dict[str, Any]] = []
-    auth_required = False
-    logged_in_username: Optional[str] = None
 
-    try:
-        auth_required = _web_app().auth_required_cached()
-    except (URLError, ServiceHTTPError):
-        auth_required = False
-
-    if auth_required:
-        logged_in_username = session.get("username")
-        if isinstance(logged_in_username, str):
-            logged_in_username = logged_in_username or None
-        else:
-            logged_in_username = None
+    logged_in_username = session.get("username")
+    if isinstance(logged_in_username, str):
+        logged_in_username = logged_in_username or None
+    else:
+        logged_in_username = None
 
     if username and account:
         error = "username and account filters are mutually exclusive."
@@ -198,9 +169,8 @@ def dashboard() -> Response | str:
                 accounts_raw, "account", display_hours
             )
         except ServiceHTTPError as exc:
-            if exc.status in (401, 403) and auth_required:
+            if exc.status in (401, 403):
                 session.clear()
-                _web_app().invalidate_auth_required_cache()
                 return redirect(login_url(message="session_expired"))
             error = f"Failed to retrieve stats from service: {exc}"
         except URLError as exc:
@@ -215,7 +185,7 @@ def dashboard() -> Response | str:
         selected_account=account or "",
         display_hours=display_hours,
         unit_label="hours" if display_hours else "minutes",
-        auth_required=auth_required,
+        auth_required=True,
         logged_in_username=logged_in_username,
-        csrf_token=csrf_token() if auth_required else None,
+        csrf_token=csrf_token(),
     )
