@@ -27,7 +27,7 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
     def test_dashboard_renders_user_and_account_rows(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
             m_client.return_value.stats.return_value = stats_rows()
-            client = web.app.test_client()
+            client = web.application.test_client()
             resp = client.get("/")
         self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
@@ -37,7 +37,7 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
     def test_forwards_username_filter_to_stats_api(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
             m_client.return_value.stats.return_value = stats_rows()
-            client = web.app.test_client()
+            client = web.application.test_client()
             resp = client.get("/?username=alice")
         self.assertEqual(resp.status_code, 200)
         m_client.return_value.stats.assert_called_once_with(
@@ -47,14 +47,14 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
     def test_forwards_account_filter_to_stats_api(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
             m_client.return_value.stats.return_value = stats_rows()
-            client = web.app.test_client()
+            client = web.application.test_client()
             resp = client.get("/?account=hpc")
         self.assertEqual(resp.status_code, 200)
         m_client.return_value.stats.assert_called_once_with(None, "hpc", show_all=True)
 
     def test_username_and_account_are_mutually_exclusive(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
-            client = web.app.test_client()
+            client = web.application.test_client()
             resp = client.get("/?username=alice&account=hpc")
         self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
@@ -64,7 +64,7 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
     def test_urlerror_is_rendered_in_page(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
             m_client.return_value.stats.side_effect = URLError("boom")
-            client = web.app.test_client()
+            client = web.application.test_client()
             resp = client.get("/")
         self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
@@ -73,7 +73,7 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
     def test_unit_hours_displays_decimal_hours(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
             m_client.return_value.stats.return_value = stats_rows()
-            client = web.app.test_client()
+            client = web.application.test_client()
             resp = client.get("/?unit=hours")
         self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
@@ -100,7 +100,7 @@ class TestAuthRoutes(SlurmQuotaTestCase):
     def test_login_post_api_unreachable_shows_error_page(self):
         with patch("slurm_quota.web.routes.APIClient") as m_client_cls:
             m_client_cls.return_value.login.side_effect = URLError("boom")
-            client = web.app.test_client()
+            client = web.application.test_client()
             login_page = client.get("/login")
             csrf = extract_csrf(login_page.get_data(as_text=True))
             resp = client.post(
@@ -124,7 +124,7 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
             m_client.return_value.stats.return_value = stats_rows()
-            client = web.app.test_client()
+            client = web.application.test_client()
             login_page = client.get("/login")
             csrf = extract_csrf(login_page.get_data(as_text=True))
             resp = client.post(
@@ -150,7 +150,7 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             auth_enabled(),
             patch("slurm_quota.web.routes.APIClient", return_value=mock_api),
         ):
-            client = web.app.test_client()
+            client = web.application.test_client()
             login_page = client.get("/login")
             csrf = extract_csrf(login_page.get_data(as_text=True))
             resp = client.post(
@@ -173,7 +173,7 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
             m_client.return_value.stats.return_value = stats_rows()
-            client = web.app.test_client()
+            client = web.application.test_client()
             login_page = client.get("/login")
             csrf = extract_csrf(login_page.get_data(as_text=True))
             client.post(
@@ -205,7 +205,7 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
             m_client.return_value.stats.side_effect = ServiceHTTPError(401)
-            client = web.app.test_client()
+            client = web.application.test_client()
             login_page = client.get("/login")
             csrf = extract_csrf(login_page.get_data(as_text=True))
             client.post(

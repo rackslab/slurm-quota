@@ -6,7 +6,7 @@
 
 from slurm_quota.web.app import SlurmQuotaWebApp
 
-app = SlurmQuotaWebApp()
-app.register()
+application = SlurmQuotaWebApp()
+application.register()
 
-__all__ = ["app"]
+__all__ = ["application"]
