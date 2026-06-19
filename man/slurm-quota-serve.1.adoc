@@ -19,7 +19,7 @@ slurm-quota-serve - HTTP JSON API for Slurm quota
 systemd socket activation and is consumed by `slurm-quota stats` and
 `slurm-quota-web`.
 
-The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
+The command must run as the `slurm` system user.
 
 == Options
 
@@ -56,7 +56,7 @@ The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 Notes:
 
 - If systemd socket activation is active (`LISTEN_PID`/`LISTEN_FDS`), inherited FD 3 is used and `--host`/`--port` are ignored.
-- The command exits with error if the database file does not exist.
+- The command exits with error if not run as the `slurm` system user.
 
 == Environment
 
