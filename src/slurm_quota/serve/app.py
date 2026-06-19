@@ -59,10 +59,19 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
     def setup(self, conf_defs: Path, site_config: Path) -> None:
         self.load_settings(conf_defs, site_config)
         assert self.settings is not None
+        validate_auth_settings(self.settings)
         self.authentifier = None
-        if self.settings.authentication.enabled:
+        RFLTokenizedWebApp.__init__(
+            self,
+            audience=self.settings.jwt.audience,
+            algorithm=self.settings.jwt.algorithm,
+            key=self.settings.jwt.key,
+            create=self.settings.jwt.create,
+            create_parent=self.settings.jwt.create_parent,
+        )
+        method = self.settings.authentication.method
+        if method == "ldap":
             load_bind_password(self.settings)
-            validate_auth_settings(self.settings)
             ldap = self.settings.ldap
             self.authentifier = LDAPAuthentifier(
                 uri=ldap.uri,
@@ -81,15 +90,9 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
                 restricted_groups=ldap.restricted_groups,
                 lookup_user_dn=ldap.lookup_user_dn,
             )
-            RFLTokenizedWebApp.__init__(
-                self,
-                audience=self.settings.jwt.audience,
-                algorithm=self.settings.jwt.algorithm,
-                key=self.settings.jwt.key,
-                create=self.settings.jwt.create,
-                create_parent=self.settings.jwt.create_parent,
-            )
             logger.info("REST API authentication is enabled (LDAP + JWT)")
+        elif method == "jwt":
+            logger.info("REST API authentication is enabled (JWT)")
         try:
             auth.require_slurm_user()
         except PermissionError as exc:

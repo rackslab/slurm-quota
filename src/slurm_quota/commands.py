@@ -518,7 +518,7 @@ def login_command(username: Optional[str] = None, save: bool = False) -> None:
             logger.error("Invalid user or password")
         elif e.status == 404:
             logger.error(
-                "Authentication is not enabled on the slurm-quota service "
+                "LDAP authentication is not enabled on the slurm-quota service "
                 "(POST /login returned HTTP 404)"
             )
         else:
@@ -532,6 +532,21 @@ def login_command(username: Optional[str] = None, save: bool = False) -> None:
         sys.exit(1)
     except Exception as e:
         logger.error(f"Login failed: {e}")
+        sys.exit(1)
+
+
+def token_save_command() -> None:
+    """Persist SLURM_QUOTA_TOKEN to the XDG config token file."""
+    env_token = os.environ.get("SLURM_QUOTA_TOKEN", "").strip()
+    if not env_token:
+        logger.error("SLURM_QUOTA_TOKEN is not set or is empty")
+        sys.exit(1)
+
+    try:
+        token_path = save_service_token(env_token)
+        print(f"Authentication token saved to {token_path}")
+    except OSError as e:
+        logger.error(f"Failed to save authentication token: {e}")
         sys.exit(1)
 
 

@@ -13,11 +13,11 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, cast
 
 from flask import abort, current_app, jsonify, request
 from rfl.authentication.errors import LDAPAuthenticationError
+from rfl.web.tokens import check_jwt
 
 import slurm_quota
 from slurm_quota.database import query_accounts_aggregate, query_users_aggregate
 from slurm_quota import slurm as slurm_integration
-from slurm_quota.serve.auth import require_jwt_if_auth_enabled
 
 if TYPE_CHECKING:
     from slurm_quota.serve.app import SlurmQuotaServeApp
@@ -68,7 +68,11 @@ def health() -> Any:
 
 def login() -> Any:
     serve_app = cast("SlurmQuotaServeApp", current_app)
-    if serve_app.authentifier is None or serve_app.settings is None:
+    if (
+        serve_app.settings is None
+        or serve_app.settings.authentication.method != "ldap"
+        or serve_app.authentifier is None
+    ):
         return jsonify({"error": "not_found"}), 404
 
     payload = request.get_json(silent=True)
@@ -97,7 +101,7 @@ def login() -> Any:
     return jsonify({"token": token})
 
 
-@require_jwt_if_auth_enabled
+@check_jwt
 def stats() -> Any:
     username_param = (request.args.get("username") or "").strip() or None
     account_param = (request.args.get("account") or "").strip() or None

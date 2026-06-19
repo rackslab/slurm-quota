@@ -122,26 +122,3 @@ class APIClient:
         users_data: List[Dict[str, Any]] = list(stats_payload.get("users", []))
         accounts_data: List[Dict[str, Any]] = list(stats_payload.get("accounts", []))
         return users_data, accounts_data
-
-    @classmethod
-    def auth_required(cls, base_url: Optional[str] = None) -> bool:
-        """
-        Return True when the HTTP service requires authentication for GET /stats.
-
-        Probes GET /stats without an Authorization header. A 403 response indicates
-        that authentication is required; 200 indicates a public API.
-
-        Raises:
-            ServiceHTTPError: Response status was neither OK nor forbidden.
-            URLError: Network or URL handling failure from urlopen.
-        """
-        client = cls(base_url=base_url)
-        stats_url = urljoin(client.base_url, "stats")
-        with urlopen(
-            Request(stats_url, headers=client._request_headers(include_auth=False))
-        ) as resp:
-            if resp.status == HTTPStatus.OK:
-                return False
-            if resp.status == HTTPStatus.FORBIDDEN:
-                return True
-            raise ServiceHTTPError(resp.status)
