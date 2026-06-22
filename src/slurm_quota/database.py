@@ -265,6 +265,12 @@ def init_database() -> None:
                 [(key, str(value)) for key, value in DEFAULT_QUOTA_SETTINGS.items()],
             )
 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS api_managers (
+                    username TEXT PRIMARY KEY
+                )
+            """)
+
             conn.commit()
             logger.info("Database initialized successfully")
 
@@ -879,4 +885,56 @@ def query_accounts_aggregate(
                 "job_count": int(job_count or 0),
             }
         )
+    return results
+
+
+def is_api_manager(conn: sqlite3.Connection, username: str) -> bool:
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT 1 FROM api_managers WHERE username = ?",
+        (username,),
+    )
+    return cursor.fetchone() is not None
+
+
+def list_api_managers(conn: sqlite3.Connection) -> List[str]:
+    cursor = conn.cursor()
+    cursor.execute("SELECT username FROM api_managers ORDER BY username")
+    return [row[0] for row in cursor.fetchall()]
+
+
+def grant_api_manager(conn: sqlite3.Connection, username: str) -> None:
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT OR IGNORE INTO api_managers (username) VALUES (?)",
+        (username,),
+    )
+    conn.commit()
+
+
+def revoke_api_manager(conn: sqlite3.Connection, username: str) -> None:
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM api_managers WHERE username = ?", (username,))
+    conn.commit()
+
+
+def list_users_with_roles(
+    conn: sqlite3.Connection, config_admins: set[str]
+) -> List[Dict[str, str]]:
+    cursor = conn.cursor()
+    cursor.execute("SELECT username FROM users")
+    usernames = {row[0] for row in cursor.fetchall()}
+    usernames.update(config_admins)
+    managers = set(list_api_managers(conn))
+    usernames.update(managers)
+
+    results: List[Dict[str, str]] = []
+    for username in sorted(usernames):
+        if username in config_admins:
+            role = "admin"
+        elif username in managers:
+            role = "manager"
+        else:
+            role = "user"
+        results.append({"username": username, "role": role})
     return results

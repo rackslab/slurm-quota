@@ -8,6 +8,13 @@ authentication:
     default: ldap
     doc: Authentication backend (ldap for POST /login, jwt for slurm-quota-token issuance)
 
+authorization:
+  _doc: REST API authorization settings
+  admins:
+    type: list
+    content: str
+    doc: Usernames granted admin role
+
 ldap:
   _doc: LDAP directory settings
   uri:

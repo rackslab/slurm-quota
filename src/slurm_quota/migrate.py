@@ -162,6 +162,21 @@ def migrate_database() -> None:
             conn.commit()
             logger.info("Migration completed: default quota settings ensured")
 
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='api_managers'"
+            )
+            if cursor.fetchone() is None:
+                logger.info("Creating api_managers table")
+                cursor.execute("""
+                    CREATE TABLE api_managers (
+                        username TEXT PRIMARY KEY
+                    )
+                """)
+                conn.commit()
+                logger.info("Migration completed: api_managers table created")
+            else:
+                logger.info("Migration not needed: api_managers table already exists")
+
     except sqlite3.Error as e:
         logger.error(f"Database migration failed: {e}")
         raise
