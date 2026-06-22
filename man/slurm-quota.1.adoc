@@ -115,6 +115,36 @@ slurm-quota stats --account hpc
 slurm-quota stats --all --hours
 ....
 
+=== role
+
+*slurm-quota role* *show* | *list* | *grant* <username> | *revoke* <username>
+
+Show or manage REST API user roles. Requires a saved JWT token or
+`SLURM_QUOTA_TOKEN`.
+
+Subcommands:
+
+*show*::
+  Display the current caller username and role.
+
+*list*::
+  List all users with their role (admin only).
+
+*grant* <username>::
+  Grant manager role to a user (admin only).
+
+*revoke* <username>::
+  Revoke manager role from a user (admin only).
+
+Examples:
+
+....
+slurm-quota role show
+slurm-quota role list
+slurm-quota role grant bob
+slurm-quota role revoke bob
+....
+
 === adjust
 
 *slurm-quota adjust* (*--user* <username> | *--account* <account>) (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int>)

@@ -86,18 +86,21 @@ curl -s -X POST http://127.0.0.1:9911/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"alice","password":"secret"}'
 curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/stats
+curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/me
+curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles
+curl -X PUT -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles/managers/bob
 ....
 
 == Files
 
 `/var/lib/state/slurm-quota/slurm-quota.db`::
-  SQLite database for quotas, consumed/preallocated counters, GPU factors, and default settings.
+  SQLite database for quotas, consumed/preallocated counters, GPU factors, default settings, and API manager roles.
 
 `/usr/share/slurm-quota/conf/serve.yml`::
   YAML settings definition for the HTTP service.
 
 `/etc/slurm-quota/serve.ini`::
-  Site configuration overrides (authentication, LDAP, JWT).
+  Site configuration overrides (authentication, LDAP, JWT, authorization admins).
 
 `/var/lib/slurm-quota/jwt.key`::
   Default path for the JWT signing key.
