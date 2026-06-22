@@ -23,6 +23,10 @@ from slurm_quota.commands import (
     show_gpu_factors_command,
     show_user_stats,
     token_save_command,
+    role_grant_command,
+    role_list_command,
+    role_revoke_command,
+    role_show_command,
 )
 from slurm_quota.log import setup_logging
 from slurm_quota.token import service_token_path
@@ -134,6 +138,32 @@ def main():
         action="store_true",
         help="Display stats values in hours instead of minutes",
     )
+
+    # Role commands
+    role_parser = subparsers.add_parser(
+        "role",
+        help="Show or manage REST API user roles (requires saved token)",
+    )
+    role_subparsers = role_parser.add_subparsers(dest="role_command")
+
+    role_subparsers.add_parser("show", help="Show current user role")
+
+    role_subparsers.add_parser(
+        "list",
+        help="List all users with roles (admin only)",
+    )
+
+    role_grant_parser = role_subparsers.add_parser(
+        "grant",
+        help="Grant manager role to a user (admin only)",
+    )
+    role_grant_parser.add_argument("username", help="Username to grant manager role")
+
+    role_revoke_parser = role_subparsers.add_parser(
+        "revoke",
+        help="Revoke manager role from a user (admin only)",
+    )
+    role_revoke_parser.add_argument("username", help="Username to revoke manager role")
 
     # Adjust command
     adjust_parser = subparsers.add_parser(
@@ -305,6 +335,18 @@ def main():
         if selected_username and args.account:
             parser.error("stats: user selection and --account are mutually exclusive")
         show_user_stats(selected_username, args.account, args.all, args.hours)
+    elif args.command == "role":
+        if args.role_command == "show":
+            role_show_command()
+        elif args.role_command == "list":
+            role_list_command()
+        elif args.role_command == "grant":
+            role_grant_command(args.username)
+        elif args.role_command == "revoke":
+            role_revoke_command(args.username)
+        else:
+            role_parser.print_help()
+            sys.exit(1)
     elif args.command == "adjust":
         adjust_command(
             args.user,
