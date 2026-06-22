@@ -46,6 +46,18 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
         self.add_url_rule("/health", view_func=routes.health, methods=["GET"])
         self.add_url_rule("/login", view_func=routes.login, methods=["POST"])
         self.add_url_rule("/stats", view_func=routes.stats, methods=["GET"])
+        self.add_url_rule("/me", view_func=routes.me, methods=["GET"])
+        self.add_url_rule("/roles", view_func=routes.list_roles, methods=["GET"])
+        self.add_url_rule(
+            "/roles/managers/<username>",
+            view_func=routes.grant_manager,
+            methods=["PUT"],
+        )
+        self.add_url_rule(
+            "/roles/managers/<username>",
+            view_func=routes.revoke_manager,
+            methods=["DELETE"],
+        )
 
     def load_settings(self, conf_defs: Path, site_config: Path) -> None:
         self.settings = RuntimeSettings.yaml_definition(conf_defs)

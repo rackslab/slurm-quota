@@ -16,3 +16,7 @@ group_base=ou=groups,dc=example,dc=org
 #
 # [authentication]
 # method=jwt
+
+[authorization]
+admins=
+  admin-user
