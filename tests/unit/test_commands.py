@@ -12,6 +12,10 @@ from slurm_quota.client import ServiceHTTPError
 from slurm_quota.commands import (
     create_status_bar,
     format_timestamp_with_timezone,
+    role_grant_command,
+    role_list_command,
+    role_revoke_command,
+    role_show_command,
     show_user_stats,
 )
 
@@ -287,3 +291,116 @@ class TestShowUserStats(SlurmQuotaTestCase):
         with self.assertRaises(SystemExit) as cm:
             show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
+
+
+class TestRoleCommands(SlurmQuotaTestCase):
+    def test_role_show_prints_username_and_role(self):
+        buf = io.StringIO()
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+            redirect_stdout(buf),
+        ):
+            m_client.return_value.me.return_value = {
+                "username": "alice",
+                "role": "admin",
+            }
+            role_show_command()
+        output = buf.getvalue()
+        self.assertIn("alice", output)
+        self.assertIn("admin", output)
+
+    def test_role_list_prints_table(self):
+        buf = io.StringIO()
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+            redirect_stdout(buf),
+        ):
+            m_client.return_value.users_roles.return_value = [
+                {"username": "alice", "role": "admin"},
+                {"username": "bob", "role": "user"},
+            ]
+            role_list_command()
+        output = buf.getvalue()
+        self.assertIn("USERNAME", output)
+        self.assertIn("alice", output)
+        self.assertIn("bob", output)
+
+    def test_role_grant_prints_confirmation(self):
+        buf = io.StringIO()
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+            redirect_stdout(buf),
+        ):
+            role_grant_command("bob")
+        self.assertEqual(buf.getvalue(), "Granted manager role to bob\n")
+        m_client.return_value.grant_manager.assert_called_once_with("bob")
+
+    def test_role_grant_reports_forbidden(self):
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+        ):
+            m_client.return_value.grant_manager.side_effect = ServiceHTTPError(403)
+            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+                with self.assertRaises(SystemExit) as cm:
+                    role_grant_command("bob")
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(
+            log_cm.output,
+            ["ERROR:slurm_quota:Access denied: admin role required to grant manager"],
+        )
+
+    def test_role_grant_reports_unreachable_service(self):
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+        ):
+            m_client.return_value.grant_manager.side_effect = URLError("boom")
+            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+                with self.assertRaises(SystemExit) as cm:
+                    role_grant_command("bob")
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(len(log_cm.output), 1)
+        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+
+    def test_role_revoke_prints_confirmation(self):
+        buf = io.StringIO()
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+            redirect_stdout(buf),
+        ):
+            role_revoke_command("bob")
+        self.assertEqual(buf.getvalue(), "Revoked manager role from bob\n")
+        m_client.return_value.revoke_manager.assert_called_once_with("bob")
+
+    def test_role_revoke_reports_forbidden(self):
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+        ):
+            m_client.return_value.revoke_manager.side_effect = ServiceHTTPError(403)
+            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+                with self.assertRaises(SystemExit) as cm:
+                    role_revoke_command("bob")
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(
+            log_cm.output,
+            ["ERROR:slurm_quota:Access denied: admin role required to revoke manager"],
+        )
+
+    def test_role_revoke_reports_unreachable_service(self):
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+        ):
+            m_client.return_value.revoke_manager.side_effect = URLError("boom")
+            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+                with self.assertRaises(SystemExit) as cm:
+                    role_revoke_command("bob")
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(len(log_cm.output), 1)
+        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])

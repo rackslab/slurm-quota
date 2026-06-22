@@ -154,14 +154,17 @@ class TestAPIClientStats(SlurmQuotaTestCase):
 
 
 class TestAPIClientLogin(SlurmQuotaTestCase):
-    def test_returns_token_from_login_response(self):
+    def test_returns_payload_from_login_response(self):
         with patch(
             "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({"token": "jwt-token"}),
+            return_value=_FakeUrlopenResponse(
+                {"token": "jwt-token", "username": "alice", "role": "admin"}
+            ),
         ) as m_urlopen:
             client = APIClient()
-            token = client.login("alice", "secret")
-        self.assertEqual(token, "jwt-token")
+            payload = client.login("alice", "secret")
+        self.assertEqual(payload["token"], "jwt-token")
+        self.assertEqual(payload["role"], "admin")
         self.assertEqual(client.token, "jwt-token")
         req = m_urlopen.call_args[0][0]
         self.assertTrue(req.full_url.endswith("/login"))
@@ -236,3 +239,95 @@ class TestAPIClientLogin(SlurmQuotaTestCase):
             APIClient(token=load_service_token()).stats(None, None, True)
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.get_header("Authorization"), "Bearer file-jwt")
+
+
+class TestAPIClientRoles(SlurmQuotaTestCase):
+    def test_me_returns_payload(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"username": "alice", "role": "admin"}),
+        ):
+            payload = APIClient(token="jwt").me()
+        self.assertEqual(payload["role"], "admin")
+
+    def test_me_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").me()
+        self.assertEqual(cm.exception.status, 403)
+
+    def test_me_raises_value_error_when_token_missing(self):
+        with self.assertRaises(ValueError):
+            APIClient(token=None).me()
+
+    def test_users_roles_returns_users(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(
+                {"users": [{"username": "bob", "role": "user"}]}
+            ),
+        ):
+            users = APIClient(token="jwt").users_roles()
+        self.assertEqual(users[0]["username"], "bob")
+
+    def test_users_roles_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").users_roles()
+        self.assertEqual(cm.exception.status, 403)
+
+    def test_users_roles_raises_value_error_when_token_missing(self):
+        with self.assertRaises(ValueError):
+            APIClient(token=None).users_roles()
+
+    def test_grant_manager_sends_put(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").grant_manager("bob")
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.method, "PUT")
+        self.assertIn("/roles/managers/bob", req.full_url)
+
+    def test_grant_manager_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").grant_manager("bob")
+        self.assertEqual(cm.exception.status, 403)
+
+    def test_grant_manager_raises_value_error_when_token_missing(self):
+        with self.assertRaises(ValueError):
+            APIClient(token=None).grant_manager("bob")
+
+    def test_revoke_manager_sends_delete(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").revoke_manager("bob")
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.method, "DELETE")
+        self.assertIn("/roles/managers/bob", req.full_url)
+
+    def test_revoke_manager_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").revoke_manager("bob")
+        self.assertEqual(cm.exception.status, 403)
+
+    def test_revoke_manager_raises_value_error_when_token_missing(self):
+        with self.assertRaises(ValueError):
+            APIClient(token=None).revoke_manager("bob")
