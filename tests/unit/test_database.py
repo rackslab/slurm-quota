@@ -7,11 +7,16 @@ from unittest.mock import patch
 
 from slurm_quota.database import (
     adjust_consumed_minutes,
+    grant_api_manager,
     init_database,
+    is_api_manager,
+    list_api_managers,
+    list_users_with_roles,
     load_gpu_factors,
     prune_resources,
     query_accounts_aggregate,
     query_users_aggregate,
+    revoke_api_manager,
     set_account_gpu_quota,
     set_account_quota,
     set_user_gpu_quota,
@@ -649,3 +654,62 @@ class TestQueryAccountsAggregate(SlurmQuotaTestCase):
             conn.commit()
             accounts = query_accounts_aggregate(conn, {"a1"})
         self.assertEqual(accounts[0]["account"], "a1")
+
+
+class TestApiManagers(SlurmQuotaTestCase):
+    def setUp(self):
+        super().setUp()
+        init_database()
+
+    def test_is_api_manager_false_until_granted(self):
+        with self.db_connection() as conn:
+            self.assertFalse(is_api_manager(conn, "carol"))
+            grant_api_manager(conn, "carol")
+            self.assertTrue(is_api_manager(conn, "carol"))
+
+    def test_list_api_managers_returns_sorted_usernames(self):
+        with self.db_connection() as conn:
+            self.assertEqual(list_api_managers(conn), [])
+            grant_api_manager(conn, "carol")
+            grant_api_manager(conn, "bob")
+            self.assertEqual(list_api_managers(conn), ["bob", "carol"])
+
+    def test_grant_api_manager_is_idempotent(self):
+        with self.db_connection() as conn:
+            grant_api_manager(conn, "bob")
+            grant_api_manager(conn, "bob")
+            self.assertEqual(list_api_managers(conn), ["bob"])
+
+    def test_revoke_api_manager_removes_entry(self):
+        with self.db_connection() as conn:
+            grant_api_manager(conn, "bob")
+            revoke_api_manager(conn, "bob")
+            self.assertFalse(is_api_manager(conn, "bob"))
+            self.assertEqual(list_api_managers(conn), [])
+
+    def test_revoke_api_manager_is_noop_when_missing(self):
+        with self.db_connection() as conn:
+            revoke_api_manager(conn, "missing")
+            self.assertEqual(list_api_managers(conn), [])
+
+    def test_list_users_with_roles_merges_users_admins_and_managers(self):
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 10),
+            )
+            grant_api_manager(conn, "carol")
+            conn.commit()
+
+            roles = {
+                entry["username"]: entry["role"]
+                for entry in list_users_with_roles(conn, {"alice"})
+            }
+        self.assertEqual(roles["alice"], "admin")
+        self.assertEqual(roles["bob"], "user")
+        self.assertEqual(roles["carol"], "manager")
+
+    def test_list_users_with_roles_includes_admin_without_db_user_row(self):
+        with self.db_connection() as conn:
+            roles = list_users_with_roles(conn, {"alice"})
+        self.assertEqual(roles, [{"username": "alice", "role": "admin"}])

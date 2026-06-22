@@ -27,6 +27,10 @@ def write_jwt_site_ini(directory: Path) -> Path:
             [authentication]
             method=jwt
 
+            [authorization]
+            admins=
+              alice
+
             [jwt]
             key={jwt_key}
             create=yes
@@ -46,6 +50,10 @@ def write_ldap_site_ini(directory: Path) -> Path:
             f"""\
             [authentication]
             method=ldap
+
+            [authorization]
+            admins=
+              alice
 
             [ldap]
             uri=ldap://localhost
