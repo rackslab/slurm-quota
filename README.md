@@ -56,13 +56,15 @@ The `slurm-quota-serve` command starts a small HTTP/JSON server designed to work
 
 REST API authentication is required: `GET /stats` always requires a valid Bearer JWT. With `authentication.method=ldap` in site configuration, `POST /login` issues JWT tokens from LDAP credentials. With `authentication.method=jwt`, tokens are issued offline by the root-only `slurm-quota-token` command.
 
-The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a user (`--user` or positional username), an account (`--account`), or the `--all` option, the command transmits the appropriate filters to the service. User and account selectors are mutually exclusive. If the service is not available or in case of connection failure to the server, execution fails with an error message.
+REST API authorization uses three roles. **Admin** users are listed in `[authorization] admins` in `serve.ini` (bootstrap only; not stored in the database). **Manager** users are stored in the SQLite `api_managers` table and can view all statistics. All other authenticated users have the **user** role and can view only their own consumption stats (including Slurm accounts they belong to). Admins can grant or revoke the manager role through `GET /roles`, `PUT /roles/managers/<username>`, and `DELETE /roles/managers/<username>`. The `slurm-quota role` CLI subcommands and the web dashboard **Manage roles** page (admin only) call these endpoints.
+
+The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a user (`--user` or positional username), an account (`--account`), or the `--all` option, the command transmits the appropriate filters to the service. User and account selectors are mutually exclusive. Users with the **user** role receive `HTTP 403` when requesting data outside their scope. If the service is not available or in case of connection failure to the server, execution fails with an error message.
 
 `slurm-quota stats` needs a JWT token sent as a Bearer header. It reads a saved token from `$XDG_CONFIG_HOME/slurm-quota/token` (default `~/.config/slurm-quota/token`), or `SLURM_QUOTA_TOKEN` when set. When `authentication.method=ldap`, `slurm-quota login` obtains a JWT from `POST /login`; by default it prints the token to stdout, and with `--save` persists it for automatic use by `stats`. When tokens are issued with `slurm-quota-token`, set `SLURM_QUOTA_TOKEN` or run `slurm-quota token` to save the token to the same file.
 
 Additionally, a logrotate configuration file is provided (`slurm-quota-charge.logrotate`) to prevent the log file fed by the `slurm-quota-charge-wrapper` wrapper from growing too large over time.
 
-The `slurm-quota-web` application is a web dashboard that retrieves the same statistics from the HTTP API (`GET /stats`) and renders them as HTML tables and quota usage bars. When `authentication.method=ldap`, the dashboard presents a login page and stores each user's API JWT in a signed, HttpOnly session cookie. Alternatively, set `SLURM_QUOTA_TOKEN` in the web server environment to authenticate API calls with a service token (no per-user login). It can run standalone with Flask built-in HTTP server for local testing, or be launched by a production-ready HTTP server (for example Apache with mod_wsgi) as a WSGI application.
+The `slurm-quota-web` application is a web dashboard that retrieves the same statistics from the HTTP API (`GET /stats`) and renders them as HTML tables and quota usage bars. When `authentication.method=ldap`, the dashboard presents a login page and stores each user's API JWT in a signed, HttpOnly session cookie. Alternatively, set `SLURM_QUOTA_TOKEN` in the web server environment to authenticate API calls with a service token (no per-user login). Users with the **user** role see only their own stats; managers and admins see all data. Admins can open **Manage roles** to list all users with their role and grant or revoke manager access. It can run standalone with Flask built-in HTTP server for local testing, or be launched by a production-ready HTTP server (for example Apache with mod_wsgi) as a WSGI application.
 
 ## Installation
 
@@ -131,9 +133,15 @@ method=ldap
 uri=ldap://ldap.example.org
 user_base=ou=people,dc=example,dc=org
 group_base=ou=groups,dc=example,dc=org
+
+[authorization]
+admins=
+  admin-user
 ```
 
 With `method=ldap`, the service exposes `POST /login` and issues JWT tokens after LDAP bind. The JWT signing key is created automatically at `/var/lib/slurm-quota/jwt.key` on first start (override in `[jwt]` if needed). Additional LDAP options (`bind_dn`, `restricted_groups`, TLS, and so on) are documented in `/usr/share/slurm-quota/conf/serve.yml`.
+
+List bootstrap admin usernames under `[authorization] admins`. These users can list all roles and grant or revoke manager access.
 
 Restart the API service after changing `serve.ini`:
 
@@ -514,6 +522,17 @@ Note: `--account` is mutually exclusive with user selection (`--user` or positio
 
 Color display of the status bar can be disabled by setting the `NO_COLOR` environment variable.
 The `--hours` option changes only the displayed unit in the `stats` output; stored values and API values remain in minutes.
+
+- `role`: Show or manage REST API roles (requires a saved token or `SLURM_QUOTA_TOKEN`).
+
+Examples:
+
+```bash
+slurm-quota role show            # show current user and role (GET /me)
+slurm-quota role list            # list all users with roles (admin only)
+slurm-quota role grant bob       # grant manager role (admin only)
+slurm-quota role revoke bob      # revoke manager role (admin only)
+```
 
 - `user-quota` (restricted to root): Sets a CPU quota for a user.
 
