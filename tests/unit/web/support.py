@@ -44,10 +44,19 @@ def stats_rows():
     return data["users"], data["accounts"]
 
 
+def roles_users() -> list[dict]:
+    return [
+        {"username": "alice", "role": "admin"},
+        {"username": "bob", "role": "user"},
+        {"username": "carol", "role": "manager"},
+    ]
+
+
 @contextmanager
 def auth_disabled():
     with patch("slurm_quota.web.app.load_service_token", return_value="test-token"):
-        yield
+        with patch("slurm_quota.web.routes.current_role", return_value="admin"):
+            yield
 
 
 @contextmanager
