@@ -15,6 +15,7 @@ from tests.unit.web.support import (
     auth_enabled,
     configure_web_app,
     extract_csrf,
+    roles_users,
     stats_rows,
 )
 
@@ -92,7 +93,7 @@ class TestAuthRoutes(SlurmQuotaTestCase):
 
         def _login(username, password):
             mock_api.token = "jwt-token"
-            return "jwt-token"
+            return {"token": "jwt-token", "username": username, "role": "admin"}
 
         mock_api.login.side_effect = _login
         return mock_api
@@ -122,6 +123,7 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             auth_enabled(),
             patch("slurm_quota.web.routes.APIClient", return_value=mock_api),
             patch("slurm_quota.web.routes.api_client") as m_client,
+            patch("slurm_quota.web.routes.current_role", return_value="admin"),
         ):
             m_client.return_value.stats.return_value = stats_rows()
             client = web.application.test_client()
@@ -171,6 +173,7 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             auth_enabled(),
             patch("slurm_quota.web.routes.APIClient", return_value=mock_api),
             patch("slurm_quota.web.routes.api_client") as m_client,
+            patch("slurm_quota.web.routes.current_role", return_value="admin"),
         ):
             m_client.return_value.stats.return_value = stats_rows()
             client = web.application.test_client()
@@ -203,6 +206,7 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             auth_enabled(),
             patch("slurm_quota.web.routes.APIClient", return_value=mock_api),
             patch("slurm_quota.web.routes.api_client") as m_client,
+            patch("slurm_quota.web.routes.current_role", return_value="admin"),
         ):
             m_client.return_value.stats.side_effect = ServiceHTTPError(401)
             client = web.application.test_client()
@@ -220,3 +224,140 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             resp = client.get("/", follow_redirects=False)
         self.assertEqual(resp.status_code, 302)
         self.assertIn("session_expired", resp.headers["Location"])
+
+
+class TestRolesRoutes(SlurmQuotaTestCase):
+    def setUp(self):
+        super().setUp()
+        configure_web_app()
+
+    def test_roles_lists_users_for_admin(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.users_roles.return_value = roles_users()
+            client = web.application.test_client()
+            resp = client.get("/roles")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_data(as_text=True)
+        self.assertIn("User roles", body)
+        self.assertIn("bob", body)
+        self.assertIn("carol", body)
+        m_client.return_value.users_roles.assert_called_once()
+
+    def test_roles_redirects_non_admin_to_dashboard(self):
+        with (
+            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch("slurm_quota.web.routes.current_role", return_value="user"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            client = web.application.test_client()
+            resp = client.get("/roles", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp.headers["Location"].endswith("/"))
+        m_client.return_value.users_roles.assert_not_called()
+
+    def test_roles_renders_api_error(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.users_roles.side_effect = ServiceHTTPError(500)
+            client = web.application.test_client()
+            resp = client.get("/roles")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Failed to retrieve roles", resp.get_data(as_text=True))
+
+    def test_roles_forbidden_clears_session_and_redirects_to_login(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.users_roles.side_effect = ServiceHTTPError(403)
+            client = web.application.test_client()
+            with client.session_transaction() as sess:
+                sess["token"] = "jwt-token"
+            resp = client.get("/roles", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("session_expired", resp.headers["Location"])
+        with client.session_transaction() as sess:
+            self.assertNotIn("token", sess)
+
+    def test_roles_post_grant_calls_api(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.users_roles.return_value = roles_users()
+            client = web.application.test_client()
+            roles_page = client.get("/roles")
+            csrf = extract_csrf(roles_page.get_data(as_text=True))
+            resp = client.post(
+                "/roles",
+                data={"_csrf": csrf, "action": "grant", "username": "bob"},
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/roles", resp.headers["Location"])
+        m_client.return_value.grant_manager.assert_called_once_with("bob")
+
+    def test_roles_post_revoke_calls_api(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.users_roles.return_value = roles_users()
+            client = web.application.test_client()
+            roles_page = client.get("/roles")
+            csrf = extract_csrf(roles_page.get_data(as_text=True))
+            resp = client.post(
+                "/roles",
+                data={"_csrf": csrf, "action": "revoke", "username": "carol"},
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        m_client.return_value.revoke_manager.assert_called_once_with("carol")
+
+    def test_roles_post_redirects_non_admin_to_dashboard(self):
+        with (
+            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch("slurm_quota.web.routes.current_role", return_value="user"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            client = web.application.test_client()
+            resp = client.post(
+                "/roles",
+                data={"_csrf": "token", "action": "grant", "username": "bob"},
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp.headers["Location"].endswith("/"))
+        m_client.return_value.grant_manager.assert_not_called()
+
+    def test_roles_post_rejects_invalid_csrf(self):
+        with auth_disabled():
+            client = web.application.test_client()
+            resp = client.post(
+                "/roles",
+                data={"_csrf": "wrong", "action": "grant", "username": "bob"},
+            )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_roles_post_empty_username_redirects_to_roles(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.users_roles.return_value = roles_users()
+            client = web.application.test_client()
+            roles_page = client.get("/roles")
+            csrf = extract_csrf(roles_page.get_data(as_text=True))
+            resp = client.post(
+                "/roles",
+                data={"_csrf": csrf, "action": "grant", "username": ""},
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/roles", resp.headers["Location"])
+        m_client.return_value.grant_manager.assert_not_called()
+
+    def test_roles_post_forbidden_clears_session_and_redirects_to_login(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.grant_manager.side_effect = ServiceHTTPError(403)
+            client = web.application.test_client()
+            roles_page = client.get("/roles")
+            csrf = extract_csrf(roles_page.get_data(as_text=True))
+            with client.session_transaction() as sess:
+                sess["token"] = "jwt-token"
+            resp = client.post(
+                "/roles",
+                data={"_csrf": csrf, "action": "grant", "username": "bob"},
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("session_expired", resp.headers["Location"])
+        with client.session_transaction() as sess:
+            self.assertNotIn("token", sess)
