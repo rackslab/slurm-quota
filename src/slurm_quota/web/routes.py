@@ -27,6 +27,7 @@ from slurm_quota.web import dashboard as dashboard_view
 from slurm_quota.web.auth import (
     api_client,
     csrf_token,
+    current_role,
     login_url,
     session_token,
     validate_csrf,
@@ -90,8 +91,9 @@ def login_post() -> Any:
 
     try:
         api = APIClient()
-        api.login(username, password)
+        payload = api.login(username, password)
         token = api.token
+        role = payload["role"]
     except ServiceHTTPError as exc:
         if exc.status == 401:
             return render_template(
@@ -121,6 +123,7 @@ def login_post() -> Any:
     session.permanent = True
     session["token"] = token
     session["username"] = username
+    session["role"] = role
     session["_csrf"] = secrets.token_hex(32)
     return redirect(next_url)
 
@@ -133,6 +136,7 @@ def logout() -> Any:
 
 
 def dashboard() -> Response | str:
+    role = current_role()
     username = (request.args.get("username") or "").strip() or None
     account = (request.args.get("account") or "").strip() or None
     unit = (request.args.get("unit") or "").strip().lower()
@@ -169,7 +173,7 @@ def dashboard() -> Response | str:
                 accounts_raw, "account", display_hours
             )
         except ServiceHTTPError as exc:
-            if exc.status in (401, 403):
+            if exc.status == 401:
                 session.clear()
                 return redirect(login_url(message="session_expired"))
             error = f"Failed to retrieve stats from service: {exc}"
@@ -187,5 +191,59 @@ def dashboard() -> Response | str:
         unit_label="hours" if display_hours else "minutes",
         auth_required=True,
         logged_in_username=logged_in_username,
+        user_role=role,
         csrf_token=csrf_token(),
     )
+
+
+def roles() -> Response | str:
+    role = current_role()
+    if role != "admin":
+        return redirect(url_for("dashboard"))
+
+    error: Optional[str] = None
+    users: List[Dict[str, Any]] = []
+    try:
+        users = api_client().users_roles()
+    except ServiceHTTPError as exc:
+        if exc.status in (401, 403):
+            session.clear()
+            return redirect(login_url(message="session_expired"))
+        error = f"Failed to retrieve roles from service: HTTP {exc.status}"
+    except URLError as exc:
+        error = f"Failed to retrieve roles from service: {exc}"
+
+    return render_template(
+        "roles.html",
+        error=error,
+        users=users,
+        csrf_token=csrf_token(),
+    )
+
+
+def roles_post() -> Any:
+    role = current_role()
+    if role != "admin":
+        return redirect(url_for("dashboard"))
+
+    if not validate_csrf():
+        abort(400, description="Invalid or missing CSRF token.")
+
+    action = (request.form.get("action") or "").strip()
+    username = (request.form.get("username") or "").strip()
+    if not username:
+        return redirect(url_for("roles"))
+
+    try:
+        if action == "grant":
+            api_client().grant_manager(username)
+        elif action == "revoke":
+            api_client().revoke_manager(username)
+    except ServiceHTTPError as exc:
+        if exc.status in (401, 403):
+            session.clear()
+            return redirect(login_url(message="session_expired"))
+    except URLError:
+        pass
+
+    return redirect(url_for("roles"))
