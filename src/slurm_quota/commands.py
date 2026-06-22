@@ -34,6 +34,25 @@ import logging
 logger = logging.getLogger("slurm_quota")
 
 
+def _api_client_from_token() -> APIClient:
+    token = load_service_token()
+    if not token:
+        logger.error(
+            "No API token available. Use 'slurm-quota login --save', "
+            "'slurm-quota token', or set SLURM_QUOTA_TOKEN."
+        )
+        sys.exit(1)
+    return APIClient(token=token)
+
+
+def _handle_api_error(exc: ServiceHTTPError, *, forbidden_message: str) -> None:
+    if exc.status == 403:
+        logger.error(forbidden_message)
+    else:
+        logger.error(f"API request failed: HTTP {exc.status}")
+    sys.exit(1)
+
+
 def format_timestamp_with_timezone(timestamp_str: Optional[str]) -> str:
     """
     Format a timestamp string to display with local timezone.
@@ -507,7 +526,8 @@ def login_command(username: Optional[str] = None, save: bool = False) -> None:
     password = getpass.getpass(f"Password for {selected_username}: ")
     try:
         api = APIClient()
-        token = api.login(selected_username, password)
+        payload = api.login(selected_username, password)
+        token = payload["token"]
         if save:
             token_path = save_service_token(token)
             print(f"Authentication token saved to {token_path}")
@@ -714,3 +734,71 @@ def show_user_stats(
     except Exception as e:
         logger.error(f"Failed to retrieve stats from service: {e}")
         sys.exit(1)
+
+
+def role_show_command() -> None:
+    try:
+        payload = _api_client_from_token().me()
+    except ServiceHTTPError as exc:
+        _handle_api_error(exc, forbidden_message="Access denied")
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
+
+    username = payload.get("username", "?")
+    role = payload.get("role", "?")
+    print(f"Username: {username}")
+    print(f"Role: {role}")
+
+
+def role_list_command() -> None:
+    try:
+        users = _api_client_from_token().users_roles()
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc, forbidden_message="Access denied: admin role required to list roles"
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
+
+    if not users:
+        print("No users found")
+        return
+
+    username_width = max(
+        len("USERNAME"), max(len(str(u.get("username", ""))) for u in users)
+    )
+    role_width = max(len("ROLE"), max(len(str(u.get("role", ""))) for u in users))
+    print(f"{'USERNAME':<{username_width}}  {'ROLE':<{role_width}}")
+    for entry in users:
+        print(
+            f"{str(entry.get('username', '?')):<{username_width}}  {str(entry.get('role', '?')):<{role_width}}"
+        )
+
+
+def role_grant_command(username: str) -> None:
+    try:
+        _api_client_from_token().grant_manager(username)
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc, forbidden_message="Access denied: admin role required to grant manager"
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
+    print(f"Granted manager role to {username}")
+
+
+def role_revoke_command(username: str) -> None:
+    try:
+        _api_client_from_token().revoke_manager(username)
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message="Access denied: admin role required to revoke manager",
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
+    print(f"Revoked manager role from {username}")
