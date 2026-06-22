@@ -27,6 +27,13 @@ def api_client() -> APIClient:
     return APIClient(token=session_token() or load_service_token())
 
 
+def current_role() -> Optional[str]:
+    role = session.get("role")
+    if isinstance(role, str) and role:
+        return role
+    return None
+
+
 def csrf_token() -> str:
     token = session.get("_csrf")
     if not isinstance(token, str) or not token:

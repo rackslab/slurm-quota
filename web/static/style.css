@@ -343,6 +343,33 @@ th {
   background: #dc2626;
 }
 
+.roles-grant-form,
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.inline-form {
+  margin: 0;
+}
+
+.admin-nav a {
+  color: #1d4ed8;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.admin-nav a:hover {
+  text-decoration: underline;
+}
+
+.muted {
+  color: #94a3b8;
+}
+
 .usage-unlimited {
   font-style: italic;
 }
