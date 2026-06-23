@@ -16,8 +16,8 @@ slurm-quota - manage Slurm CPU/GPU quota accounting, limits, and stats
 == Description
 
 *slurm-quota* manages CPU and GPU minute quotas for Slurm users and accounts.
-It configures quota and GPU charging settings, prunes unused data, and displays
-statistics from the HTTP service started by `slurm-quota-serve`.
+It configures quota and GPU charging settings and displays statistics from
+the HTTP service started by `slurm-quota-serve`.
 
 The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 
@@ -275,49 +275,6 @@ Example:
 sudo slurm-quota set-default-quotas --user-cpu 50000 --account-cpu 200000
 ....
 
-=== prune
-
-*slurm-quota prune* [*--preallocs* | *--users* | *--accounts* | *--all*] [*--user* <username>] [*--account* <account>] [*--dry-run*]
-
-Prune orphaned/unused records from the database.
-This command must run as `root`.
-
-Selectors (mutually exclusive):
-
-*--preallocs*::
-  Remove preallocations not tied to active jobs.
-
-*--users*::
-  Remove users with zero consumed CPU and GPU.
-
-*--accounts*::
-  Remove accounts with zero consumed CPU and GPU.
-
-*--all*::
-  Prune all categories above. This is also the default behavior when no selector is provided.
-
-*--dry-run*::
-  Report what would be removed, without deleting anything.
-
-*--user* <username>::
-  Limit user pruning candidates to this username (applies when users are in selected targets).
-
-*--account* <account>::
-  Limit account pruning candidates to this account (applies when accounts are in selected targets).
-
-Examples:
-
-....
-sudo slurm-quota prune
-sudo slurm-quota prune --dry-run
-sudo slurm-quota prune --preallocs
-sudo slurm-quota prune --users
-sudo slurm-quota prune --users --user alice
-sudo slurm-quota prune --accounts
-sudo slurm-quota prune --accounts --account hpc
-sudo slurm-quota prune --all
-....
-
 == Environment
 
 *SLURM_QUOTA_URL*::
@@ -362,4 +319,4 @@ sudo slurm-quota prune --all
 
 == See Also
 
-`slurm-quota-charge(1)`, `slurm-quota-serve(1)`, `slurm-quota-token(1)`, `slurm-quota-web(1)`, `sacct(1)`, `sacctmgr(1)`, `sbatch(1)`, `srun(1)`, `slurmctld(8)`, `systemd.socket(5)`
+`slurm-quota-charge(1)`, `slurm-quota-prune(1)`, `slurm-quota-serve(1)`, `slurm-quota-token(1)`, `slurm-quota-web(1)`, `sacct(1)`, `sacctmgr(1)`, `sbatch(1)`, `srun(1)`, `slurmctld(8)`, `systemd.socket(5)`

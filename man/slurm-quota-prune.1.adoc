@@ -1,0 +1,91 @@
+= slurm-quota-prune(1)
+:doctype: manpage
+:manmanual: Slurm Quota Prune
+:mansource: slurm-quota-prune
+:revnumber: 2.0.0
+:revdate: 2026-04-20
+
+== Name
+
+slurm-quota-prune - prune orphaned/unused records from the slurm-quota database
+
+== Synopsis
+
+*slurm-quota-prune* [*-h*] [*--debug* | *-q* | *--quiet*] [*--version*] [*--preallocs* | *--users* | *--accounts* | *--all*] [*--user* <username>] [*--account* <account>] [*--dry-run*]
+
+== Description
+
+*slurm-quota-prune* removes orphaned or unused records from the slurm-quota database.
+This command must run as `root`.
+
+The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
+
+== Options
+
+*-h*, *--help*::
+  Show help and exit.
+
+*--debug*::
+  Enable debug output.
+
+*-q*, *--quiet*::
+  Only print errors and warnings.
+
+*--version*::
+  Show program version and exit.
+
+Selectors (mutually exclusive):
+
+*--preallocs*::
+  Remove preallocations not tied to active jobs.
+
+*--users*::
+  Remove users with zero consumed CPU and GPU.
+
+*--accounts*::
+  Remove accounts with zero consumed CPU and GPU.
+
+*--all*::
+  Prune all categories above. This is also the default behavior when no selector is provided.
+
+*--dry-run*::
+  Report what would be removed, without deleting anything.
+
+*--user* <username>::
+  Limit user pruning candidates to this username (applies when users are in selected targets).
+
+*--account* <account>::
+  Limit account pruning candidates to this account (applies when accounts are in selected targets).
+
+== Examples
+
+....
+sudo slurm-quota-prune
+sudo slurm-quota-prune --dry-run
+sudo slurm-quota-prune --preallocs
+sudo slurm-quota-prune --users
+sudo slurm-quota-prune --users --user alice
+sudo slurm-quota-prune --accounts
+sudo slurm-quota-prune --accounts --account hpc
+sudo slurm-quota-prune --all
+....
+
+== Files
+
+`/var/lib/state/slurm-quota/slurm-quota.db`::
+  SQLite database for quotas, consumed/preallocated counters, GPU factors, and default settings.
+
+== Exit Status
+
+*0*::
+  Success.
+
+*1*::
+  Runtime/permission/operational error.
+
+*2*::
+  Command-line parsing error (for example, mutually exclusive options used together).
+
+== See Also
+
+`slurm-quota(1)`, `slurm-quota-charge(1)`, `sacct(1)`, `sacctmgr(1)`, `slurmctld(8)`
