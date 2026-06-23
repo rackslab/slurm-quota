@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
 from urllib.error import URLError
 
 from flask import (
@@ -41,6 +41,59 @@ logger = logging.getLogger("slurm_quota")
 
 def _web_app() -> SlurmQuotaWebApp:
     return cast("SlurmQuotaWebApp", current_app)
+
+
+def _display_hours_from_unit(unit: str, hours_legacy: str) -> bool:
+    """Return whether stats should be shown in hours from query parameters.
+
+    The unit argument accepts hours/h or minutes/m/min. When unit is absent,
+    the legacy hours flag (1, true, etc.) is consulted. Defaults to minutes.
+    """
+    normalized = unit.strip().lower()
+    if normalized in ("hours", "h"):
+        return True
+    if normalized in ("minutes", "m", "min"):
+        return False
+    if hours_legacy.lower() in {"1", "true", "yes", "on"}:
+        return True
+    return False
+
+
+def _resolve_dashboard_filters() -> Tuple[Optional[str], Optional[str], bool]:
+    """Resolve dashboard filter state using query parameters and session.
+
+    When the request includes any of username, account, unit, or hours query
+    parameters, those values are used and persisted to session dashboard_filters
+    so POST redirects and bare GET / requests keep the same view. Otherwise the
+    last saved session filters are restored. With neither query parameters nor a
+    saved session, all filters are cleared and minutes are used.
+
+    Returns (username, account, display_hours). username and account are None
+    when unset; they are mutually exclusive when both are set by the user
+    (handled by the caller).
+    """
+    if any(key in request.args for key in ("username", "account", "unit", "hours")):
+        username = (request.args.get("username") or "").strip() or None
+        account = (request.args.get("account") or "").strip() or None
+        display_hours = _display_hours_from_unit(
+            request.args.get("unit") or "",
+            request.args.get("hours") or "",
+        )
+        session["dashboard_filters"] = {
+            "username": username or "",
+            "account": account or "",
+            "unit": "hours" if display_hours else "minutes",
+        }
+        return username, account, display_hours
+
+    stored = session.get("dashboard_filters")
+    if isinstance(stored, dict):
+        username = (stored.get("username") or "").strip() or None
+        account = (stored.get("account") or "").strip() or None
+        display_hours = stored.get("unit") == "hours"
+        return username, account, display_hours
+
+    return None, None, False
 
 
 def login() -> Response | str:
@@ -137,17 +190,7 @@ def logout() -> Any:
 
 def dashboard() -> Response | str:
     role = current_role()
-    username = (request.args.get("username") or "").strip() or None
-    account = (request.args.get("account") or "").strip() or None
-    unit = (request.args.get("unit") or "").strip().lower()
-    if unit in ("hours", "h"):
-        display_hours = True
-    elif unit in ("minutes", "m", "min"):
-        display_hours = False
-    elif (request.args.get("hours") or "").lower() in {"1", "true", "yes", "on"}:
-        display_hours = True
-    else:
-        display_hours = False
+    username, account, display_hours = _resolve_dashboard_filters()
 
     error: Optional[str] = None
     users: List[Dict[str, Any]] = []
@@ -247,3 +290,50 @@ def roles_post() -> Any:
         pass
 
     return redirect(url_for("roles"))
+
+
+def quotas_post() -> Any:
+    role = current_role()
+    if role not in ("admin", "manager"):
+        return redirect(url_for("dashboard"))
+
+    if not validate_csrf():
+        abort(400, description="Invalid or missing CSRF token.")
+
+    target = (request.form.get("target") or "").strip()
+    name = (request.form.get("name") or "").strip()
+    resource = (request.form.get("resource") or "").strip()
+    unlimited = request.form.get("unlimited") == "on"
+    quota_raw = (request.form.get("quota_minutes") or "").strip()
+
+    if not name or target not in ("user", "account") or resource not in ("cpu", "gpu"):
+        return redirect(url_for("dashboard"))
+
+    if unlimited:
+        quota_minutes = -1
+    else:
+        try:
+            quota_minutes = int(quota_raw)
+        except ValueError:
+            return redirect(url_for("dashboard"))
+        if quota_minutes < -1:
+            return redirect(url_for("dashboard"))
+
+    try:
+        api = api_client()
+        if target == "user" and resource == "cpu":
+            api.set_user_cpu_quota(name, quota_minutes)
+        elif target == "user" and resource == "gpu":
+            api.set_user_gpu_quota(name, quota_minutes)
+        elif target == "account" and resource == "cpu":
+            api.set_account_cpu_quota(name, quota_minutes)
+        elif target == "account" and resource == "gpu":
+            api.set_account_gpu_quota(name, quota_minutes)
+    except ServiceHTTPError as exc:
+        if exc.status in (401, 403):
+            session.clear()
+            return redirect(login_url(message="session_expired"))
+    except URLError:
+        pass
+
+    return redirect(url_for("dashboard"))
