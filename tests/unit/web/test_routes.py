@@ -82,6 +82,27 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
         self.assertIn('name="unit"', body)
         self.assertIn('value="hours"', body)
 
+    def test_dashboard_restores_filters_from_session(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web.application.test_client()
+            client.get("/?username=alice&unit=hours")
+            m_client.return_value.stats.reset_mock()
+            client.get("/")
+        m_client.return_value.stats.assert_called_once_with(
+            "alice", None, show_all=False
+        )
+
+    def test_dashboard_persists_account_filter_to_session(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web.application.test_client()
+            client.get("/?account=hpc")
+            m_client.return_value.stats.reset_mock()
+            resp = client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        m_client.return_value.stats.assert_called_once_with(None, "hpc", show_all=True)
+
 
 class TestAuthRoutes(SlurmQuotaTestCase):
     def setUp(self):
@@ -355,6 +376,161 @@ class TestRolesRoutes(SlurmQuotaTestCase):
             resp = client.post(
                 "/roles",
                 data={"_csrf": csrf, "action": "grant", "username": "bob"},
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("session_expired", resp.headers["Location"])
+        with client.session_transaction() as sess:
+            self.assertNotIn("token", sess)
+
+
+class TestQuotasRoutes(SlurmQuotaTestCase):
+    def setUp(self):
+        super().setUp()
+        configure_web_app()
+
+    def test_dashboard_shows_quota_edit_for_admin(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web.application.test_client()
+            resp = client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_data(as_text=True)
+        self.assertIn('action="/quotas"', body)
+        self.assertIn('name="quota_minutes"', body)
+
+    def test_dashboard_hides_quota_edit_for_user(self):
+        with (
+            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch("slurm_quota.web.routes.current_role", return_value="user"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web.application.test_client()
+            resp = client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_data(as_text=True)
+        self.assertNotIn('action="/quotas"', body)
+
+    def test_quotas_post_calls_api_for_manager(self):
+        with (
+            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch("slurm_quota.web.routes.current_role", return_value="manager"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web.application.test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            resp = client.post(
+                "/quotas",
+                data={
+                    "_csrf": csrf,
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "quota_minutes": "900",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        m_client.return_value.set_user_cpu_quota.assert_called_once_with("alice", 900)
+
+    def test_quotas_post_preserves_filters_from_session(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web.application.test_client()
+            client.get("/?account=hpc")
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            m_client.return_value.stats.reset_mock()
+            client.post(
+                "/quotas",
+                data={
+                    "_csrf": csrf,
+                    "target": "account",
+                    "name": "hpc",
+                    "resource": "cpu",
+                    "quota_minutes": "900",
+                },
+                follow_redirects=True,
+            )
+        m_client.return_value.stats.assert_called_with(None, "hpc", show_all=True)
+
+    def test_quotas_post_unlimited_sets_minus_one(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web.application.test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            client.post(
+                "/quotas",
+                data={
+                    "_csrf": csrf,
+                    "target": "account",
+                    "name": "hpc",
+                    "resource": "gpu",
+                    "unlimited": "on",
+                },
+                follow_redirects=False,
+            )
+        m_client.return_value.set_account_gpu_quota.assert_called_once_with("hpc", -1)
+
+    def test_quotas_post_redirects_user_to_dashboard(self):
+        with (
+            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch("slurm_quota.web.routes.current_role", return_value="user"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            client = web.application.test_client()
+            resp = client.post(
+                "/quotas",
+                data={
+                    "_csrf": "token",
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "quota_minutes": "100",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp.headers["Location"].endswith("/"))
+        m_client.return_value.set_user_cpu_quota.assert_not_called()
+
+    def test_quotas_post_rejects_invalid_csrf(self):
+        with auth_disabled():
+            client = web.application.test_client()
+            resp = client.post(
+                "/quotas",
+                data={
+                    "_csrf": "wrong",
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "quota_minutes": "100",
+                },
+            )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_quotas_post_forbidden_clears_session_and_redirects_to_login(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            m_client.return_value.set_user_cpu_quota.side_effect = ServiceHTTPError(403)
+            client = web.application.test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            with client.session_transaction() as sess:
+                sess["token"] = "jwt-token"
+            resp = client.post(
+                "/quotas",
+                data={
+                    "_csrf": csrf,
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "quota_minutes": "100",
+                },
                 follow_redirects=False,
             )
         self.assertEqual(resp.status_code, 302)
