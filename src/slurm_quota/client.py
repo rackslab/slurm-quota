@@ -175,3 +175,43 @@ class APIClient:
         )
         if status != HTTPStatus.NO_CONTENT:
             raise ServiceHTTPError(status)
+
+    def set_user_cpu_quota(self, username: str, quota_minutes: int) -> None:
+        status, _payload = self._api_request(
+            "PUT",
+            f"quotas/users/{username}/cpu",
+            body={"quota_minutes": quota_minutes},
+            require_token=True,
+        )
+        if status != HTTPStatus.NO_CONTENT:
+            raise ServiceHTTPError(status)
+
+    def set_user_gpu_quota(self, username: str, quota_minutes: int) -> None:
+        status, _payload = self._api_request(
+            "PUT",
+            f"quotas/users/{username}/gpu",
+            body={"quota_minutes": quota_minutes},
+            require_token=True,
+        )
+        if status != HTTPStatus.NO_CONTENT:
+            raise ServiceHTTPError(status)
+
+    def set_account_cpu_quota(self, account: str, quota_minutes: int) -> None:
+        status, _payload = self._api_request(
+            "PUT",
+            f"quotas/accounts/{account}/cpu",
+            body={"quota_minutes": quota_minutes},
+            require_token=True,
+        )
+        if status != HTTPStatus.NO_CONTENT:
+            raise ServiceHTTPError(status)
+
+    def set_account_gpu_quota(self, account: str, quota_minutes: int) -> None:
+        status, _payload = self._api_request(
+            "PUT",
+            f"quotas/accounts/{account}/gpu",
+            body={"quota_minutes": quota_minutes},
+            require_token=True,
+        )
+        if status != HTTPStatus.NO_CONTENT:
+            raise ServiceHTTPError(status)

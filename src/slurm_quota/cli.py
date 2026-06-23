@@ -142,7 +142,7 @@ def main():
     # Role commands
     role_parser = subparsers.add_parser(
         "role",
-        help="Show or manage REST API user roles (requires saved token)",
+        help="Show or manage REST API user roles",
     )
     role_subparsers = role_parser.add_subparsers(dest="role_command")
 
@@ -194,7 +194,8 @@ def main():
 
     # User-quota command
     user_quota_parser = subparsers.add_parser(
-        "user-quota", help="Set quota for a user (root only)"
+        "user-quota",
+        help="Set quota for a user (manager or admin)",
     )
     user_quota_parser.add_argument("username", help="Username to set quota for")
     user_quota_parser.add_argument(
@@ -203,7 +204,8 @@ def main():
 
     # Account-quota command
     account_quota_parser = subparsers.add_parser(
-        "account-quota", help="Set quota for an account (root only)"
+        "account-quota",
+        help="Set quota for an account (manager or admin)",
     )
     account_quota_parser.add_argument("account", help="Account to set quota for")
     account_quota_parser.add_argument(
@@ -212,7 +214,8 @@ def main():
 
     # User-gpu-quota command
     user_gpu_quota_parser = subparsers.add_parser(
-        "user-gpu-quota", help="Set GPU quota for a user (root only)"
+        "user-gpu-quota",
+        help="Set GPU quota for a user (manager or admin)",
     )
     user_gpu_quota_parser.add_argument("username", help="Username to set GPU quota for")
     user_gpu_quota_parser.add_argument(
@@ -221,7 +224,8 @@ def main():
 
     # Account-gpu-quota command
     account_gpu_quota_parser = subparsers.add_parser(
-        "account-gpu-quota", help="Set GPU quota for an account (root only)"
+        "account-gpu-quota",
+        help="Set GPU quota for an account (manager or admin)",
     )
     account_gpu_quota_parser.add_argument(
         "account", help="Account to set GPU quota for"
