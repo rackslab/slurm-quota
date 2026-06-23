@@ -44,6 +44,7 @@ jobs:
             python3-rfl-authentication \
             python3-rfl-authentication+jwt \
             python3-rfl-authentication+ldap \
+            python3-rfl-log \
             python3-rfl-settings \
             python3-rfl-web
 
