@@ -187,52 +187,52 @@ sudo slurm-quota adjust --account projX --gpu --hours=-1
 
 *slurm-quota user-quota* <username> <quota_minutes>
 
-Set user CPU quota in minutes (`-1` means unlimited).
-This command must run as `root`.
+Set user CPU quota in minutes (`-1` means unlimited). Requires a saved JWT
+token or `SLURM_QUOTA_TOKEN`, and manager or admin role.
 
 Example:
 
 ....
-sudo slurm-quota user-quota alice 50000
+slurm-quota user-quota alice 50000
 ....
 
 === account-quota
 
 *slurm-quota account-quota* <account> <quota_minutes>
 
-Set account CPU quota in minutes (`-1` means unlimited).
-This command must run as `root`.
+Set account CPU quota in minutes (`-1` means unlimited). Requires a saved JWT
+token or `SLURM_QUOTA_TOKEN`, and manager or admin role.
 
 Example:
 
 ....
-sudo slurm-quota account-quota projX 200000
+slurm-quota account-quota projX 200000
 ....
 
 === user-gpu-quota
 
 *slurm-quota user-gpu-quota* <username> <quota_gpu_minutes>
 
-Set user GPU quota in minutes (`-1` means unlimited).
-This command must run as `root`.
+Set user GPU quota in minutes (`-1` means unlimited). Requires a saved JWT
+token or `SLURM_QUOTA_TOKEN`, and manager or admin role.
 
 Example:
 
 ....
-sudo slurm-quota user-gpu-quota alice 10000
+slurm-quota user-gpu-quota alice 10000
 ....
 
 === account-gpu-quota
 
 *slurm-quota account-gpu-quota* <account> <quota_gpu_minutes>
 
-Set account GPU quota in minutes (`-1` means unlimited).
-This command must run as `root`.
+Set account GPU quota in minutes (`-1` means unlimited). Requires a saved JWT
+token or `SLURM_QUOTA_TOKEN`, and manager or admin role.
 
 Example:
 
 ....
-sudo slurm-quota account-gpu-quota projX 50000
+slurm-quota account-gpu-quota projX 50000
 ....
 
 === gpu-factors
