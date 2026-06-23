@@ -621,28 +621,32 @@ sudo slurm-quota set-gpu-factor h200 0.8    # Factor 0.8 for h200 GPUs
 sudo slurm-quota set-gpu-factor default 1.0  # Default factor (used if type is not specified)
 ```
 
-- `prune` (restricted to root): Cleans data with dedicated selectors:
-  - `--preallocs`: remove orphaned preallocations (jobs not present in Slurm queue)
-  - `--users`: remove users with both consumed CPU and consumed GPU at 0
-  - `--accounts`: remove accounts with both consumed CPU and consumed GPU at 0
-  - `--all`: prune all categories above (default behavior when no selector is provided)
-  - `--user <username>`: limit user pruning candidates to one username
-  - `--account <account>`: limit account pruning candidates to one account
-  - `--dry-run`: report how many preallocations/users/accounts would be removed, without deleting rows
 
-Example:
+### `slurm-quota-prune` Command
+
+Cleans orphaned or unused data from the database (root only). Dedicated selectors:
+
+- `--preallocs`: remove orphaned preallocations (jobs not present in Slurm queue)
+- `--users`: remove users with both consumed CPU and consumed GPU at 0
+- `--accounts`: remove accounts with both consumed CPU and consumed GPU at 0
+- `--all`: prune all categories above (default behavior when no selector is provided)
+- `--user <username>`: limit user pruning candidates to one username
+- `--account <account>`: limit account pruning candidates to one account
+- `--dry-run`: report how many preallocations/users/accounts would be removed, without deleting rows
+
+Examples:
 
 ```bash
-sudo slurm-quota prune                  # default: same as --all
-sudo slurm-quota prune --preallocs      # prune only orphaned preallocations
-sudo slurm-quota prune --users          # prune only users with 0 consumed CPU/GPU
-sudo slurm-quota prune --users --user alice      # prune only this eligible user
-sudo slurm-quota prune --accounts       # prune only accounts with 0 consumed CPU/GPU
-sudo slurm-quota prune --accounts --account hpc  # prune only this eligible account
-sudo slurm-quota prune --dry-run        # preview removals without applying them
+sudo slurm-quota-prune                  # default: same as --all
+sudo slurm-quota-prune --preallocs      # prune only orphaned preallocations
+sudo slurm-quota-prune --users          # prune only users with 0 consumed CPU/GPU
+sudo slurm-quota-prune --users --user alice      # prune only this eligible user
+sudo slurm-quota-prune --accounts       # prune only accounts with 0 consumed CPU/GPU
+sudo slurm-quota-prune --accounts --account hpc  # prune only this eligible account
+sudo slurm-quota-prune --dry-run        # preview removals without applying them
 ```
 
-It is normally not necessary to execute this `prune` command under normal conditions. It may be useful in case of malfunction of the call to the `slurm-quota-charge` command by Slurm. Its execution is nevertheless safe, it can be executed if in doubt about the preallocated durations assigned to users.
+It is normally not necessary to execute this command under normal conditions. It may be useful in case of malfunction of the call to the `slurm-quota-charge` command by Slurm. Its execution is nevertheless safe, it can be executed if in doubt about the preallocated durations assigned to users.
 
 
 ### `slurm-quota-serve` Command
@@ -756,9 +760,11 @@ On all nodes:
 # Legacy manual binary/completion/manpage copies (RPM will reinstall managed files)
 sudo rm -f /usr/local/bin/slurm-quota
 sudo rm -f /usr/local/bin/slurm-quota-charge
+sudo rm -f /usr/local/bin/slurm-quota-prune
 sudo rm -f /usr/local/bin/slurm-quota-serve
 sudo rm -f /usr/local/bin/slurm-quota-web
 sudo rm -f /etc/bash_completion.d/slurm-quota
+sudo rm -f /etc/bash_completion.d/slurm-quota-prune
 sudo rm -f /usr/local/share/man/man1/slurm-quota.1
 sudo rm -f /usr/share/man/man1/slurm-quota.1
 sudo rm -rf /usr/local/share/slurm-quota/web
@@ -833,6 +839,7 @@ Manpages are maintained in AsciiDoc format:
 
 - `man/slurm-quota.1.adoc` for `slurm-quota`
 - `man/slurm-quota-charge.1.adoc` for `slurm-quota-charge`
+- `man/slurm-quota-prune.1.adoc` for `slurm-quota-prune`
 - `man/slurm-quota-serve.1.adoc` for `slurm-quota-serve`
 - `man/slurm-quota-web.1.adoc` for `slurm-quota-web`
 
@@ -841,6 +848,7 @@ To generate roff manpages from these files, use:
 ```bash
 asciidoctor -b manpage -o slurm-quota.1 man/slurm-quota.1.adoc
 asciidoctor -b manpage -o slurm-quota-charge.1 man/slurm-quota-charge.1.adoc
+asciidoctor -b manpage -o slurm-quota-prune.1 man/slurm-quota-prune.1.adoc
 asciidoctor -b manpage -o slurm-quota-serve.1 man/slurm-quota-serve.1.adoc
 asciidoctor -b manpage -o slurm-quota-web.1 man/slurm-quota-web.1.adoc
 ```
@@ -850,6 +858,7 @@ To preview generated files locally:
 ```bash
 man -l ./slurm-quota.1
 man -l ./slurm-quota-charge.1
+man -l ./slurm-quota-prune.1
 man -l ./slurm-quota-serve.1
 man -l ./slurm-quota-web.1
 ```
@@ -859,6 +868,7 @@ Optional user-local installation:
 ```bash
 install -Dm644 slurm-quota.1 ~/.local/share/man/man1/slurm-quota.1
 install -Dm644 slurm-quota-charge.1 ~/.local/share/man/man1/slurm-quota-charge.1
+install -Dm644 slurm-quota-prune.1 ~/.local/share/man/man1/slurm-quota-prune.1
 install -Dm644 slurm-quota-serve.1 ~/.local/share/man/man1/slurm-quota-serve.1
 install -Dm644 slurm-quota-web.1 ~/.local/share/man/man1/slurm-quota-web.1
 ```
