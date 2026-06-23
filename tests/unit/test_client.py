@@ -331,3 +331,41 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
     def test_revoke_manager_raises_value_error_when_token_missing(self):
         with self.assertRaises(ValueError):
             APIClient(token=None).revoke_manager("bob")
+
+
+class TestAPIClientQuotas(SlurmQuotaTestCase):
+    def test_set_user_cpu_quota_sends_put(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").set_user_cpu_quota("bob", 500)
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.method, "PUT")
+        self.assertIn("/quotas/users/bob/cpu", req.full_url)
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body, {"quota_minutes": 500})
+
+    def test_set_account_gpu_quota_sends_put(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").set_account_gpu_quota("hpc", -1)
+        req = m_urlopen.call_args[0][0]
+        self.assertIn("/quotas/accounts/hpc/gpu", req.full_url)
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body, {"quota_minutes": -1})
+
+    def test_set_user_gpu_quota_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").set_user_gpu_quota("bob", 100)
+        self.assertEqual(cm.exception.status, 403)
+
+    def test_set_account_cpu_quota_raises_value_error_when_token_missing(self):
+        with self.assertRaises(ValueError):
+            APIClient(token=None).set_account_cpu_quota("hpc", 50)
