@@ -51,7 +51,6 @@ _slurm_quota() {
         account-gpu-quota
         set-gpu-factor
         set-default-quotas
-        prune
     )
     subcommands=("${public_subcommands[@]}")
 
@@ -158,9 +157,6 @@ _slurm_quota() {
             ;;
         set-default-quotas)
             COMPREPLY=($(compgen -W "$base_opts --user-cpu --user-gpu --account-cpu --account-gpu" -- "$cur"))
-            ;;
-        prune)
-            COMPREPLY=($(compgen -W "$base_opts --preallocs --users --accounts --all --dry-run --user --account" -- "$cur"))
             ;;
     esac
 

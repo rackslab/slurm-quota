@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+# Bash completion for slurm-quota-prune
+
+_slurm_quota_prune_list_accounts() {
+    if command -v sacctmgr >/dev/null 2>&1; then
+        sacctmgr -nP show account format=account 2>/dev/null \
+            | cut -d'|' -f1 \
+            | sort -u
+    fi
+}
+
+_slurm_quota_prune_complete_users() {
+    compgen -u -- "$1"
+}
+
+_slurm_quota_prune_complete_accounts() {
+    local cur="$1"
+    local accounts
+    accounts="$(_slurm_quota_prune_list_accounts)"
+    if [[ -n "$accounts" ]]; then
+        compgen -W "$accounts" -- "$cur"
+    fi
+}
+
+_slurm_quota_prune() {
+    local cur prev
+
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev=""
+    if (( COMP_CWORD > 0 )); then
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+    fi
+
+    case "$prev" in
+        --user)
+            COMPREPLY=($(_slurm_quota_prune_complete_users "$cur"))
+            return 0
+            ;;
+        --account)
+            COMPREPLY=($(_slurm_quota_prune_complete_accounts "$cur"))
+            return 0
+            ;;
+    esac
+
+    local base_opts="-h --help --version --debug -q --quiet"
+    COMPREPLY=($(compgen -W "$base_opts --preallocs --users --accounts --all --dry-run --user --account" -- "$cur"))
+
+    return 0
+}
+
+complete -F _slurm_quota_prune slurm-quota-prune
