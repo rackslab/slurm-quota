@@ -356,6 +356,31 @@ th {
   margin: 0;
 }
 
+.quota-edit-form {
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.quota-edit-form .quota-input {
+  width: 4.5rem;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.85rem;
+}
+
+.quota-edit-form .quota-unlimited {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.quota-edit-form button {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.8rem;
+}
+
 .admin-nav a {
   color: #1d4ed8;
   text-decoration: none;

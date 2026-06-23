@@ -62,6 +62,7 @@ class SlurmQuotaWebApp(Flask):
         self.add_url_rule("/login", view_func=routes.login_post, methods=["POST"])
         self.add_url_rule("/logout", view_func=routes.logout, methods=["POST"])
         self.add_url_rule("/", view_func=routes.dashboard, methods=["GET"])
+        self.add_url_rule("/quotas", view_func=routes.quotas_post, methods=["POST"])
         self.add_url_rule("/roles", view_func=routes.roles, methods=["GET"])
         self.add_url_rule("/roles", view_func=routes.roles_post, methods=["POST"])
 
