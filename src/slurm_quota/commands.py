@@ -21,12 +21,8 @@ from slurm_quota.database import (
     get_default_quota_settings,
     init_database,
     prune_resources,
-    set_account_gpu_quota,
-    set_account_quota,
     set_default_quota_settings,
     set_gpu_factor,
-    set_user_gpu_quota,
-    set_user_quota,
 )
 
 import logging
@@ -119,114 +115,62 @@ def create_status_bar(used: int, total: int, width: int = 20) -> str:
 
 
 def set_user_quota_command(username: str, quota: int) -> None:
-    """
-    Execute the set-quota command to set user quota.
-    This command can only be executed by root user.
-    """
+    """Set user CPU quota via the REST API (manager or admin role required)."""
     try:
-        # Check if running as root user
-        current_user = auth.get_current_user()
-        if current_user != "root":
-            logger.error(
-                f"Set-quota command can only be executed by root user, not by "
-                f"{current_user}"
-            )
-            sys.exit(1)
-
-        # Initialize database only if missing
-        init_database()
-
-        # Set user quota
-        set_user_quota(username, quota)
-
+        _api_client_from_token().set_user_cpu_quota(username, quota)
         print(f"Successfully set quota for user {username}: {quota} CPU minutes")
-
-    except Exception as e:
-        logger.error(f"User-quota command failed: {e}")
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message="Access denied: manager or admin role required to set quotas",
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
         sys.exit(1)
 
 
 def set_account_quota_command(account: str, quota: int) -> None:
-    """
-    Execute the account-quota command to set account quota.
-    This command can only be executed by root user.
-    """
+    """Set account CPU quota via the REST API (manager or admin role required)."""
     try:
-        # Check if running as root user
-        current_user = auth.get_current_user()
-        if current_user != "root":
-            logger.error(
-                f"Account-quota command can only be executed by root user, not by "
-                f"{current_user}"
-            )
-            sys.exit(1)
-
-        # Initialize database only if missing
-        init_database()
-
-        # Set account quota
-        set_account_quota(account, quota)
-
+        _api_client_from_token().set_account_cpu_quota(account, quota)
         print(f"Successfully set quota for account {account}: {quota} CPU minutes")
-
-    except Exception as e:
-        logger.error(f"Account-quota command failed: {e}")
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message="Access denied: manager or admin role required to set quotas",
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
         sys.exit(1)
 
 
 def set_user_gpu_quota_command(username: str, quota: int) -> None:
-    """
-    Execute the user-gpu-quota command to set user GPU quota.
-    This command can only be executed by root user.
-    """
+    """Set user GPU quota via the REST API (manager or admin role required)."""
     try:
-        # Check if running as root user
-        current_user = auth.get_current_user()
-        if current_user != "root":
-            logger.error(
-                f"User-gpu-quota command can only be executed by root user, not by "
-                f"{current_user}"
-            )
-            sys.exit(1)
-
-        # Initialize database only if missing
-        init_database()
-
-        # Set user GPU quota
-        set_user_gpu_quota(username, quota)
-
+        _api_client_from_token().set_user_gpu_quota(username, quota)
         print(f"Successfully set GPU quota for user {username}: {quota} GPU minutes")
-
-    except Exception as e:
-        logger.error(f"User-gpu-quota command failed: {e}")
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message="Access denied: manager or admin role required to set quotas",
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
         sys.exit(1)
 
 
 def set_account_gpu_quota_command(account: str, quota: int) -> None:
-    """
-    Execute the account-gpu-quota command to set account GPU quota.
-    This command can only be executed by root user.
-    """
+    """Set account GPU quota via the REST API (manager or admin role required)."""
     try:
-        # Check if running as root user
-        current_user = auth.get_current_user()
-        if current_user != "root":
-            logger.error(
-                f"Account-gpu-quota command can only be executed by root user, not by "
-                f"{current_user}"
-            )
-            sys.exit(1)
-
-        # Initialize database only if missing
-        init_database()
-
-        # Set account GPU quota
-        set_account_gpu_quota(account, quota)
-
+        _api_client_from_token().set_account_gpu_quota(account, quota)
         print(f"Successfully set GPU quota for account {account}: {quota} GPU minutes")
-
-    except Exception as e:
-        logger.error(f"Account-gpu-quota command failed: {e}")
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message="Access denied: manager or admin role required to set quotas",
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
         sys.exit(1)
 
 
