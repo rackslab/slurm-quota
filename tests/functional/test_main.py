@@ -17,4 +17,4 @@ class TestMain(FunctionalCLIBase):
         self.assertEqual(stdout.getvalue().strip(), f"slurm-quota {APP_VERSION}")
 
     def test_global_debug_and_quiet_are_mutually_exclusive(self):
-        self.run_cli_main_exit(["slurm-quota", "--debug", "--quiet", "prune"], 2)
+        self.run_cli_main_exit(["slurm-quota", "--debug", "--quiet", "stats"], 2)

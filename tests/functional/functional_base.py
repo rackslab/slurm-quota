@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from slurm_quota.cli import main as cli_main
 from slurm_quota.charge import main as charge_main
 from slurm_quota.serve.cli import main as serve_main
+from slurm_quota.serve.prune import main as prune_main
 from slurm_quota.serve.token import main as token_main
 from slurm_quota.token import save_service_token
 
@@ -59,6 +60,10 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
     def run_charge_main(self, argv):
         with patch.object(sys, "argv", argv):
             charge_main()
+
+    def run_prune_main(self, argv):
+        with patch.object(sys, "argv", argv):
+            prune_main()
 
     def run_serve_main(self, argv):
         with patch.object(sys, "argv", argv):
