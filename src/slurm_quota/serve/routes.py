@@ -23,6 +23,10 @@ from slurm_quota.database import (
     query_accounts_aggregate,
     query_users_aggregate,
     revoke_api_manager,
+    set_account_gpu_quota as db_set_account_gpu_quota,
+    set_account_quota as db_set_account_quota,
+    set_user_gpu_quota as db_set_user_gpu_quota,
+    set_user_quota as db_set_user_quota,
 )
 from slurm_quota import slurm as slurm_integration
 from slurm_quota.serve.authorization import (
@@ -45,6 +49,24 @@ def _validate_username(username: str) -> None:
             400,
             description="Invalid username",
         )
+
+
+def _validate_account(account: str) -> None:
+    if not account or not _USERNAME_PATTERN.fullmatch(account):
+        abort(
+            400,
+            description="Invalid account",
+        )
+
+
+def _parse_quota_body() -> int:
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        abort(400, description="Invalid JSON body")
+    quota_minutes = payload.get("quota_minutes")
+    if not isinstance(quota_minutes, int) or quota_minutes < -1:
+        abort(400, description="quota_minutes must be an integer >= -1")
+    return quota_minutes
 
 
 def fetch_stats(
@@ -187,4 +209,76 @@ def revoke_manager(username: str) -> Any:
     _validate_username(username)
     with sqlite3.connect(slurm_quota.DB_PATH) as conn:
         revoke_api_manager(conn, username)
+    return "", 204
+
+
+@require_role("admin", "manager")
+def set_user_cpu_quota(username: str) -> Any:
+    _validate_username(username)
+    quota_minutes = _parse_quota_body()
+    try:
+        db_set_user_quota(username, quota_minutes)
+    except sqlite3.Error as exc:
+        logger.error("set user CPU quota failed: %s", exc)
+        return jsonify({"error": "db_error"}), 500
+    logger.info(
+        "quota user cpu: manager=%s name=%s value=%s",
+        cast(str, request.user.login),
+        username,
+        quota_minutes,
+    )
+    return "", 204
+
+
+@require_role("admin", "manager")
+def set_user_gpu_quota(username: str) -> Any:
+    _validate_username(username)
+    quota_minutes = _parse_quota_body()
+    try:
+        db_set_user_gpu_quota(username, quota_minutes)
+    except sqlite3.Error as exc:
+        logger.error("set user GPU quota failed: %s", exc)
+        return jsonify({"error": "db_error"}), 500
+    logger.info(
+        "quota user gpu: manager=%s name=%s value=%s",
+        cast(str, request.user.login),
+        username,
+        quota_minutes,
+    )
+    return "", 204
+
+
+@require_role("admin", "manager")
+def set_account_cpu_quota(account: str) -> Any:
+    _validate_account(account)
+    quota_minutes = _parse_quota_body()
+    try:
+        db_set_account_quota(account, quota_minutes)
+    except sqlite3.Error as exc:
+        logger.error("set account CPU quota failed: %s", exc)
+        return jsonify({"error": "db_error"}), 500
+    logger.info(
+        "quota account cpu: manager=%s name=%s value=%s",
+        cast(str, request.user.login),
+        account,
+        quota_minutes,
+    )
+    return "", 204
+
+
+@require_role("admin", "manager")
+def set_account_gpu_quota(account: str) -> Any:
+    _validate_account(account)
+    quota_minutes = _parse_quota_body()
+    try:
+        db_set_account_gpu_quota(account, quota_minutes)
+    except sqlite3.Error as exc:
+        logger.error("set account GPU quota failed: %s", exc)
+        return jsonify({"error": "db_error"}), 500
+    logger.info(
+        "quota account gpu: manager=%s name=%s value=%s",
+        cast(str, request.user.login),
+        account,
+        quota_minutes,
+    )
     return "", 204

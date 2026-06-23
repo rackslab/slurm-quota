@@ -58,6 +58,26 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
             view_func=routes.revoke_manager,
             methods=["DELETE"],
         )
+        self.add_url_rule(
+            "/quotas/users/<username>/cpu",
+            view_func=routes.set_user_cpu_quota,
+            methods=["PUT"],
+        )
+        self.add_url_rule(
+            "/quotas/users/<username>/gpu",
+            view_func=routes.set_user_gpu_quota,
+            methods=["PUT"],
+        )
+        self.add_url_rule(
+            "/quotas/accounts/<account>/cpu",
+            view_func=routes.set_account_cpu_quota,
+            methods=["PUT"],
+        )
+        self.add_url_rule(
+            "/quotas/accounts/<account>/gpu",
+            view_func=routes.set_account_gpu_quota,
+            methods=["PUT"],
+        )
 
     def load_settings(self, conf_defs: Path, site_config: Path) -> None:
         self.settings = RuntimeSettings.yaml_definition(conf_defs)
