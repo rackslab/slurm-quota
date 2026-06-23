@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 from urllib.error import URLError
 
-from slurm_quota.token import save_service_token, service_token_path
+from slurm_quota.token import service_token_path
 
-from tests.functional.functional_base import FakeJsonUrlopenResponse, FunctionalCLIBase
+from tests.functional.functional_base import (
+    FakeJsonUrlopenResponse,
+    FunctionalAPICliBase,
+)
 from tests.testing_utils import dedent_lines
 
 
@@ -30,13 +32,7 @@ class _RoleUrlopenResponse:
         return False
 
 
-class TestRoleCommand(FunctionalCLIBase):
-    def setUp(self):
-        super().setUp()
-        config_home = Path(self._tmp.name) / "xdg-config"
-        self.env({"XDG_CONFIG_HOME": str(config_home)})
-        save_service_token("saved-jwt")
-
+class TestRoleCommand(FunctionalAPICliBase):
     def _role_urlopen_side_effect(self, request):
         url = request.full_url
         method = request.get_method()

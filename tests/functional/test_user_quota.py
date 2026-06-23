@@ -2,81 +2,76 @@
 
 from __future__ import annotations
 
-from slurm_quota.database import init_database
-
+import json
 from unittest.mock import patch
+from urllib.error import URLError
 
-from tests.functional.functional_base import FunctionalCLIBase
+from slurm_quota.token import service_token_path
+
+from tests.functional.functional_base import (
+    FakeNoContentUrlopenResponse,
+    FunctionalAPICliBase,
+)
 
 
-class TestUserQuotaCommand(FunctionalCLIBase):
-    def test_user_quota_creates_user_when_missing(self):
-        with patch("slurm_quota.auth.get_current_user", return_value="root"):
-            with patch("slurm_quota.database.set_database_permissions"):
-                with self.capture_stdout() as out:
-                    self.run_cli_main(["slurm-quota", "user-quota", "elena", "500"])
+class TestUserQuotaCommand(FunctionalAPICliBase):
+    def _quota_urlopen_side_effect(self, request):
+        url = request.full_url
+        method = request.get_method()
+        if method == "PUT" and "/quotas/users/" in url and url.endswith("/cpu"):
+            body = json.loads(request.data.decode("utf-8"))
+            self.assertIn("quota_minutes", body)
+            return FakeNoContentUrlopenResponse(status=204)
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    def test_user_quota_calls_api(self):
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                side_effect=self._quota_urlopen_side_effect,
+            ) as m_urlopen,
+            self.capture_stdout() as out,
+        ):
+            self.run_cli_main(["slurm-quota", "user-quota", "elena", "500"])
         self.assertEqual(
             out.getvalue(),
             "Successfully set quota for user elena: 500 CPU minutes\n",
         )
-        with self.db_connection() as conn:
-            row = conn.execute(
-                "SELECT quota_cpu_minutes FROM users WHERE username = ?",
-                ("elena",),
-            ).fetchone()
-        self.assertIsNotNone(row)
-        self.assertEqual(row[0], 500)
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.get_method(), "PUT")
+        self.assertTrue(req.full_url.endswith("/quotas/users/elena/cpu"))
+        self.assertEqual(req.get_header("Authorization"), "Bearer saved-jwt")
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body, {"quota_minutes": 500})
 
-    def test_user_quota_applies_default_gpu_from_settings_on_create(self):
-        init_database()
-        self.update_settings(default_user_quota_gpu_minutes=4242)
-        with patch("slurm_quota.auth.get_current_user", return_value="root"):
-            with patch("slurm_quota.database.set_database_permissions"):
-                self.run_cli_main(["slurm-quota", "user-quota", "marcus", "500"])
-        with self.db_connection() as conn:
-            row = conn.execute(
-                "SELECT quota_cpu_minutes, quota_gpu_minutes FROM users WHERE username = ?",
-                ("marcus",),
-            ).fetchone()
-        self.assertEqual(row, (500, 4242))
+    def test_user_quota_requires_token(self):
+        service_token_path().unlink()
+        with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+            self.run_cli_main_exit(["slurm-quota", "user-quota", "elena", "500"], 1)
+        self.assertIn("No API token available", log_cm.output[0])
 
-    def test_user_quota_updates_existing_user(self):
-        init_database()
-        self.update_settings(default_user_quota_gpu_minutes=99999)
-        with self.db_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO users (username, quota_cpu_minutes, quota_gpu_minutes)
-                VALUES (?, ?, ?)
-                """,
-                ("sofia", 10, 8888),
-            )
-            conn.commit()
-        with patch("slurm_quota.auth.get_current_user", return_value="root"):
-            with patch("slurm_quota.database.set_database_permissions"):
-                with self.capture_stdout() as out:
-                    self.run_cli_main(["slurm-quota", "user-quota", "sofia", "500"])
-        self.assertEqual(
-            out.getvalue(),
-            "Successfully set quota for user sofia: 500 CPU minutes\n",
-        )
-        with self.db_connection() as conn:
-            row = conn.execute(
-                "SELECT quota_cpu_minutes, quota_gpu_minutes FROM users WHERE username = ?",
-                ("sofia",),
-            ).fetchone()
-        self.assertEqual(row, (500, 8888))
+    def test_user_quota_reports_access_denied_on_forbidden(self):
+        def _forbidden(request):
+            response = FakeNoContentUrlopenResponse(status=403)
+            return response
 
-    def test_user_quota_rejects_non_root(self):
-        with patch("slurm_quota.auth.get_current_user", return_value="nobody"):
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    self.run_cli_main(["slurm-quota", "user-quota", "taylor", "1"])
-        self.assertEqual(cm.exception.code, 1)
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=_forbidden),
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+        ):
+            self.run_cli_main_exit(["slurm-quota", "user-quota", "elena", "500"], 1)
         self.assertEqual(
             log_cm.output,
             [
-                "ERROR:slurm_quota:Set-quota command can only be executed by root "
-                "user, not by nobody",
+                "ERROR:slurm_quota:Access denied: manager or admin role required "
+                "to set quotas",
             ],
         )
+
+    def test_user_quota_reports_unreachable_service(self):
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=URLError("boom")),
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+        ):
+            self.run_cli_main_exit(["slurm-quota", "user-quota", "elena", "500"], 1)
+        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])

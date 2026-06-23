@@ -6,6 +6,7 @@ import io
 import json
 import sys
 from contextlib import contextmanager, redirect_stdout
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import patch
 from urllib.parse import parse_qs, unquote, urlparse
@@ -14,6 +15,7 @@ from slurm_quota.cli import main as cli_main
 from slurm_quota.charge import main as charge_main
 from slurm_quota.serve.cli import main as serve_main
 from slurm_quota.serve.token import main as token_main
+from slurm_quota.token import save_service_token
 
 from tests.test_support import SlurmQuotaTestCase
 
@@ -25,6 +27,20 @@ class FakeJsonUrlopenResponse:
 
     def read(self):
         return json.dumps(self._payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class FakeNoContentUrlopenResponse:
+    def __init__(self, *, status: int = 204):
+        self.status = status
+
+    def read(self):
+        return b""
 
     def __enter__(self):
         return self
@@ -99,6 +115,16 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
         account: Optional[str] = unquote(raw_account) if raw_account else None
         payload = _stats_payload_filtered(username, account)
         return FakeJsonUrlopenResponse(payload)
+
+
+class FunctionalAPICliBase(FunctionalCLIBase):
+    """Base for functional tests that call the HTTP API with a saved JWT."""
+
+    def setUp(self):
+        super().setUp()
+        config_home = Path(self._tmp.name) / "xdg-config"
+        self.env({"XDG_CONFIG_HOME": str(config_home)})
+        save_service_token("saved-jwt")
 
 
 def _stats_user_row(
