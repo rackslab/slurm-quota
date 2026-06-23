@@ -1,4 +1,4 @@
-"""Functional tests: `prune` subcommand."""
+"""Functional tests: `slurm-quota-prune` command."""
 
 from __future__ import annotations
 
@@ -16,14 +16,14 @@ class TestPruneCommand(FunctionalCLIBase):
         for left, right in combinations(selectors, 2):
             with self.subTest(left=left, right=right):
                 with self.assertRaises(SystemExit) as cm:
-                    self.run_cli_main(["slurm-quota", "prune", left, right])
+                    self.run_prune_main(["slurm-quota-prune", left, right])
                 self.assertEqual(cm.exception.code, 2)
 
     def test_prune_rejects_non_root(self):
         with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    self.run_cli_main(["slurm-quota", "prune"])
+                    self.run_prune_main(["slurm-quota-prune"])
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,
@@ -80,7 +80,7 @@ class TestPruneCommand(FunctionalCLIBase):
             ):
                 with self.assertLogs("slurm_quota", level="INFO") as log_cm:
                     with self.capture_stdout() as out:
-                        self.run_cli_main(["slurm-quota", "prune"])
+                        self.run_prune_main(["slurm-quota-prune"])
         self.assertEqual(
             out.getvalue(),
             "Removed 1 orphan preallocation(s), 2 user(s), 2 account(s)\n",
@@ -147,7 +147,7 @@ class TestPruneCommand(FunctionalCLIBase):
                 return_value={"uuid-active"},
             ):
                 with self.capture_stdout() as out:
-                    self.run_cli_main(["slurm-quota", "prune", "--preallocs"])
+                    self.run_prune_main(["slurm-quota-prune", "--preallocs"])
         self.assertEqual(
             out.getvalue(),
             "Removed 1 orphan preallocation(s), 0 user(s), 0 account(s)\n",
@@ -186,7 +186,7 @@ class TestPruneCommand(FunctionalCLIBase):
             conn.commit()
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
-                self.run_cli_main(["slurm-quota", "prune", "--users"])
+                self.run_prune_main(["slurm-quota-prune", "--users"])
         self.assertEqual(
             out.getvalue(),
             "Removed 0 orphan preallocation(s), 1 user(s), 0 account(s)\n",
@@ -223,7 +223,7 @@ class TestPruneCommand(FunctionalCLIBase):
             conn.commit()
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
-                self.run_cli_main(["slurm-quota", "prune", "--accounts"])
+                self.run_prune_main(["slurm-quota-prune", "--accounts"])
         self.assertEqual(
             out.getvalue(),
             "Removed 0 orphan preallocation(s), 0 user(s), 1 account(s)\n",
@@ -270,7 +270,7 @@ class TestPruneCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    self.run_cli_main(["slurm-quota", "prune", "--users"])
+                    self.run_prune_main(["slurm-quota-prune", "--users"])
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,
@@ -323,7 +323,7 @@ class TestPruneCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    self.run_cli_main(["slurm-quota", "prune", "--accounts"])
+                    self.run_prune_main(["slurm-quota-prune", "--accounts"])
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,
@@ -381,7 +381,7 @@ class TestPruneCommand(FunctionalCLIBase):
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.assertLogs("slurm_quota", level="INFO") as log_cm:
                 with self.capture_stdout() as out:
-                    self.run_cli_main(["slurm-quota", "prune", "--users", "--dry-run"])
+                    self.run_prune_main(["slurm-quota-prune", "--users", "--dry-run"])
         self.assertEqual(
             out.getvalue(),
             (
@@ -437,8 +437,8 @@ class TestPruneCommand(FunctionalCLIBase):
 
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
-                self.run_cli_main(
-                    ["slurm-quota", "prune", "--users", "--user", "u_drop"]
+                self.run_prune_main(
+                    ["slurm-quota-prune", "--users", "--user", "u_drop"]
                 )
         self.assertEqual(
             out.getvalue(),
@@ -466,8 +466,8 @@ class TestPruneCommand(FunctionalCLIBase):
 
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
-                self.run_cli_main(
-                    ["slurm-quota", "prune", "--users", "--user", "u_busy"]
+                self.run_prune_main(
+                    ["slurm-quota-prune", "--users", "--user", "u_busy"]
                 )
         self.assertEqual(out.getvalue(), "Nothing to prune\n")
         with self.db_connection() as conn:
@@ -498,8 +498,8 @@ class TestPruneCommand(FunctionalCLIBase):
 
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
-                self.run_cli_main(
-                    ["slurm-quota", "prune", "--accounts", "--account", "a_drop"]
+                self.run_prune_main(
+                    ["slurm-quota-prune", "--accounts", "--account", "a_drop"]
                 )
         self.assertEqual(
             out.getvalue(),
@@ -535,10 +535,9 @@ class TestPruneCommand(FunctionalCLIBase):
 
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
-                self.run_cli_main(
+                self.run_prune_main(
                     [
-                        "slurm-quota",
-                        "prune",
+                        "slurm-quota-prune",
                         "--accounts",
                         "--account",
                         "a1",
@@ -577,8 +576,8 @@ class TestPruneCommand(FunctionalCLIBase):
 
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
-                self.run_cli_main(
-                    ["slurm-quota", "prune", "--accounts", "--account", "a_busy"]
+                self.run_prune_main(
+                    ["slurm-quota-prune", "--accounts", "--account", "a_busy"]
                 )
         self.assertEqual(out.getvalue(), "Nothing to prune\n")
         with self.db_connection() as conn:
@@ -611,10 +610,9 @@ class TestPruneCommand(FunctionalCLIBase):
 
         with patch("slurm_quota.auth.get_current_user", return_value="root"):
             with self.capture_stdout() as out:
-                self.run_cli_main(
+                self.run_prune_main(
                     [
-                        "slurm-quota",
-                        "prune",
+                        "slurm-quota-prune",
                         "--users",
                         "--user",
                         "u1' OR 1=1 --",
@@ -655,5 +653,5 @@ class TestPruneCommand(FunctionalCLIBase):
                 return_value={"uuid-active"},
             ):
                 with self.capture_stdout() as out:
-                    self.run_cli_main(["slurm-quota", "prune", "--preallocs"])
+                    self.run_prune_main(["slurm-quota-prune", "--preallocs"])
         self.assertEqual(out.getvalue(), "Nothing to prune\n")
