@@ -16,6 +16,7 @@ slurm-quota-charge = "slurm_quota.charge:main"
 slurm-quota-serve = "slurm_quota.serve.cli:main"
 slurm-quota-token = "slurm_quota.serve.token:main"
 slurm-quota-migrate = "slurm_quota.migrate:main"
+slurm-quota-prune = "slurm_quota.serve.prune:main"
 slurm-quota-web = "slurm_quota.web.cli:main"
 
 [project.optional-dependencies]

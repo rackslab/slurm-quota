@@ -12,7 +12,6 @@ from slurm_quota import APP_VERSION
 from slurm_quota.commands import (
     adjust_command,
     login_command,
-    prune_command,
     set_account_gpu_quota_command,
     set_account_quota_command,
     set_default_quotas_command,
@@ -283,46 +282,6 @@ def main():
         help="Default GPU quota for new accounts in minutes (-1 for unlimited)",
     )
 
-    # Prune command
-    prune_parser = subparsers.add_parser(
-        "prune",
-        help=("Prune orphaned data from the database (root only)"),
-    )
-    prune_target_group = prune_parser.add_mutually_exclusive_group()
-    prune_target_group.add_argument(
-        "--preallocs",
-        action="store_true",
-        help="Prune orphan preallocations not tied to any active job",
-    )
-    prune_target_group.add_argument(
-        "--users",
-        action="store_true",
-        help="Prune users with no resource consumption",
-    )
-    prune_target_group.add_argument(
-        "--accounts",
-        action="store_true",
-        help="Prune accounts with no resource consumption",
-    )
-    prune_target_group.add_argument(
-        "--all",
-        action="store_true",
-        help="Prune preallocations, users and accounts (default if no selector)",
-    )
-    prune_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show how many entries would be removed without deleting anything",
-    )
-    prune_parser.add_argument(
-        "--user",
-        help="Limit users pruning to a specific username",
-    )
-    prune_parser.add_argument(
-        "--account",
-        help="Limit accounts pruning to a specific account",
-    )
-
     args = parser.parse_args()
 
     # Setup logging with selected log verbosity
@@ -377,16 +336,6 @@ def main():
     elif args.command == "set-default-quotas":
         set_default_quotas_command(
             args.user_cpu, args.user_gpu, args.account_cpu, args.account_gpu
-        )
-    elif args.command == "prune":
-        prune_command(
-            preallocs=args.preallocs,
-            users=args.users,
-            accounts=args.accounts,
-            all_targets=args.all,
-            dry_run=args.dry_run,
-            user_filter=args.user,
-            account_filter=args.account,
         )
     else:
         parser.print_help()
