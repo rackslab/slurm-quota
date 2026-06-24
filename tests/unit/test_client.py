@@ -415,6 +415,70 @@ class TestAPIClientDefaultQuotas(SlurmQuotaTestCase):
             APIClient(token=None).get_default_quotas()
 
 
+class TestAPIClientGpuFactors(SlurmQuotaTestCase):
+    def test_get_gpu_factors_sends_get(self):
+        payload = {"default_factor": 1.0, "factors": {"h100": 0.5}}
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(payload),
+        ) as m_urlopen:
+            result = APIClient(token="jwt").get_gpu_factors()
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/factors/gpu", req.full_url)
+        self.assertEqual(result, {"default_factor": 1.0, "factors": {"h100": 0.5}})
+
+    def test_get_gpu_factors_raises_value_error_when_default_factor_missing(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"factors": {}}),
+        ):
+            with self.assertRaises(ValueError) as cm:
+                APIClient(token="jwt").get_gpu_factors()
+        self.assertEqual(
+            str(cm.exception), "gpu factors response missing default_factor"
+        )
+
+    def test_get_gpu_factors_raises_value_error_when_factors_missing(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"default_factor": 1.0}),
+        ):
+            with self.assertRaises(ValueError) as cm:
+                APIClient(token="jwt").get_gpu_factors()
+        self.assertEqual(str(cm.exception), "gpu factors response missing factors")
+
+    def test_get_gpu_factors_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").get_gpu_factors()
+        self.assertEqual(cm.exception.status, 403)
+
+    def test_set_gpu_factor_sends_put(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").set_gpu_factor("h100", 0.25)
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.method, "PUT")
+        self.assertIn("/factors/gpu/h100", req.full_url)
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body, {"factor": 0.25})
+
+    def test_set_gpu_factor_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").set_gpu_factor("h100", 0.5)
+        self.assertEqual(cm.exception.status, 403)
+
+
 class TestAPIClientConsumption(SlurmQuotaTestCase):
     def test_adjust_consumption_sends_patch_for_user_cpu(self):
         with patch(
