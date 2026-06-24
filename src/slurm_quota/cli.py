@@ -253,13 +253,13 @@ def main():
     # Default quotas commands (show)
     subparsers.add_parser(
         "default-quotas",
-        help="Show default quotas used for new users/accounts",
+        help="Show default quotas used for new users/accounts (manager or admin)",
     )
 
     # Default quotas commands (set)
     set_default_quotas_parser = subparsers.add_parser(
         "set-default-quotas",
-        help="Set default quotas used for new users/accounts (root only)",
+        help="Set default quotas used for new users/accounts (manager or admin)",
     )
     set_default_quotas_parser.add_argument(
         "--user-cpu",

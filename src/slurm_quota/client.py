@@ -216,6 +216,51 @@ class APIClient:
         if status != HTTPStatus.NO_CONTENT:
             raise ServiceHTTPError(status)
 
+    def get_default_quotas(self) -> Dict[str, int]:
+        status, payload = self._api_request(
+            "GET", "quotas/defaults", require_token=True
+        )
+        if status != HTTPStatus.OK:
+            raise ServiceHTTPError(status)
+        result: Dict[str, int] = {}
+        for field in (
+            "user_cpu_minutes",
+            "user_gpu_minutes",
+            "account_cpu_minutes",
+            "account_gpu_minutes",
+        ):
+            value = payload.get(field)
+            if not isinstance(value, int):
+                raise ValueError(f"default quotas response missing {field}")
+            result[field] = value
+        return result
+
+    def set_default_quotas(
+        self,
+        *,
+        user_cpu: Optional[int] = None,
+        user_gpu: Optional[int] = None,
+        account_cpu: Optional[int] = None,
+        account_gpu: Optional[int] = None,
+    ) -> None:
+        body: Dict[str, int] = {}
+        if user_cpu is not None:
+            body["user_cpu_minutes"] = user_cpu
+        if user_gpu is not None:
+            body["user_gpu_minutes"] = user_gpu
+        if account_cpu is not None:
+            body["account_cpu_minutes"] = account_cpu
+        if account_gpu is not None:
+            body["account_gpu_minutes"] = account_gpu
+        status, _payload = self._api_request(
+            "PUT",
+            "quotas/defaults",
+            body=body,
+            require_token=True,
+        )
+        if status != HTTPStatus.NO_CONTENT:
+            raise ServiceHTTPError(status)
+
     def adjust_consumption(
         self,
         target: Literal["user", "account"],
