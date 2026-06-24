@@ -1,0 +1,22 @@
+{% macro consumption_cell(target, name, resource, usage) %}
+{% if user_role in ("admin", "manager") %}
+<span class="consumption-value">{{ usage.consumed }}</span>
+<form method="post" action="{{ url_for('consumption_post') }}" class="consumption-edit-form inline-form">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <input type="hidden" name="target" value="{{ target }}">
+  <input type="hidden" name="name" value="{{ name }}">
+  <input type="hidden" name="resource" value="{{ resource }}">
+  <input
+    type="number"
+    name="delta_minutes"
+    class="consumption-delta-input"
+    placeholder="Δ min"
+    title="Signed delta in minutes (e.g. 30 or -10)"
+    required
+  >
+  <button type="submit" title="Adjust consumption">Adjust</button>
+</form>
+{% else %}
+{{ usage.consumed }}
+{% endif %}
+{% endmacro %}

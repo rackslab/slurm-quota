@@ -337,3 +337,37 @@ def quotas_post() -> Any:
         pass
 
     return redirect(url_for("dashboard"))
+
+
+def consumption_post() -> Any:
+    role = current_role()
+    if role not in ("admin", "manager"):
+        return redirect(url_for("dashboard"))
+
+    if not validate_csrf():
+        abort(400, description="Invalid or missing CSRF token.")
+
+    target = (request.form.get("target") or "").strip()
+    name = (request.form.get("name") or "").strip()
+    resource = (request.form.get("resource") or "").strip()
+    delta_raw = (request.form.get("delta_minutes") or "").strip()
+
+    if not name or target not in ("user", "account") or resource not in ("cpu", "gpu"):
+        return redirect(url_for("dashboard"))
+
+    try:
+        delta_minutes = int(delta_raw)
+    except ValueError:
+        return redirect(url_for("dashboard"))
+
+    try:
+        api = api_client()
+        api.adjust_consumption(target, name, resource, delta_minutes)
+    except ServiceHTTPError as exc:
+        if exc.status in (401, 403):
+            session.clear()
+            return redirect(login_url(message="session_expired"))
+    except URLError:
+        pass
+
+    return redirect(url_for("dashboard"))

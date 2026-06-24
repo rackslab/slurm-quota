@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "quota.html" import quota_cell with context %}
+{% from "consumption.html" import consumption_cell with context %}
 
 {% block title %}slurm-quota{% endblock %}
 
@@ -102,14 +103,14 @@
     {% for row in users %}
     <tr>
       <td class="col-name">{{ row.name }}</td>
-      <td class="num">{{ row.cpu.consumed }}</td>
+      <td class="num">{{ consumption_cell("user", row.name, "cpu", row.cpu) }}</td>
       <td class="num">{{ row.cpu.preallocated }} ({{ row.job_count }})</td>
       <td class="num">{{ quota_cell("user", row.name, "cpu", row.cpu) }}</td>
       <td>
         {% set usage = row.cpu %}
         {% include "usage_bar.html" %}
       </td>
-      <td class="num">{{ row.gpu.consumed }}</td>
+      <td class="num">{{ consumption_cell("user", row.name, "gpu", row.gpu) }}</td>
       <td class="num">{{ row.gpu.preallocated }} ({{ row.job_count }})</td>
       <td class="num">{{ quota_cell("user", row.name, "gpu", row.gpu) }}</td>
       <td>
@@ -148,14 +149,14 @@
     {% for row in accounts %}
     <tr>
       <td class="col-name">{{ row.name }}</td>
-      <td class="num">{{ row.cpu.consumed }}</td>
+      <td class="num">{{ consumption_cell("account", row.name, "cpu", row.cpu) }}</td>
       <td class="num">{{ row.cpu.preallocated }} ({{ row.job_count }})</td>
       <td class="num">{{ quota_cell("account", row.name, "cpu", row.cpu) }}</td>
       <td>
         {% set usage = row.cpu %}
         {% include "usage_bar.html" %}
       </td>
-      <td class="num">{{ row.gpu.consumed }}</td>
+      <td class="num">{{ consumption_cell("account", row.name, "gpu", row.gpu) }}</td>
       <td class="num">{{ row.gpu.preallocated }} ({{ row.job_count }})</td>
       <td class="num">{{ quota_cell("account", row.name, "gpu", row.gpu) }}</td>
       <td>
