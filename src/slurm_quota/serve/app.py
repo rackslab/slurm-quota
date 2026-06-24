@@ -60,6 +60,16 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
             methods=["DELETE"],
         )
         self.add_url_rule(
+            "/quotas/defaults",
+            view_func=routes.get_default_quotas,
+            methods=["GET"],
+        )
+        self.add_url_rule(
+            "/quotas/defaults",
+            view_func=routes.set_default_quotas,
+            methods=["PUT"],
+        )
+        self.add_url_rule(
             "/quotas/<entity>/<name>/<resource>",
             view_func=routes.set_quota,
             methods=["PUT"],
