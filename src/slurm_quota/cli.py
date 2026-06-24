@@ -24,6 +24,9 @@ from slurm_quota.commands import (
     token_save_command,
     role_grant_command,
     role_list_command,
+    role_managers_add_command,
+    role_managers_list_command,
+    role_managers_remove_command,
     role_revoke_command,
     role_show_command,
 )
@@ -154,15 +157,53 @@ def main():
 
     role_grant_parser = role_subparsers.add_parser(
         "grant",
-        help="Grant manager role to a user (admin only)",
+        help="Grant operator or manager role to a user (admin only)",
     )
-    role_grant_parser.add_argument("username", help="Username to grant manager role")
+    role_grant_parser.add_argument(
+        "role",
+        choices=("operator", "manager"),
+        help="Role to grant",
+    )
+    role_grant_parser.add_argument("username", help="Username to grant role to")
 
     role_revoke_parser = role_subparsers.add_parser(
         "revoke",
-        help="Revoke manager role from a user (admin only)",
+        help="Revoke operator or manager role from a user (admin only)",
     )
-    role_revoke_parser.add_argument("username", help="Username to revoke manager role")
+    role_revoke_parser.add_argument(
+        "role",
+        choices=("operator", "manager"),
+        help="Role to revoke",
+    )
+    role_revoke_parser.add_argument("username", help="Username to revoke role from")
+
+    role_managers_parser = role_subparsers.add_parser(
+        "managers",
+        help="Manage manager account assignments (admin only)",
+    )
+    role_managers_subparsers = role_managers_parser.add_subparsers(
+        dest="managers_command",
+        required=True,
+    )
+    role_managers_list_parser = role_managers_subparsers.add_parser(
+        "list",
+        help="List accounts assigned to a manager",
+    )
+    role_managers_list_parser.add_argument("username", help="Manager username")
+
+    role_managers_add_parser = role_managers_subparsers.add_parser(
+        "add",
+        help="Assign an account to a manager",
+    )
+    role_managers_add_parser.add_argument("username", help="Manager username")
+    role_managers_add_parser.add_argument("account", help="Account to assign")
+
+    role_managers_remove_parser = role_managers_subparsers.add_parser(
+        "remove",
+        help="Remove an account from a manager",
+    )
+    role_managers_remove_parser.add_argument("username", help="Manager username")
+    role_managers_remove_parser.add_argument("account", help="Account to remove")
 
     # Adjust command
     adjust_parser = subparsers.add_parser(
@@ -194,7 +235,7 @@ def main():
     # User-quota command
     user_quota_parser = subparsers.add_parser(
         "user-quota",
-        help="Set quota for a user (manager or admin)",
+        help="Set quota for a user (operator or admin)",
     )
     user_quota_parser.add_argument("username", help="Username to set quota for")
     user_quota_parser.add_argument(
@@ -204,7 +245,7 @@ def main():
     # Account-quota command
     account_quota_parser = subparsers.add_parser(
         "account-quota",
-        help="Set quota for an account (manager or admin)",
+        help="Set quota for an account (operator or admin)",
     )
     account_quota_parser.add_argument("account", help="Account to set quota for")
     account_quota_parser.add_argument(
@@ -214,7 +255,7 @@ def main():
     # User-gpu-quota command
     user_gpu_quota_parser = subparsers.add_parser(
         "user-gpu-quota",
-        help="Set GPU quota for a user (manager or admin)",
+        help="Set GPU quota for a user (operator or admin)",
     )
     user_gpu_quota_parser.add_argument("username", help="Username to set GPU quota for")
     user_gpu_quota_parser.add_argument(
@@ -224,7 +265,7 @@ def main():
     # Account-gpu-quota command
     account_gpu_quota_parser = subparsers.add_parser(
         "account-gpu-quota",
-        help="Set GPU quota for an account (manager or admin)",
+        help="Set GPU quota for an account (operator or admin)",
     )
     account_gpu_quota_parser.add_argument(
         "account", help="Account to set GPU quota for"
@@ -239,7 +280,7 @@ def main():
     # GPU factor command (set)
     gpu_factor_parser = subparsers.add_parser(
         "set-gpu-factor",
-        help="Set GPU charging factor for a GPU type (manager or admin role required)",
+        help="Set GPU charging factor for a GPU type (operator or admin role required)",
     )
     gpu_factor_parser.add_argument(
         "gpu_type",
@@ -254,13 +295,13 @@ def main():
     # Default quotas commands (show)
     subparsers.add_parser(
         "default-quotas",
-        help="Show default quotas used for new users/accounts (manager or admin)",
+        help="Show default quotas used for new users/accounts (operator or admin)",
     )
 
     # Default quotas commands (set)
     set_default_quotas_parser = subparsers.add_parser(
         "set-default-quotas",
-        help="Set default quotas used for new users/accounts (manager or admin)",
+        help="Set default quotas used for new users/accounts (operator or admin)",
     )
     set_default_quotas_parser.add_argument(
         "--user-cpu",
@@ -305,9 +346,16 @@ def main():
         elif args.role_command == "list":
             role_list_command()
         elif args.role_command == "grant":
-            role_grant_command(args.username)
+            role_grant_command(args.role, args.username)
         elif args.role_command == "revoke":
-            role_revoke_command(args.username)
+            role_revoke_command(args.role, args.username)
+        elif args.role_command == "managers":
+            if args.managers_command == "list":
+                role_managers_list_command(args.username)
+            elif args.managers_command == "add":
+                role_managers_add_command(args.username, args.account)
+            elif args.managers_command == "remove":
+                role_managers_remove_command(args.username, args.account)
         else:
             role_parser.print_help()
             sys.exit(1)

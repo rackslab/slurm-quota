@@ -8,7 +8,7 @@ import getpass
 import os
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.error import URLError
 
 from slurm_quota import auth
@@ -108,14 +108,14 @@ def create_status_bar(used: int, total: int, width: int = 20) -> str:
 
 
 def set_user_quota_command(username: str, quota: int) -> None:
-    """Set user CPU quota via the REST API (manager or admin role required)."""
+    """Set user CPU quota via the REST API (operator or admin role required)."""
     try:
         _api_client_from_token().set_user_cpu_quota(username, quota)
         print(f"Successfully set quota for user {username}: {quota} CPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: manager or admin role required to set quotas",
+            forbidden_message="Access denied: operator or admin role required to set quotas",
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")
@@ -123,14 +123,14 @@ def set_user_quota_command(username: str, quota: int) -> None:
 
 
 def set_account_quota_command(account: str, quota: int) -> None:
-    """Set account CPU quota via the REST API (manager or admin role required)."""
+    """Set account CPU quota via the REST API (operator or admin role required)."""
     try:
         _api_client_from_token().set_account_cpu_quota(account, quota)
         print(f"Successfully set quota for account {account}: {quota} CPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: manager or admin role required to set quotas",
+            forbidden_message="Access denied: operator or admin role required to set quotas",
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")
@@ -138,14 +138,14 @@ def set_account_quota_command(account: str, quota: int) -> None:
 
 
 def set_user_gpu_quota_command(username: str, quota: int) -> None:
-    """Set user GPU quota via the REST API (manager or admin role required)."""
+    """Set user GPU quota via the REST API (operator or admin role required)."""
     try:
         _api_client_from_token().set_user_gpu_quota(username, quota)
         print(f"Successfully set GPU quota for user {username}: {quota} GPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: manager or admin role required to set quotas",
+            forbidden_message="Access denied: operator or admin role required to set quotas",
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")
@@ -153,14 +153,14 @@ def set_user_gpu_quota_command(username: str, quota: int) -> None:
 
 
 def set_account_gpu_quota_command(account: str, quota: int) -> None:
-    """Set account GPU quota via the REST API (manager or admin role required)."""
+    """Set account GPU quota via the REST API (operator or admin role required)."""
     try:
         _api_client_from_token().set_account_gpu_quota(account, quota)
         print(f"Successfully set GPU quota for account {account}: {quota} GPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: manager or admin role required to set quotas",
+            forbidden_message="Access denied: operator or admin role required to set quotas",
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")
@@ -175,7 +175,7 @@ def adjust_command(
     minutes: Optional[int],
     hours: Optional[int],
 ) -> None:
-    """Adjust consumed CPU/GPU time via the REST API (manager or admin role required)."""
+    """Adjust consumed CPU/GPU time via the REST API (operator or admin role required)."""
     try:
         target_type = "user" if username is not None else "account"
         target_name = username if username is not None else account
@@ -213,7 +213,7 @@ def adjust_command(
         _handle_api_error(
             exc,
             forbidden_message=(
-                "Access denied: manager or admin role required to adjust consumption"
+                "Access denied: operator or admin role required to adjust consumption"
             ),
         )
     except URLError as exc:
@@ -242,7 +242,7 @@ def show_gpu_factors_command() -> None:
         _handle_api_error(
             exc,
             forbidden_message=(
-                "Access denied: manager or admin role required to view GPU factors"
+                "Access denied: operator or admin role required to view GPU factors"
             ),
         )
     except URLError as exc:
@@ -269,7 +269,7 @@ def set_gpu_factor_command(gpu_type: str, factor: float) -> None:
         _handle_api_error(
             exc,
             forbidden_message=(
-                "Access denied: manager or admin role required to set GPU factors"
+                "Access denied: operator or admin role required to set GPU factors"
             ),
         )
     except URLError as exc:
@@ -286,7 +286,7 @@ def set_default_quotas_command(
     account_cpu: Optional[int],
     account_gpu: Optional[int],
 ) -> None:
-    """Set default quotas via the REST API (manager or admin role required)."""
+    """Set default quotas via the REST API (operator or admin role required)."""
     try:
         if all(
             value is None for value in (user_cpu, user_gpu, account_cpu, account_gpu)
@@ -308,7 +308,7 @@ def set_default_quotas_command(
         _handle_api_error(
             exc,
             forbidden_message=(
-                "Access denied: manager or admin role required to set default quotas"
+                "Access denied: operator or admin role required to set default quotas"
             ),
         )
     except URLError as exc:
@@ -320,7 +320,7 @@ def set_default_quotas_command(
 
 
 def show_default_quotas_command() -> None:
-    """Display default quotas via the REST API (manager or admin role required)."""
+    """Display default quotas via the REST API (operator or admin role required)."""
 
     def fmt(m: int) -> str:
         return "∞" if m == -1 else str(m)
@@ -337,7 +337,7 @@ def show_default_quotas_command() -> None:
         _handle_api_error(
             exc,
             forbidden_message=(
-                "Access denied: manager or admin role required to view default quotas"
+                "Access denied: operator or admin role required to view default quotas"
             ),
         )
     except URLError as exc:
@@ -679,28 +679,79 @@ def role_list_command() -> None:
         )
 
 
-def role_grant_command(username: str) -> None:
+def role_grant_command(role: Literal["operator", "manager"], username: str) -> None:
+    client = _api_client_from_token()
     try:
-        _api_client_from_token().grant_manager(username)
-    except ServiceHTTPError as exc:
-        _handle_api_error(
-            exc, forbidden_message="Access denied: admin role required to grant manager"
-        )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
-    print(f"Granted manager role to {username}")
-
-
-def role_revoke_command(username: str) -> None:
-    try:
-        _api_client_from_token().revoke_manager(username)
+        client.grant_role(role, username)
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: admin role required to revoke manager",
+            forbidden_message=f"Access denied: admin role required to grant {role}",
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")
         sys.exit(1)
-    print(f"Revoked manager role from {username}")
+    print(f"Granted {role} role to {username}")
+
+
+def role_revoke_command(role: Literal["operator", "manager"], username: str) -> None:
+    client = _api_client_from_token()
+    try:
+        client.revoke_role(role, username)
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message=f"Access denied: admin role required to revoke {role}",
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
+    print(f"Revoked {role} role from {username}")
+
+
+def role_managers_list_command(username: str) -> None:
+    try:
+        accounts = _api_client_from_token().list_manager_accounts(username)
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message="Access denied: admin role required to list manager accounts",
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
+
+    if not accounts:
+        print(f"No accounts assigned to manager {username}")
+        return
+
+    for account in accounts:
+        print(account)
+
+
+def role_managers_add_command(username: str, account: str) -> None:
+    try:
+        _api_client_from_token().add_manager_account(username, account)
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message="Access denied: admin role required to assign manager accounts",
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
+    print(f"Assigned account {account} to manager {username}")
+
+
+def role_managers_remove_command(username: str, account: str) -> None:
+    try:
+        _api_client_from_token().remove_manager_account(username, account)
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message="Access denied: admin role required to remove manager accounts",
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
+    print(f"Removed account {account} from manager {username}")
