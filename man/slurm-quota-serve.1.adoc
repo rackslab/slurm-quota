@@ -89,6 +89,10 @@ curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/stats
 curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/me
 curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles
 curl -X PUT -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles/managers/bob
+curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"delta_minutes":30}' http://127.0.0.1:9911/consumption/user/alice/cpu
+curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"delta_minutes":-60}' http://127.0.0.1:9911/consumption/account/hpc/gpu
 ....
 
 == Files

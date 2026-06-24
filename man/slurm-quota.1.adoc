@@ -150,7 +150,7 @@ slurm-quota role revoke bob
 *slurm-quota adjust* (*--user* <username> | *--account* <account>) (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int>)
 
 Adjust consumed CPU/GPU time for one user or one account.
-This command must run as `root`.
+Requires a saved JWT token or `SLURM_QUOTA_TOKEN`, and manager or admin role.
 
 Options:
 
@@ -179,8 +179,8 @@ Notes:
 Examples:
 
 ....
-sudo slurm-quota adjust --user alice --cpu --minutes=+30
-sudo slurm-quota adjust --account projX --gpu --hours=-1
+slurm-quota adjust --user alice --cpu --minutes=+30
+slurm-quota adjust --account projX --gpu --hours=-1
 ....
 
 === user-quota
