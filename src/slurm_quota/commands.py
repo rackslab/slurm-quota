@@ -6,20 +6,16 @@
 
 import getpass
 import os
-import sqlite3
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from urllib.error import URLError
 
 from slurm_quota import auth
-import slurm_quota
 from slurm_quota.client import APIClient, ServiceHTTPError
 from slurm_quota.token import load_service_token, save_service_token
 from slurm_quota.database import (
-    init_database,
     prune_resources,
-    set_gpu_factor,
 )
 
 import logging
@@ -233,50 +229,24 @@ def show_gpu_factors_command() -> None:
     Execute the gpu-factors command to display current GPU charging factors.
     """
     try:
-        if not os.path.exists(slurm_quota.DB_PATH):
-            print("Database not found. No GPU factors configured.")
-            return
+        data = _api_client_from_token().get_gpu_factors()
+        default_factor = data["default_factor"]
+        type_factors = sorted(data["factors"].items())
 
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT gpu_type, factor FROM gpu_factors ORDER BY gpu_type")
-            rows = cursor.fetchall()
-
-            if not rows:
-                print("No GPU factors configured. Default factor: 1.0")
-                return
-
-            # Separate default factor from type-specific factors
-            default_factor = None
-            type_factors: List[Tuple[str, float]] = []
-
-            for gpu_type, factor in rows:
-                try:
-                    factor_f = float(factor)
-                    if gpu_type == "default":
-                        default_factor = factor_f
-                    else:
-                        type_factors.append((gpu_type, factor_f))
-                except (TypeError, ValueError):
-                    logger.warning(f"Invalid factor for GPU type {gpu_type}: {factor}")
-
-            # Display results
-            print("GPU Charging Factors")
-            print("-" * 40)
-
-            # Show default factor
-            if default_factor is not None:
-                print(f"{'default':<20} {default_factor:.3f}")
-            else:
-                print(f"{'default':<20} 1.000 (not configured)")
-
-            # Show type-specific factors
-            if type_factors:
-                for gpu_type, factor in sorted(type_factors):
-                    print(f"{gpu_type:<20} {factor:.3f}")
-
-    except sqlite3.Error as e:
-        logger.error(f"Failed to query GPU factors: {e}")
+        print("GPU Charging Factors")
+        print("-" * 40)
+        print(f"{'default':<20} {default_factor:.3f}")
+        for gpu_type, factor in type_factors:
+            print(f"{gpu_type:<20} {factor:.3f}")
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message=(
+                "Access denied: manager or admin role required to view GPU factors"
+            ),
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
         sys.exit(1)
     except Exception as e:
         logger.error(f"gpu-factors command failed: {e}")
@@ -286,30 +256,25 @@ def show_gpu_factors_command() -> None:
 def set_gpu_factor_command(gpu_type: str, factor: float) -> None:
     """
     Execute the set-gpu-factor command to set GPU charging factors.
-    This command can only be executed by root user.
+    Manager or admin API role required.
     """
     try:
-        # Check if running as root user
-        current_user = auth.get_current_user()
-        if current_user != "root":
-            logger.error(
-                f"set-gpu-factor command can only be executed by root user, not by "
-                f"{current_user}"
-            )
-            sys.exit(1)
-
         if factor <= 0:
             logger.error(f"Factor must be positive, got: {factor}")
             sys.exit(1)
 
-        # Initialize database only if missing
-        init_database()
-
-        # Set GPU factor
-        set_gpu_factor(gpu_type, factor)
-
+        _api_client_from_token().set_gpu_factor(gpu_type, factor)
         print(f"Successfully set GPU factor for type {gpu_type}: {factor}")
-
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message=(
+                "Access denied: manager or admin role required to set GPU factors"
+            ),
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"set-gpu-factor command failed: {e}")
         sys.exit(1)
