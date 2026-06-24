@@ -19,6 +19,7 @@ from rfl.web.tokens import check_jwt
 import slurm_quota
 from slurm_quota.database import (
     adjust_consumed_minutes as db_adjust_consumed_minutes,
+    get_default_quota_settings,
     grant_api_manager,
     list_users_with_roles,
     query_accounts_aggregate,
@@ -26,6 +27,7 @@ from slurm_quota.database import (
     revoke_api_manager,
     set_account_gpu_quota as db_set_account_gpu_quota,
     set_account_quota as db_set_account_quota,
+    set_default_quota_settings,
     set_user_gpu_quota as db_set_user_gpu_quota,
     set_user_quota as db_set_user_quota,
 )
@@ -200,6 +202,71 @@ def revoke_manager(username: str) -> Any:
     _validate_username(username)
     with sqlite3.connect(slurm_quota.DB_PATH) as conn:
         revoke_api_manager(conn, username)
+    return "", 204
+
+
+@require_role("admin", "manager")
+def get_default_quotas() -> Any:
+    try:
+        settings = get_default_quota_settings()
+    except sqlite3.Error as exc:
+        logger.error("get default quotas failed: %s", exc)
+        return jsonify({"error": "db_error"}), 500
+    return jsonify(
+        {
+            "user_cpu_minutes": settings["default_user_quota_cpu_minutes"],
+            "user_gpu_minutes": settings["default_user_quota_gpu_minutes"],
+            "account_cpu_minutes": settings["default_account_quota_cpu_minutes"],
+            "account_gpu_minutes": settings["default_account_quota_gpu_minutes"],
+        }
+    )
+
+
+@require_role("admin", "manager")
+def set_default_quotas() -> Any:
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        abort(400, description="Invalid JSON body")
+
+    updates: Dict[str, Optional[int]] = {
+        "user_cpu_minutes": None,
+        "user_gpu_minutes": None,
+        "account_cpu_minutes": None,
+        "account_gpu_minutes": None,
+    }
+
+    for field in updates:
+        if field not in payload:
+            continue
+        value = payload[field]
+        if not isinstance(value, int) or value < -1:
+            abort(400, description=f"{field} must be an integer >= -1")
+        updates[field] = value
+
+    if all(value is None for value in updates.values()):
+        abort(
+            400,
+            description=f"At least one field is required: {', '.join(updates)}",
+        )
+
+    try:
+        set_default_quota_settings(
+            updates["user_cpu_minutes"],
+            updates["user_gpu_minutes"],
+            updates["account_cpu_minutes"],
+            updates["account_gpu_minutes"],
+        )
+    except ValueError as exc:
+        abort(400, description=str(exc))
+    except sqlite3.Error as exc:
+        logger.error("set default quotas failed: %s", exc)
+        return jsonify({"error": "db_error"}), 500
+
+    logger.info(
+        "default quotas: manager=%s updates=%s",
+        cast(str, request.user.login),
+        {field: value for field, value in updates.items() if value is not None},
+    )
     return "", 204
 
 
