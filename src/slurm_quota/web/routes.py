@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, cast
 from urllib.error import URLError
 
 from flask import (
@@ -273,15 +273,47 @@ def roles_post() -> Any:
         abort(400, description="Invalid or missing CSRF token.")
 
     action = (request.form.get("action") or "").strip()
+    target_role = (request.form.get("role") or "").strip()
     username = (request.form.get("username") or "").strip()
     if not username:
         return redirect(url_for("roles"))
 
     try:
-        if action == "grant":
-            api_client().grant_manager(username)
-        elif action == "revoke":
-            api_client().revoke_manager(username)
+        api = api_client()
+        if action == "grant" and target_role in ("operator", "manager"):
+            api.grant_role(cast(Literal["operator", "manager"], target_role), username)
+        elif action == "revoke" and target_role in ("operator", "manager"):
+            api.revoke_role(cast(Literal["operator", "manager"], target_role), username)
+    except ServiceHTTPError as exc:
+        if exc.status in (401, 403):
+            session.clear()
+            return redirect(login_url(message="session_expired"))
+    except URLError:
+        pass
+
+    return redirect(url_for("roles"))
+
+
+def roles_manager_accounts_post() -> Any:
+    role = current_role()
+    if role != "admin":
+        return redirect(url_for("dashboard"))
+
+    if not validate_csrf():
+        abort(400, description="Invalid or missing CSRF token.")
+
+    action = (request.form.get("action") or "").strip()
+    username = (request.form.get("username") or "").strip()
+    account = (request.form.get("account") or "").strip()
+    if not username or not account:
+        return redirect(url_for("roles"))
+
+    try:
+        api = api_client()
+        if action == "add":
+            api.add_manager_account(username, account)
+        elif action == "remove":
+            api.remove_manager_account(username, account)
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
             session.clear()
@@ -294,7 +326,7 @@ def roles_post() -> Any:
 
 def quotas_post() -> Any:
     role = current_role()
-    if role not in ("admin", "manager"):
+    if role not in ("admin", "operator"):
         return redirect(url_for("dashboard"))
 
     if not validate_csrf():
@@ -341,7 +373,7 @@ def quotas_post() -> Any:
 
 def consumption_post() -> Any:
     role = current_role()
-    if role not in ("admin", "manager"):
+    if role not in ("admin", "operator"):
         return redirect(url_for("dashboard"))
 
     if not validate_csrf():
