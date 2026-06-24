@@ -266,8 +266,21 @@ def init_database() -> None:
             )
 
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS api_managers (
+                CREATE TABLE IF NOT EXISTS operators (
                     username TEXT PRIMARY KEY
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS managers (
+                    username TEXT PRIMARY KEY
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS manager_accounts (
+                    manager_username TEXT NOT NULL,
+                    account TEXT NOT NULL,
+                    PRIMARY KEY (manager_username, account),
+                    FOREIGN KEY (manager_username) REFERENCES managers(username) ON DELETE CASCADE
                 )
             """)
 
@@ -750,12 +763,16 @@ def adjust_consumed_minutes(
 
 
 def query_users_aggregate(
-    conn: sqlite3.Connection, username: Optional[str] = None
+    conn: sqlite3.Connection,
+    usernames: Optional[set[str]] = None,
 ) -> List[Dict[str, Any]]:
     cursor = conn.cursor()
-    if username:
+    if usernames is not None:
+        if len(usernames) == 0:
+            return []
+        placeholders = ",".join(["?"] * len(usernames))
         cursor.execute(
-            """
+            f"""
             SELECT u.username, u.total_consumed_cpu_minutes,
                    COALESCE(SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_cpu_minutes,
                    u.quota_cpu_minutes, u.total_consumed_gpu_minutes,
@@ -764,12 +781,12 @@ def query_users_aggregate(
                    COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
             FROM users u
             LEFT JOIN jobs_preallocations j ON u.username = j.username
-            WHERE u.username = ?
+            WHERE u.username IN ({placeholders})
             GROUP BY u.username, u.total_consumed_cpu_minutes, u.quota_cpu_minutes,
                      u.total_consumed_gpu_minutes, u.quota_gpu_minutes, u.last_updated
             ORDER BY u.username
             """,
-            (username,),
+            tuple(usernames),
         )
     else:
         cursor.execute(
@@ -888,53 +905,150 @@ def query_accounts_aggregate(
     return results
 
 
-def is_api_manager(conn: sqlite3.Connection, username: str) -> bool:
+def is_operator(conn: sqlite3.Connection, username: str) -> bool:
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT 1 FROM api_managers WHERE username = ?",
+        "SELECT 1 FROM operators WHERE username = ?",
         (username,),
     )
     return cursor.fetchone() is not None
 
 
-def list_api_managers(conn: sqlite3.Connection) -> List[str]:
+def list_operators(conn: sqlite3.Connection) -> List[str]:
     cursor = conn.cursor()
-    cursor.execute("SELECT username FROM api_managers ORDER BY username")
+    cursor.execute("SELECT username FROM operators ORDER BY username")
     return [row[0] for row in cursor.fetchall()]
 
 
-def grant_api_manager(conn: sqlite3.Connection, username: str) -> None:
+def grant_operator(conn: sqlite3.Connection, username: str) -> None:
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT OR IGNORE INTO api_managers (username) VALUES (?)",
+        "INSERT OR IGNORE INTO operators (username) VALUES (?)",
         (username,),
     )
     conn.commit()
 
 
-def revoke_api_manager(conn: sqlite3.Connection, username: str) -> None:
+def revoke_operator(conn: sqlite3.Connection, username: str) -> None:
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM api_managers WHERE username = ?", (username,))
+    cursor.execute("DELETE FROM operators WHERE username = ?", (username,))
     conn.commit()
+
+
+def is_manager(conn: sqlite3.Connection, username: str) -> bool:
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT 1 FROM managers WHERE username = ?",
+        (username,),
+    )
+    return cursor.fetchone() is not None
+
+
+def list_managers(conn: sqlite3.Connection) -> List[str]:
+    cursor = conn.cursor()
+    cursor.execute("SELECT username FROM managers ORDER BY username")
+    return [row[0] for row in cursor.fetchall()]
+
+
+def grant_manager(conn: sqlite3.Connection, username: str) -> None:
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT OR IGNORE INTO managers (username) VALUES (?)",
+        (username,),
+    )
+    conn.commit()
+
+
+def revoke_manager(conn: sqlite3.Connection, username: str) -> None:
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM manager_accounts WHERE manager_username = ?",
+        (username,),
+    )
+    cursor.execute("DELETE FROM managers WHERE username = ?", (username,))
+    conn.commit()
+
+
+def list_manager_accounts(conn: sqlite3.Connection, username: str) -> List[str]:
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT account FROM manager_accounts
+        WHERE manager_username = ?
+        ORDER BY account
+        """,
+        (username,),
+    )
+    return [row[0] for row in cursor.fetchall()]
+
+
+def grant_manager_account(
+    conn: sqlite3.Connection, username: str, account: str
+) -> None:
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO manager_accounts (manager_username, account)
+        VALUES (?, ?)
+        """,
+        (username, account),
+    )
+    conn.commit()
+
+
+def revoke_manager_account(
+    conn: sqlite3.Connection, username: str, account: str
+) -> None:
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        DELETE FROM manager_accounts
+        WHERE manager_username = ? AND account = ?
+        """,
+        (username, account),
+    )
+    conn.commit()
+
+
+def list_all_manager_accounts(conn: sqlite3.Connection) -> Dict[str, List[str]]:
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT manager_username, account FROM manager_accounts
+        ORDER BY manager_username, account
+        """
+    )
+    result: Dict[str, List[str]] = {}
+    for manager_username, account in cursor.fetchall():
+        result.setdefault(manager_username, []).append(account)
+    return result
 
 
 def list_users_with_roles(
     conn: sqlite3.Connection, config_admins: set[str]
-) -> List[Dict[str, str]]:
+) -> List[Dict[str, Any]]:
     cursor = conn.cursor()
     cursor.execute("SELECT username FROM users")
     usernames = {row[0] for row in cursor.fetchall()}
     usernames.update(config_admins)
-    managers = set(list_api_managers(conn))
+    operators = set(list_operators(conn))
+    managers = set(list_managers(conn))
+    usernames.update(operators)
     usernames.update(managers)
+    manager_accounts = list_all_manager_accounts(conn)
 
-    results: List[Dict[str, str]] = []
+    results: List[Dict[str, Any]] = []
     for username in sorted(usernames):
         if username in config_admins:
             role = "admin"
+        elif username in operators:
+            role = "operator"
         elif username in managers:
             role = "manager"
         else:
             role = "user"
-        results.append({"username": username, "role": role})
+        entry: Dict[str, Any] = {"username": username, "role": role}
+        if role == "manager":
+            entry["accounts"] = manager_accounts.get(username, [])
+        results.append(entry)
     return results

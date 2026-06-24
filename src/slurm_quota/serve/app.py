@@ -50,6 +50,16 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
         self.add_url_rule("/me", view_func=routes.me, methods=["GET"])
         self.add_url_rule("/roles", view_func=routes.list_roles, methods=["GET"])
         self.add_url_rule(
+            "/roles/operators/<username>",
+            view_func=routes.grant_operator,
+            methods=["PUT"],
+        )
+        self.add_url_rule(
+            "/roles/operators/<username>",
+            view_func=routes.revoke_operator,
+            methods=["DELETE"],
+        )
+        self.add_url_rule(
             "/roles/managers/<username>",
             view_func=routes.grant_manager,
             methods=["PUT"],
@@ -57,6 +67,21 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
         self.add_url_rule(
             "/roles/managers/<username>",
             view_func=routes.revoke_manager,
+            methods=["DELETE"],
+        )
+        self.add_url_rule(
+            "/roles/managers/<username>/accounts",
+            view_func=routes.list_manager_accounts_route,
+            methods=["GET"],
+        )
+        self.add_url_rule(
+            "/roles/managers/<username>/accounts/<account>",
+            view_func=routes.grant_manager_account_route,
+            methods=["PUT"],
+        )
+        self.add_url_rule(
+            "/roles/managers/<username>/accounts/<account>",
+            view_func=routes.revoke_manager_account_route,
             methods=["DELETE"],
         )
         self.add_url_rule(

@@ -162,20 +162,50 @@ def migrate_database() -> None:
             conn.commit()
             logger.info("Migration completed: default quota settings ensured")
 
+            # Ensure operators table exists
             cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='api_managers'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='operators'"
             )
             if cursor.fetchone() is None:
-                logger.info("Creating api_managers table")
+                logger.info("Creating operators table")
                 cursor.execute("""
-                    CREATE TABLE api_managers (
+                    CREATE TABLE operators (
                         username TEXT PRIMARY KEY
                     )
                 """)
                 conn.commit()
-                logger.info("Migration completed: api_managers table created")
-            else:
-                logger.info("Migration not needed: api_managers table already exists")
+                logger.info("Migration completed: operators table created")
+
+            # Ensure managers table exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='managers'"
+            )
+            if cursor.fetchone() is None:
+                logger.info("Creating managers table")
+                cursor.execute("""
+                    CREATE TABLE managers (
+                        username TEXT PRIMARY KEY
+                    )
+                """)
+                conn.commit()
+                logger.info("Migration completed: managers table created")
+
+            # Ensure manager_accounts table exists
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='manager_accounts'"
+            )
+            if cursor.fetchone() is None:
+                logger.info("Creating manager_accounts table")
+                cursor.execute("""
+                    CREATE TABLE manager_accounts (
+                        manager_username TEXT NOT NULL,
+                        account TEXT NOT NULL,
+                        PRIMARY KEY (manager_username, account),
+                        FOREIGN KEY (manager_username) REFERENCES managers(username) ON DELETE CASCADE
+                    )
+                """)
+                conn.commit()
+                logger.info("Migration completed: manager_accounts table created")
 
     except sqlite3.Error as e:
         logger.error(f"Database migration failed: {e}")

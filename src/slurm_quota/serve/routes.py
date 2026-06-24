@@ -20,12 +20,18 @@ import slurm_quota
 from slurm_quota.database import (
     adjust_consumed_minutes as db_adjust_consumed_minutes,
     get_default_quota_settings,
-    grant_api_manager,
+    grant_manager as db_grant_manager,
+    grant_manager_account as db_grant_manager_account,
+    grant_operator as db_grant_operator,
+    is_manager,
+    list_manager_accounts,
     list_users_with_roles,
     load_gpu_factors,
     query_accounts_aggregate,
     query_users_aggregate,
-    revoke_api_manager,
+    revoke_manager as db_revoke_manager,
+    revoke_manager_account as db_revoke_manager_account,
+    revoke_operator as db_revoke_operator,
     set_account_gpu_quota as db_set_account_gpu_quota,
     set_account_quota as db_set_account_quota,
     set_default_quota_settings,
@@ -65,42 +71,102 @@ def _validate_account(account: str) -> None:
 
 
 def fetch_stats(
-    username_param: Optional[str],
-    account_param: Optional[str],
+    usernames_filter: Optional[set[str]] = None,
+    accounts_filter: Optional[set[str]] = None,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[Tuple[Any, int]]]:
-    if username_param and account_param:
-        return None, (
-            jsonify(
-                {
-                    "error": "bad_request",
-                    "message": "username and account are mutually exclusive",
-                }
-            ),
-            400,
-        )
+    """Load aggregated user and account consumption stats from the database.
 
+    Applies optional username and account filters before querying. When the
+    database file is missing, returns empty lists without error. When exactly
+    one username is requested and no account filter is set, account stats are
+    scoped to that user's Slurm accounts.
+
+    Args:
+        usernames_filter: Usernames to include. None selects all users, an empty
+            set selects none.
+        accounts_filter: Accounts to include. None selects all accounts unless
+            a single username is given, in which case that user's Slurm accounts
+            are used. An empty set selects none.
+
+    Returns:
+        A pair of payload and error response. On success the payload is a dict
+        with users and accounts keys and the error is None. On database failure
+        the payload is None and the error is an HTTP 500 response tuple.
+    """
     try:
         if not os.path.exists(slurm_quota.DB_PATH):
             return {"users": [], "accounts": []}, None
 
-        accounts_filter: Optional[set[str]] = None
-        if username_param:
+        accounts_query = accounts_filter
+        if (
+            accounts_query is None
+            and usernames_filter is not None
+            and len(usernames_filter) == 1
+        ):
+            username = next(iter(usernames_filter))
             try:
-                accounts_filter = slurm_integration.get_user_accounts(username_param)
+                accounts_query = slurm_integration.get_user_accounts(username)
             except Exception:
-                accounts_filter = set()
-        if account_param:
-            accounts_filter = {account_param}
+                accounts_query = set()
 
         with sqlite3.connect(slurm_quota.DB_PATH) as conn:
-            users = query_users_aggregate(conn, username_param or None)
-            if account_param:
-                users = []
-            accounts = query_accounts_aggregate(conn, accounts_filter)
+            users = query_users_aggregate(conn, usernames_filter)
+            accounts = query_accounts_aggregate(conn, accounts_query)
         return {"users": users, "accounts": accounts}, None
     except sqlite3.Error as exc:
         logger.error("/stats query failed: %s", exc)
         return None, (jsonify({"error": "db_error"}), 500)
+
+
+def _resolve_manager_stats_scope(
+    login: str,
+    username_param: Optional[str],
+    account_param: Optional[str],
+) -> Tuple[Optional[set[str]], Optional[set[str]]]:
+    """Build username and account filters for a manager viewing stats.
+
+    Managers may only see users and accounts within their assigned scope.
+    Query parameters narrow that scope; requests outside it raise HTTP 403.
+
+    Args:
+        login: Username of the authenticated manager.
+        username_param: Optional username query parameter, or None for no filter.
+        account_param: Optional account query parameter, or None for no filter.
+
+    Returns:
+        A pair of usernames_filter and accounts_filter suitable for fetch_stats.
+        With no assigned accounts, both filters are empty sets. With an account
+        parameter, only that account is returned when it is assigned. With a
+        username parameter, only that user is returned when they belong to an
+        assigned account; account stats are limited to the overlap between the
+        user's Slurm accounts and the assigned set. With neither parameter, users
+        are all members of assigned accounts and accounts are the full assigned
+        set.
+    """
+    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        assigned = set(list_manager_accounts(conn, login))
+
+    if not assigned:
+        return set(), assigned
+
+    if account_param:
+        if account_param not in assigned:
+            abort(403, description="Not allowed to view stats for this account")
+        return set(), {account_param}
+
+    if username_param:
+        try:
+            user_accounts = slurm_integration.get_user_accounts(username_param)
+        except Exception:
+            user_accounts = set()
+        if not user_accounts.intersection(assigned):
+            abort(403, description="Not allowed to view stats for other users")
+        return {username_param}, assigned.intersection(user_accounts)
+
+    members: set[str] = set()
+    for account in assigned:
+        members.update(slurm_integration.get_account_users(account))
+    return members, assigned
 
 
 def health() -> Any:
@@ -148,11 +214,27 @@ def login() -> Any:
 def stats() -> Any:
     username_param = (request.args.get("username") or "").strip() or None
     account_param = (request.args.get("account") or "").strip() or None
+    if username_param and account_param:
+        return (
+            jsonify(
+                {
+                    "error": "bad_request",
+                    "message": "username and account are mutually exclusive",
+                }
+            ),
+            400,
+        )
+
     login = cast(str, request.user.login)
     role = login_role(login)
-    # If the user has no special role, they can only view their own stats. Check they are not
-    # requesting to view stats for other users or accounts they don't belong to.
-    if role not in ("admin", "manager"):
+    usernames_filter: Optional[set[str]] = None
+    accounts_filter: Optional[set[str]] = None
+
+    if role == "manager":
+        usernames_filter, accounts_filter = _resolve_manager_stats_scope(
+            login, username_param, account_param
+        )
+    elif role not in ("admin", "operator"):
         if username_param and username_param != login:
             abort(403, description="Not allowed to view stats for other users")
         if account_param:
@@ -164,7 +246,18 @@ def stats() -> Any:
                 abort(403, description="Not allowed to view stats for this account")
         if username_param is None and account_param is None:
             username_param = login
-    payload, error = fetch_stats(username_param, account_param)
+        if account_param:
+            usernames_filter = set()
+            accounts_filter = {account_param}
+        elif username_param:
+            usernames_filter = {username_param}
+    elif account_param:
+        usernames_filter = set()
+        accounts_filter = {account_param}
+    elif username_param:
+        usernames_filter = {username_param}
+
+    payload, error = fetch_stats(usernames_filter, accounts_filter)
     if error is not None:
         response, status = error
         return response, status
@@ -188,6 +281,26 @@ def list_roles() -> Any:
 
 
 @require_role("admin")
+def grant_operator(username: str) -> Any:
+    _validate_username(username)
+    serve_app = cast("SlurmQuotaServeApp", current_app)
+    assert serve_app.settings is not None
+    if username in config_admins(serve_app.settings):
+        return "", 204
+    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        db_grant_operator(conn, username)
+    return "", 204
+
+
+@require_role("admin")
+def revoke_operator(username: str) -> Any:
+    _validate_username(username)
+    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        db_revoke_operator(conn, username)
+    return "", 204
+
+
+@require_role("admin")
 def grant_manager(username: str) -> Any:
     _validate_username(username)
     serve_app = cast("SlurmQuotaServeApp", current_app)
@@ -195,7 +308,7 @@ def grant_manager(username: str) -> Any:
     if username in config_admins(serve_app.settings):
         return "", 204
     with sqlite3.connect(slurm_quota.DB_PATH) as conn:
-        grant_api_manager(conn, username)
+        db_grant_manager(conn, username)
     return "", 204
 
 
@@ -203,11 +316,43 @@ def grant_manager(username: str) -> Any:
 def revoke_manager(username: str) -> Any:
     _validate_username(username)
     with sqlite3.connect(slurm_quota.DB_PATH) as conn:
-        revoke_api_manager(conn, username)
+        db_revoke_manager(conn, username)
     return "", 204
 
 
-@require_role("admin", "manager")
+@require_role("admin")
+def list_manager_accounts_route(username: str) -> Any:
+    _validate_username(username)
+    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        if not is_manager(conn, username):
+            abort(404, description="User is not a manager")
+        accounts = list_manager_accounts(conn, username)
+    return jsonify({"accounts": accounts})
+
+
+@require_role("admin")
+def grant_manager_account_route(username: str, account: str) -> Any:
+    _validate_username(username)
+    _validate_account(account)
+    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        if not is_manager(conn, username):
+            abort(404, description="User is not a manager")
+        db_grant_manager_account(conn, username, account)
+    return "", 204
+
+
+@require_role("admin")
+def revoke_manager_account_route(username: str, account: str) -> Any:
+    _validate_username(username)
+    _validate_account(account)
+    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        if not is_manager(conn, username):
+            abort(404, description="User is not a manager")
+        db_revoke_manager_account(conn, username, account)
+    return "", 204
+
+
+@require_role("admin", "operator")
 def get_default_quotas() -> Any:
     try:
         settings = get_default_quota_settings()
@@ -224,7 +369,7 @@ def get_default_quotas() -> Any:
     )
 
 
-@require_role("admin", "manager")
+@require_role("admin", "operator")
 def set_default_quotas() -> Any:
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
@@ -272,7 +417,7 @@ def set_default_quotas() -> Any:
     return "", 204
 
 
-@require_role("admin", "manager")
+@require_role("admin", "operator")
 def set_quota(entity: str, name: str, resource: str) -> Any:
     if resource not in ("cpu", "gpu"):
         abort(400, description="Invalid resource")
@@ -313,7 +458,7 @@ def set_quota(entity: str, name: str, resource: str) -> Any:
     return "", 204
 
 
-@require_role("admin", "manager")
+@require_role("admin", "operator")
 def adjust_consumption(entity: str, name: str, resource: str) -> Any:
     if entity == "user":
         _validate_username(name)
@@ -348,7 +493,7 @@ def adjust_consumption(entity: str, name: str, resource: str) -> Any:
     return jsonify({"total_consumed_minutes": total})
 
 
-@require_role("admin", "manager")
+@require_role("admin", "operator")
 def get_gpu_factors() -> Any:
     try:
         factors = load_gpu_factors()
@@ -359,7 +504,7 @@ def get_gpu_factors() -> Any:
     return jsonify({"default_factor": default_factor, "factors": factors})
 
 
-@require_role("admin", "manager")
+@require_role("admin", "operator")
 def set_gpu_factor(gpu_type: str) -> Any:
     if not gpu_type:
         abort(400, description="Invalid gpu_type")
