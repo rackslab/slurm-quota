@@ -18,6 +18,7 @@ from rfl.web.tokens import check_jwt
 
 import slurm_quota
 from slurm_quota.database import (
+    adjust_consumed_minutes as db_adjust_consumed_minutes,
     grant_api_manager,
     list_users_with_roles,
     query_accounts_aggregate,
@@ -282,3 +283,38 @@ def set_account_gpu_quota(account: str) -> Any:
         quota_minutes,
     )
     return "", 204
+
+
+@require_role("admin", "manager")
+def adjust_consumption(entity: str, name: str, resource: str) -> Any:
+    if entity == "user":
+        _validate_username(name)
+    elif entity == "account":
+        _validate_account(name)
+    else:
+        abort(404)
+    if resource not in ("cpu", "gpu"):
+        abort(400, description="Invalid resource")
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        abort(400, description="Invalid JSON body")
+    delta_minutes = payload.get("delta_minutes")
+    if not isinstance(delta_minutes, int):
+        abort(400, description="delta_minutes must be an integer")
+    try:
+        total = db_adjust_consumed_minutes(entity, name, resource, delta_minutes)
+    except ValueError as exc:
+        abort(400, description=str(exc))
+    except sqlite3.Error as exc:
+        logger.error("adjust %s %s consumption failed: %s", entity, resource, exc)
+        return jsonify({"error": "db_error"}), 500
+    logger.info(
+        "consumption %s %s: manager=%s name=%s delta=%+d total=%d",
+        entity,
+        resource,
+        cast(str, request.user.login),
+        name,
+        delta_minutes,
+        total,
+    )
+    return jsonify({"total_consumed_minutes": total})
