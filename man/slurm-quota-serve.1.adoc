@@ -88,7 +88,9 @@ curl -s -X POST http://127.0.0.1:9911/login \
 curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/stats
 curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/me
 curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles
+curl -X PUT -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles/operators/bob
 curl -X PUT -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles/managers/bob
+curl -X PUT -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles/managers/bob/accounts/hpc
 curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/quotas/defaults
 curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
   -d '{"user_cpu_minutes":50000,"account_cpu_minutes":200000}' \
@@ -105,7 +107,7 @@ curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/jso
 == Files
 
 `/var/lib/state/slurm-quota/slurm-quota.db`::
-  SQLite database for quotas, consumed/preallocated counters, GPU factors, default settings, and API manager roles.
+  SQLite database for quotas, consumed/preallocated counters, GPU factors, default settings, and operator/manager roles.
 
 `/usr/share/slurm-quota/conf/serve.yml`::
   YAML settings definition for the HTTP service.
