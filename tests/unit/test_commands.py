@@ -14,6 +14,9 @@ from slurm_quota.commands import (
     format_timestamp_with_timezone,
     role_grant_command,
     role_list_command,
+    role_managers_add_command,
+    role_managers_list_command,
+    role_managers_remove_command,
     role_revoke_command,
     role_show_command,
     show_user_stats,
@@ -334,23 +337,23 @@ class TestRoleCommands(SlurmQuotaTestCase):
             patch("slurm_quota.commands.APIClient") as m_client,
             redirect_stdout(buf),
         ):
-            role_grant_command("bob")
-        self.assertEqual(buf.getvalue(), "Granted manager role to bob\n")
-        m_client.return_value.grant_manager.assert_called_once_with("bob")
+            role_grant_command("operator", "bob")
+        self.assertEqual(buf.getvalue(), "Granted operator role to bob\n")
+        m_client.return_value.grant_role.assert_called_once_with("operator", "bob")
 
     def test_role_grant_reports_forbidden(self):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
         ):
-            m_client.return_value.grant_manager.side_effect = ServiceHTTPError(403)
+            m_client.return_value.grant_role.side_effect = ServiceHTTPError(403)
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    role_grant_command("bob")
+                    role_grant_command("operator", "bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,
-            ["ERROR:slurm_quota:Access denied: admin role required to grant manager"],
+            ["ERROR:slurm_quota:Access denied: admin role required to grant operator"],
         )
 
     def test_role_grant_reports_unreachable_service(self):
@@ -358,10 +361,10 @@ class TestRoleCommands(SlurmQuotaTestCase):
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
         ):
-            m_client.return_value.grant_manager.side_effect = URLError("boom")
+            m_client.return_value.grant_role.side_effect = URLError("boom")
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    role_grant_command("bob")
+                    role_grant_command("operator", "bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
         self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
@@ -373,19 +376,19 @@ class TestRoleCommands(SlurmQuotaTestCase):
             patch("slurm_quota.commands.APIClient") as m_client,
             redirect_stdout(buf),
         ):
-            role_revoke_command("bob")
+            role_revoke_command("manager", "bob")
         self.assertEqual(buf.getvalue(), "Revoked manager role from bob\n")
-        m_client.return_value.revoke_manager.assert_called_once_with("bob")
+        m_client.return_value.revoke_role.assert_called_once_with("manager", "bob")
 
     def test_role_revoke_reports_forbidden(self):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
         ):
-            m_client.return_value.revoke_manager.side_effect = ServiceHTTPError(403)
+            m_client.return_value.revoke_role.side_effect = ServiceHTTPError(403)
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    role_revoke_command("bob")
+                    role_revoke_command("manager", "bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,
@@ -397,10 +400,153 @@ class TestRoleCommands(SlurmQuotaTestCase):
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
         ):
-            m_client.return_value.revoke_manager.side_effect = URLError("boom")
+            m_client.return_value.revoke_role.side_effect = URLError("boom")
             with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
                 with self.assertRaises(SystemExit) as cm:
-                    role_revoke_command("bob")
+                    role_revoke_command("manager", "bob")
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(len(log_cm.output), 1)
+        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+
+    def test_role_managers_list_prints_accounts(self):
+        buf = io.StringIO()
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+            redirect_stdout(buf),
+        ):
+            m_client.return_value.list_manager_accounts.return_value = ["dev", "hpc"]
+            role_managers_list_command("bob")
+        self.assertEqual(buf.getvalue(), "dev\nhpc\n")
+        m_client.return_value.list_manager_accounts.assert_called_once_with("bob")
+
+    def test_role_managers_list_prints_empty_message(self):
+        buf = io.StringIO()
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+            redirect_stdout(buf),
+        ):
+            m_client.return_value.list_manager_accounts.return_value = []
+            role_managers_list_command("bob")
+        self.assertEqual(buf.getvalue(), "No accounts assigned to manager bob\n")
+
+    def test_role_managers_list_reports_forbidden(self):
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+        ):
+            m_client.return_value.list_manager_accounts.side_effect = ServiceHTTPError(
+                403
+            )
+            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+                with self.assertRaises(SystemExit) as cm:
+                    role_managers_list_command("bob")
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(
+            log_cm.output,
+            [
+                "ERROR:slurm_quota:Access denied: admin role required to list manager accounts"
+            ],
+        )
+
+    def test_role_managers_list_reports_unreachable_service(self):
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+        ):
+            m_client.return_value.list_manager_accounts.side_effect = URLError("boom")
+            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+                with self.assertRaises(SystemExit) as cm:
+                    role_managers_list_command("bob")
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(len(log_cm.output), 1)
+        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+
+    def test_role_managers_add_prints_confirmation(self):
+        buf = io.StringIO()
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+            redirect_stdout(buf),
+        ):
+            role_managers_add_command("bob", "hpc")
+        self.assertEqual(buf.getvalue(), "Assigned account hpc to manager bob\n")
+        m_client.return_value.add_manager_account.assert_called_once_with("bob", "hpc")
+
+    def test_role_managers_add_reports_forbidden(self):
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+        ):
+            m_client.return_value.add_manager_account.side_effect = ServiceHTTPError(
+                403
+            )
+            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+                with self.assertRaises(SystemExit) as cm:
+                    role_managers_add_command("bob", "hpc")
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(
+            log_cm.output,
+            [
+                "ERROR:slurm_quota:Access denied: admin role required to assign manager accounts"
+            ],
+        )
+
+    def test_role_managers_add_reports_unreachable_service(self):
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+        ):
+            m_client.return_value.add_manager_account.side_effect = URLError("boom")
+            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+                with self.assertRaises(SystemExit) as cm:
+                    role_managers_add_command("bob", "hpc")
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(len(log_cm.output), 1)
+        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+
+    def test_role_managers_remove_prints_confirmation(self):
+        buf = io.StringIO()
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+            redirect_stdout(buf),
+        ):
+            role_managers_remove_command("bob", "hpc")
+        self.assertEqual(buf.getvalue(), "Removed account hpc from manager bob\n")
+        m_client.return_value.remove_manager_account.assert_called_once_with(
+            "bob", "hpc"
+        )
+
+    def test_role_managers_remove_reports_forbidden(self):
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+        ):
+            m_client.return_value.remove_manager_account.side_effect = ServiceHTTPError(
+                403
+            )
+            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+                with self.assertRaises(SystemExit) as cm:
+                    role_managers_remove_command("bob", "hpc")
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(
+            log_cm.output,
+            [
+                "ERROR:slurm_quota:Access denied: admin role required to remove manager accounts"
+            ],
+        )
+
+    def test_role_managers_remove_reports_unreachable_service(self):
+        with (
+            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+        ):
+            m_client.return_value.remove_manager_account.side_effect = URLError("boom")
+            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+                with self.assertRaises(SystemExit) as cm:
+                    role_managers_remove_command("bob", "hpc")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
         self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
