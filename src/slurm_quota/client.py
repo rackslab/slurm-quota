@@ -162,16 +162,45 @@ class APIClient:
             return []
         return list(users)
 
-    def grant_manager(self, username: str) -> None:
+    def grant_role(self, role: Literal["operator", "manager"], username: str) -> None:
         status, _payload = self._api_request(
-            "PUT", f"roles/managers/{username}", require_token=True
+            "PUT", f"roles/{role}s/{username}", require_token=True
         )
         if status != HTTPStatus.NO_CONTENT:
             raise ServiceHTTPError(status)
 
-    def revoke_manager(self, username: str) -> None:
+    def revoke_role(self, role: Literal["operator", "manager"], username: str) -> None:
         status, _payload = self._api_request(
-            "DELETE", f"roles/managers/{username}", require_token=True
+            "DELETE", f"roles/{role}s/{username}", require_token=True
+        )
+        if status != HTTPStatus.NO_CONTENT:
+            raise ServiceHTTPError(status)
+
+    def list_manager_accounts(self, username: str) -> List[str]:
+        status, payload = self._api_request(
+            "GET", f"roles/managers/{username}/accounts", require_token=True
+        )
+        if status != HTTPStatus.OK:
+            raise ServiceHTTPError(status)
+        accounts = payload.get("accounts", [])
+        if not isinstance(accounts, list):
+            return []
+        return [str(account) for account in accounts]
+
+    def add_manager_account(self, username: str, account: str) -> None:
+        status, _payload = self._api_request(
+            "PUT",
+            f"roles/managers/{username}/accounts/{account}",
+            require_token=True,
+        )
+        if status != HTTPStatus.NO_CONTENT:
+            raise ServiceHTTPError(status)
+
+    def remove_manager_account(self, username: str, account: str) -> None:
+        status, _payload = self._api_request(
+            "DELETE",
+            f"roles/managers/{username}/accounts/{account}",
+            require_token=True,
         )
         if status != HTTPStatus.NO_CONTENT:
             raise ServiceHTTPError(status)
