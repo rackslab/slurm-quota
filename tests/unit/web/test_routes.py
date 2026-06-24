@@ -537,3 +537,94 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
         self.assertIn("session_expired", resp.headers["Location"])
         with client.session_transaction() as sess:
             self.assertNotIn("token", sess)
+
+
+class TestConsumptionRoutes(SlurmQuotaTestCase):
+    def setUp(self):
+        super().setUp()
+        configure_web_app()
+
+    def test_dashboard_shows_consumption_edit_for_admin(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web.application.test_client()
+            resp = client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_data(as_text=True)
+        self.assertIn('action="/consumption"', body)
+        self.assertIn('name="delta_minutes"', body)
+
+    def test_dashboard_hides_consumption_edit_for_user(self):
+        with (
+            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch("slurm_quota.web.routes.current_role", return_value="user"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web.application.test_client()
+            resp = client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_data(as_text=True)
+        self.assertNotIn('action="/consumption"', body)
+
+    def test_consumption_post_calls_api_for_manager(self):
+        with (
+            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch("slurm_quota.web.routes.current_role", return_value="manager"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web.application.test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            resp = client.post(
+                "/consumption",
+                data={
+                    "_csrf": csrf,
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "delta_minutes": "-15",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        m_client.return_value.adjust_consumption.assert_called_once_with(
+            "user", "alice", "cpu", -15
+        )
+
+    def test_consumption_post_redirects_user_to_dashboard(self):
+        with (
+            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch("slurm_quota.web.routes.current_role", return_value="user"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            client = web.application.test_client()
+            resp = client.post(
+                "/consumption",
+                data={
+                    "_csrf": "token",
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "delta_minutes": "10",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        m_client.return_value.adjust_consumption.assert_not_called()
+
+    def test_consumption_post_rejects_invalid_csrf(self):
+        with auth_disabled():
+            client = web.application.test_client()
+            resp = client.post(
+                "/consumption",
+                data={
+                    "_csrf": "wrong",
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "delta_minutes": "10",
+                },
+            )
+        self.assertEqual(resp.status_code, 400)
