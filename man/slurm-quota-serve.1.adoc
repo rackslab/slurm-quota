@@ -89,6 +89,10 @@ curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/stats
 curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/me
 curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles
 curl -X PUT -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles/managers/bob
+curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/quotas/defaults
+curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"user_cpu_minutes":50000,"account_cpu_minutes":200000}' \
+  http://127.0.0.1:9911/quotas/defaults
 curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
   -d '{"delta_minutes":30}' http://127.0.0.1:9911/consumption/user/alice/cpu
 curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
