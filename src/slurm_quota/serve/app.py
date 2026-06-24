@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from flask import Flask, jsonify
-from werkzeug.exceptions import Forbidden, Unauthorized
+from werkzeug.exceptions import BadRequest, Forbidden, Unauthorized
 from rfl.authentication.ldap import LDAPAuthentifier
 from rfl.settings import RuntimeSettings
 from rfl.web.tokens import RFLTokenizedWebApp
@@ -43,6 +43,7 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
         self.register_error_handler(401, self.unauthorized)
         self.register_error_handler(403, self.forbidden)
         self.register_error_handler(404, self.not_found)
+        self.register_error_handler(400, self.bad_request)
         self.add_url_rule("/health", view_func=routes.health, methods=["GET"])
         self.add_url_rule("/login", view_func=routes.login, methods=["POST"])
         self.add_url_rule("/stats", view_func=routes.stats, methods=["GET"])
@@ -77,6 +78,11 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
             "/quotas/accounts/<account>/gpu",
             view_func=routes.set_account_gpu_quota,
             methods=["PUT"],
+        )
+        self.add_url_rule(
+            "/consumption/<entity>/<name>/<resource>",
+            view_func=routes.adjust_consumption,
+            methods=["PATCH"],
         )
 
     def load_settings(self, conf_defs: Path, site_config: Path) -> None:
@@ -157,4 +163,15 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
                 }
             ),
             403,
+        )
+
+    def bad_request(self, exc: BadRequest) -> Any:
+        return (
+            jsonify(
+                {
+                    "error": "bad_request",
+                    "message": exc.description or "Bad request",
+                }
+            ),
+            400,
         )
