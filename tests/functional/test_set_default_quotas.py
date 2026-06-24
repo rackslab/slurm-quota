@@ -2,98 +2,121 @@
 
 from __future__ import annotations
 
-from slurm_quota.database import init_database
-
+import json
 from unittest.mock import patch
+from urllib.error import URLError
 
-from tests.functional.functional_base import FunctionalCLIBase
+from slurm_quota.token import service_token_path
+
+from tests.functional.functional_base import (
+    FakeNoContentUrlopenResponse,
+    FunctionalAPICliBase,
+)
 
 
-class TestSetDefaultQuotasCommand(FunctionalCLIBase):
-    def test_set_default_quotas_updates_all_keys(self):
-        init_database()
-        with patch("slurm_quota.auth.get_current_user", return_value="root"):
-            with patch("slurm_quota.database.set_database_permissions"):
-                with self.capture_stdout() as out:
-                    self.run_cli_main(
-                        [
-                            "slurm-quota",
-                            "set-default-quotas",
-                            "--user-cpu",
-                            "10",
-                            "--user-gpu",
-                            "20",
-                            "--account-cpu",
-                            "30",
-                            "--account-gpu",
-                            "40",
-                        ]
-                    )
+class TestSetDefaultQuotasCommand(FunctionalAPICliBase):
+    def _set_default_quotas_urlopen_side_effect(self, request):
+        url = request.full_url
+        method = request.get_method()
+        if method == "PUT" and url.endswith("/quotas/defaults"):
+            body = json.loads(request.data.decode("utf-8"))
+            self._last_put_body = body
+            return FakeNoContentUrlopenResponse(status=204)
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    def setUp(self):
+        super().setUp()
+        self._last_put_body = {}
+
+    def test_set_default_quotas_calls_api_with_all_keys(self):
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                side_effect=self._set_default_quotas_urlopen_side_effect,
+            ) as m_urlopen,
+            self.capture_stdout() as out,
+        ):
+            self.run_cli_main(
+                [
+                    "slurm-quota",
+                    "set-default-quotas",
+                    "--user-cpu",
+                    "10",
+                    "--user-gpu",
+                    "20",
+                    "--account-cpu",
+                    "30",
+                    "--account-gpu",
+                    "40",
+                ]
+            )
         self.assertEqual(
             out.getvalue(),
             "Successfully updated default quotas\n",
         )
-        with self.db_connection() as conn:
-            rows = dict(conn.execute("SELECT key, value FROM settings").fetchall())
-        self.assertEqual(rows["default_user_quota_cpu_minutes"], "10")
-        self.assertEqual(rows["default_user_quota_gpu_minutes"], "20")
-        self.assertEqual(rows["default_account_quota_cpu_minutes"], "30")
-        self.assertEqual(rows["default_account_quota_gpu_minutes"], "40")
-
-    def test_set_default_quotas_partial_only_changes_given_keys(self):
-        init_database()
-        self.update_settings(
-            default_user_quota_cpu_minutes=1,
-            default_user_quota_gpu_minutes=2,
-            default_account_quota_cpu_minutes=3,
-            default_account_quota_gpu_minutes=4,
+        self.assertEqual(
+            self._last_put_body,
+            {
+                "user_cpu_minutes": 10,
+                "user_gpu_minutes": 20,
+                "account_cpu_minutes": 30,
+                "account_gpu_minutes": 40,
+            },
         )
-        with patch("slurm_quota.auth.get_current_user", return_value="root"):
-            with patch("slurm_quota.database.set_database_permissions"):
-                with self.capture_stdout() as out:
-                    self.run_cli_main(
-                        ["slurm-quota", "set-default-quotas", "--user-cpu", "999"]
-                    )
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.get_method(), "PUT")
+        self.assertTrue(req.full_url.endswith("/quotas/defaults"))
+        self.assertEqual(req.get_header("Authorization"), "Bearer saved-jwt")
+
+    def test_set_default_quotas_partial_only_sends_given_keys(self):
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                side_effect=self._set_default_quotas_urlopen_side_effect,
+            ),
+            self.capture_stdout() as out,
+        ):
+            self.run_cli_main(
+                ["slurm-quota", "set-default-quotas", "--user-cpu", "999"]
+            )
         self.assertEqual(
             out.getvalue(),
             "Successfully updated default quotas\n",
         )
-        with self.db_connection() as conn:
-            rows = dict(conn.execute("SELECT key, value FROM settings").fetchall())
-        self.assertEqual(rows["default_user_quota_cpu_minutes"], "999")
-        self.assertEqual(rows["default_user_quota_gpu_minutes"], "2")
-        self.assertEqual(rows["default_account_quota_cpu_minutes"], "3")
-        self.assertEqual(rows["default_account_quota_gpu_minutes"], "4")
+        self.assertEqual(self._last_put_body, {"user_cpu_minutes": 999})
 
-    def test_set_default_quotas_rejects_non_root(self):
-        init_database()
-        with patch("slurm_quota.auth.get_current_user", return_value="slurm"):
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    self.run_cli_main(
-                        [
-                            "slurm-quota",
-                            "set-default-quotas",
-                            "--user-cpu",
-                            "1",
-                        ]
-                    )
-        self.assertEqual(cm.exception.code, 1)
+    def test_set_default_quotas_requires_token(self):
+        service_token_path().unlink()
+        with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+            self.run_cli_main_exit(
+                ["slurm-quota", "set-default-quotas", "--user-cpu", "1"],
+                1,
+            )
+        self.assertIn("No API token available", log_cm.output[0])
+
+    def test_set_default_quotas_reports_access_denied_on_forbidden(self):
+        def _forbidden(request):
+            return FakeNoContentUrlopenResponse(status=403)
+
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=_forbidden),
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+        ):
+            self.run_cli_main_exit(
+                ["slurm-quota", "set-default-quotas", "--user-cpu", "1"],
+                1,
+            )
         self.assertEqual(
             log_cm.output,
             [
-                "ERROR:slurm_quota:set-default-quotas command can only be executed "
-                "by root user, not by slurm",
+                "ERROR:slurm_quota:Access denied: manager or admin role required "
+                "to set default quotas",
             ],
         )
 
     def test_set_default_quotas_requires_at_least_one_flag(self):
-        with patch("slurm_quota.auth.get_current_user", return_value="root"):
-            with patch("slurm_quota.database.set_database_permissions"):
-                with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                    with self.assertRaises(SystemExit) as cm:
-                        self.run_cli_main(["slurm-quota", "set-default-quotas"])
-        self.assertEqual(cm.exception.code, 1)
+        with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+            self.run_cli_main_exit(["slurm-quota", "set-default-quotas"], 1)
         self.assertEqual(
             log_cm.output,
             [
@@ -101,3 +124,14 @@ class TestSetDefaultQuotasCommand(FunctionalCLIBase):
                 "--user-gpu, --account-cpu, --account-gpu",
             ],
         )
+
+    def test_set_default_quotas_reports_unreachable_service(self):
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=URLError("boom")),
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+        ):
+            self.run_cli_main_exit(
+                ["slurm-quota", "set-default-quotas", "--user-cpu", "1"],
+                1,
+            )
+        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])

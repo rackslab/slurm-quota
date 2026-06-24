@@ -371,6 +371,50 @@ class TestAPIClientQuotas(SlurmQuotaTestCase):
             APIClient(token=None).set_account_cpu_quota("hpc", 50)
 
 
+class TestAPIClientDefaultQuotas(SlurmQuotaTestCase):
+    def test_get_default_quotas_sends_get(self):
+        payload = {
+            "user_cpu_minutes": 100,
+            "user_gpu_minutes": 200,
+            "account_cpu_minutes": 300,
+            "account_gpu_minutes": 400,
+        }
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(payload),
+        ) as m_urlopen:
+            result = APIClient(token="jwt").get_default_quotas()
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/quotas/defaults", req.full_url)
+        self.assertEqual(result, payload)
+
+    def test_set_default_quotas_sends_partial_put(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").set_default_quotas(user_cpu=999)
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.method, "PUT")
+        self.assertIn("/quotas/defaults", req.full_url)
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body, {"user_cpu_minutes": 999})
+
+    def test_set_default_quotas_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").set_default_quotas(account_cpu=50)
+        self.assertEqual(cm.exception.status, 403)
+
+    def test_get_default_quotas_raises_value_error_when_token_missing(self):
+        with self.assertRaises(ValueError):
+            APIClient(token=None).get_default_quotas()
+
+
 class TestAPIClientConsumption(SlurmQuotaTestCase):
     def test_adjust_consumption_sends_patch_for_user_cpu(self):
         with patch(
