@@ -369,3 +369,53 @@ class TestAPIClientQuotas(SlurmQuotaTestCase):
     def test_set_account_cpu_quota_raises_value_error_when_token_missing(self):
         with self.assertRaises(ValueError):
             APIClient(token=None).set_account_cpu_quota("hpc", 50)
+
+
+class TestAPIClientConsumption(SlurmQuotaTestCase):
+    def test_adjust_consumption_sends_patch_for_user_cpu(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"total_consumed_minutes": 130}),
+        ) as m_urlopen:
+            total = APIClient(token="jwt").adjust_consumption("user", "bob", "cpu", 30)
+        self.assertEqual(total, 130)
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.method, "PATCH")
+        self.assertIn("/consumption/user/bob/cpu", req.full_url)
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body, {"delta_minutes": 30})
+
+    def test_adjust_consumption_sends_patch_for_account_gpu(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"total_consumed_minutes": 0}),
+        ) as m_urlopen:
+            total = APIClient(token="jwt").adjust_consumption(
+                "account", "hpc", "gpu", -10
+            )
+        self.assertEqual(total, 0)
+        req = m_urlopen.call_args[0][0]
+        self.assertIn("/consumption/account/hpc/gpu", req.full_url)
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body, {"delta_minutes": -10})
+
+    def test_adjust_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").adjust_consumption("user", "bob", "gpu", 10)
+        self.assertEqual(cm.exception.status, 403)
+
+    def test_adjust_raises_value_error_when_token_missing(self):
+        with self.assertRaises(ValueError):
+            APIClient(token=None).adjust_consumption("user", "bob", "cpu", 10)
+
+    def test_adjust_raises_value_error_when_total_missing(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}),
+        ):
+            with self.assertRaises(ValueError):
+                APIClient(token="jwt").adjust_consumption("user", "bob", "cpu", 10)
