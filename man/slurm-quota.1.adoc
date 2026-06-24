@@ -115,7 +115,7 @@ slurm-quota stats --all --hours
 
 === role
 
-*slurm-quota role* *show* | *list* | *grant* <username> | *revoke* <username>
+*slurm-quota role* *show* | *list* | *grant* <operator|manager> <username> | *revoke* <operator|manager> <username> | *managers* <username> *list* | *managers* <username> *add* <account> | *managers* <username> *remove* <account>
 
 Show or manage REST API user roles. Requires a saved JWT token or
 `SLURM_QUOTA_TOKEN`.
@@ -128,19 +128,31 @@ Subcommands:
 *list*::
   List all users with their role (admin only).
 
-*grant* <username>::
-  Grant manager role to a user (admin only).
+*grant* <operator|manager> <username>::
+  Grant operator or manager role to a user (admin only).
 
-*revoke* <username>::
-  Revoke manager role from a user (admin only).
+*revoke* <operator|manager> <username>::
+  Revoke operator or manager role from a user (admin only).
+
+*managers* <username> *list*::
+  List accounts assigned to a manager (admin only).
+
+*managers* <username> *add* <account>::
+  Assign an account to a manager (admin only).
+
+*managers* <username> *remove* <account>::
+  Remove an account from a manager (admin only).
 
 Examples:
 
 ....
 slurm-quota role show
 slurm-quota role list
-slurm-quota role grant bob
-slurm-quota role revoke bob
+slurm-quota role grant operator bob
+slurm-quota role grant manager bob
+slurm-quota role revoke operator bob
+slurm-quota role managers bob list
+slurm-quota role managers bob add hpc
 ....
 
 === adjust
@@ -148,7 +160,7 @@ slurm-quota role revoke bob
 *slurm-quota adjust* (*--user* <username> | *--account* <account>) (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int>)
 
 Adjust consumed CPU/GPU time for one user or one account.
-Requires a saved JWT token or `SLURM_QUOTA_TOKEN`, and manager or admin role.
+Requires a saved JWT token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
 
 Options:
 
@@ -186,7 +198,7 @@ slurm-quota adjust --account projX --gpu --hours=-1
 *slurm-quota user-quota* <username> <quota_minutes>
 
 Set user CPU quota in minutes (`-1` means unlimited). Requires a saved JWT
-token or `SLURM_QUOTA_TOKEN`, and manager or admin role.
+token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
 
 Example:
 
@@ -199,7 +211,7 @@ slurm-quota user-quota alice 50000
 *slurm-quota account-quota* <account> <quota_minutes>
 
 Set account CPU quota in minutes (`-1` means unlimited). Requires a saved JWT
-token or `SLURM_QUOTA_TOKEN`, and manager or admin role.
+token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
 
 Example:
 
@@ -212,7 +224,7 @@ slurm-quota account-quota projX 200000
 *slurm-quota user-gpu-quota* <username> <quota_gpu_minutes>
 
 Set user GPU quota in minutes (`-1` means unlimited). Requires a saved JWT
-token or `SLURM_QUOTA_TOKEN`, and manager or admin role.
+token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
 
 Example:
 
@@ -225,7 +237,7 @@ slurm-quota user-gpu-quota alice 10000
 *slurm-quota account-gpu-quota* <account> <quota_gpu_minutes>
 
 Set account GPU quota in minutes (`-1` means unlimited). Requires a saved JWT
-token or `SLURM_QUOTA_TOKEN`, and manager or admin role.
+token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
 
 Example:
 
@@ -238,14 +250,14 @@ slurm-quota account-gpu-quota projX 50000
 *slurm-quota gpu-factors*
 
 Show configured GPU charging factors. Requires a saved API token or
-`SLURM_QUOTA_TOKEN` (manager or admin role).
+`SLURM_QUOTA_TOKEN` (operator or admin role).
 
 === set-gpu-factor
 
 *slurm-quota set-gpu-factor* <gpu_type> <factor>
 
 Set GPU charging factor for a GPU type (`default` is accepted as fallback type). Argument _factor_ must be a positive float (> 0).
-Requires a saved API token or `SLURM_QUOTA_TOKEN` (manager or admin role).
+Requires a saved API token or `SLURM_QUOTA_TOKEN` (operator or admin role).
 
 Example:
 
@@ -258,7 +270,7 @@ slurm-quota set-gpu-factor h100 0.5
 *slurm-quota default-quotas*
 
 Show default quotas used for newly auto-created users/accounts.
-Requires a saved API token or `SLURM_QUOTA_TOKEN` (manager or admin role).
+Requires a saved API token or `SLURM_QUOTA_TOKEN` (operator or admin role).
 
 
 === set-default-quotas
@@ -267,7 +279,7 @@ Requires a saved API token or `SLURM_QUOTA_TOKEN` (manager or admin role).
 
 Set one or more default quotas for newly auto-created users/accounts.
 At least one option is required at runtime. Argument _minutes_ must be a positive integer or `-1` means unlimited.
-Requires a saved API token or `SLURM_QUOTA_TOKEN` (manager or admin role).
+Requires a saved API token or `SLURM_QUOTA_TOKEN` (operator or admin role).
 
 Example:
 
