@@ -15,11 +15,9 @@ slurm-quota - manage Slurm CPU/GPU quota accounting, limits, and stats
 
 == Description
 
-*slurm-quota* manages CPU and GPU minute quotas for Slurm users and accounts.
-It configures quota and GPU charging settings and displays statistics from
-the HTTP service started by `slurm-quota-serve`.
-
-The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
+*slurm-quota* is a REST API client for the `slurm-quota-serve` HTTP service.
+It manages CPU and GPU minute quotas for Slurm users and accounts, configures
+quota and GPU charging settings, and displays consumption statistics.
 
 == Global Options
 
@@ -41,8 +39,8 @@ The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 
 *slurm-quota login* [<username>] [*--save*]
 
-Obtain a JWT from the HTTP service (`POST /login`). Requires
-`authentication.method=ldap` on `slurm-quota-serve`.
+Authenticate with LDAP and obtain a JWT from the HTTP service (`POST /login`).
+Requires LDAP authentication enabled on `slurm-quota-serve`.
 
 Options:
 
@@ -239,19 +237,20 @@ slurm-quota account-gpu-quota projX 50000
 
 *slurm-quota gpu-factors*
 
-Show configured GPU charging factors.
+Show configured GPU charging factors. Requires a saved API token or
+`SLURM_QUOTA_TOKEN` (manager or admin role).
 
 === set-gpu-factor
 
 *slurm-quota set-gpu-factor* <gpu_type> <factor>
 
 Set GPU charging factor for a GPU type (`default` is accepted as fallback type). Argument _factor_ must be a positive float (> 0).
-This command must run as `root`.
+Requires a saved API token or `SLURM_QUOTA_TOKEN` (manager or admin role).
 
 Example:
 
 ....
-sudo slurm-quota set-gpu-factor h100 0.5
+slurm-quota set-gpu-factor h100 0.5
 ....
 
 === default-quotas
@@ -295,18 +294,11 @@ slurm-quota set-default-quotas --user-cpu 50000 --account-cpu 200000
 *NO_COLOR*::
   If set, disables colored status bars in `stats` output.
 
-*SLURM_QUOTA_WEB_ASSETS_DIR*, *SLURM_QUOTA_WEB_HOST*, *SLURM_QUOTA_WEB_PORT*::
-  Optional variables used by `slurm-quota-web` to locate templates/static assets
-  and configure standalone test server bind host/port.
-
 == Files
 
 `$XDG_CONFIG_HOME/slurm-quota/token`::
   JWT saved by `login --save` or `token` for HTTP API authentication
   (default: `~/.config/slurm-quota/token`).
-
-`/var/lib/state/slurm-quota/slurm-quota.db`::
-  SQLite database for quotas, consumed/preallocated counters, GPU factors, and default settings.
 
 == Exit Status
 
