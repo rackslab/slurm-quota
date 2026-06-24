@@ -6,7 +6,12 @@ import json
 import sqlite3
 from unittest.mock import patch
 
-from slurm_quota.database import grant_api_manager, init_database
+from slurm_quota.database import (
+    grant_manager,
+    grant_manager_account,
+    grant_operator,
+    init_database,
+)
 
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 
@@ -137,14 +142,14 @@ class TestStatsRoute(ServeRoutesTestCase):
         resp = client.get("/stats?username=bob", headers=self._headers("carol"))
         self.assertEqual(resp.status_code, 403)
 
-    def test_manager_can_query_all_stats(self):
+    def test_operator_can_query_all_stats(self):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
                 "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
                 ("bob", 30),
             )
-            grant_api_manager(conn, "carol")
+            grant_operator(conn, "carol")
             conn.commit()
 
         client = app.test_client()
@@ -173,3 +178,116 @@ class TestStatsRoute(ServeRoutesTestCase):
         body = json.loads(resp.data)
         self.assertEqual(len(body["users"]), 1)
         self.assertEqual(body["users"][0]["username"], "carol")
+
+    def test_manager_can_query_assigned_account_stats(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("hpc", 100),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("dev", 40),
+            )
+            grant_manager(conn, "carol")
+            grant_manager_account(conn, "carol", "hpc")
+            conn.commit()
+
+        client = app.test_client()
+        resp = client.get("/stats?account=hpc", headers=self._headers("carol"))
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.data)
+        self.assertEqual(len(body["accounts"]), 1)
+        self.assertEqual(body["accounts"][0]["account"], "hpc")
+
+    def test_manager_cannot_query_unassigned_account_stats(self):
+        init_database()
+        with self.db_connection() as conn:
+            grant_manager(conn, "carol")
+            grant_manager_account(conn, "carol", "hpc")
+            conn.commit()
+
+        client = app.test_client()
+        resp = client.get("/stats?account=dev", headers=self._headers("carol"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_manager_can_query_member_user_stats(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 30),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("hpc", 100),
+            )
+            grant_manager(conn, "carol")
+            grant_manager_account(conn, "carol", "hpc")
+            conn.commit()
+
+        with patch("slurm_quota.slurm.get_user_accounts", return_value={"hpc", "dev"}):
+            client = app.test_client()
+            resp = client.get("/stats?username=bob", headers=self._headers("carol"))
+
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.data)
+        self.assertEqual(len(body["users"]), 1)
+        self.assertEqual(body["users"][0]["username"], "bob")
+        self.assertEqual(len(body["accounts"]), 1)
+        self.assertEqual(body["accounts"][0]["account"], "hpc")
+
+    def test_manager_cannot_query_non_member_user_stats(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 30),
+            )
+            grant_manager(conn, "carol")
+            grant_manager_account(conn, "carol", "hpc")
+            conn.commit()
+
+        with patch("slurm_quota.slurm.get_user_accounts", return_value={"dev"}):
+            client = app.test_client()
+            resp = client.get("/stats?username=bob", headers=self._headers("carol"))
+
+        self.assertEqual(resp.status_code, 403)
+
+    def test_manager_unfiltered_stats_returns_assigned_scope(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 30),
+            )
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("dave", 20),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("hpc", 100),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("dev", 40),
+            )
+            grant_manager(conn, "carol")
+            grant_manager_account(conn, "carol", "hpc")
+            conn.commit()
+
+        with patch(
+            "slurm_quota.slurm.get_account_users",
+            side_effect=lambda account: {"bob"} if account == "hpc" else set(),
+        ):
+            client = app.test_client()
+            resp = client.get("/stats", headers=self._headers("carol"))
+
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.data)
+        usernames = {entry["username"] for entry in body["users"]}
+        accounts = {entry["account"] for entry in body["accounts"]}
+        self.assertEqual(usernames, {"bob"})
+        self.assertEqual(accounts, {"hpc"})
