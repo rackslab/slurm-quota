@@ -18,9 +18,8 @@ slurm-quota-web - HTTP server for Slurm quota statistics web dashboard
 *slurm-quota-web* starts a HTTP server that renders Slurm quota and consumption
 statistics in HTML web dashboard.
 
-The dashboard is read-only and consumes the existing `slurm-quota` HTTP API
-(`/stats`) exposed by `slurm-quota-serve`. A valid JWT is always required to
-query `/stats`.
+The dashboard consumes the existing `slurm-quota` HTTP API exposed by
+`slurm-quota-serve`. A valid JWT is always required to query the API.
 
 When `authentication.method=ldap`, the dashboard presents a login page. Users
 authenticate with their LDAP credentials; the application obtains a JWT from
