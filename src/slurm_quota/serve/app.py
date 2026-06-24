@@ -79,6 +79,16 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
             view_func=routes.adjust_consumption,
             methods=["PATCH"],
         )
+        self.add_url_rule(
+            "/factors/gpu",
+            view_func=routes.get_gpu_factors,
+            methods=["GET"],
+        )
+        self.add_url_rule(
+            "/factors/gpu/<gpu_type>",
+            view_func=routes.set_gpu_factor,
+            methods=["PUT"],
+        )
 
     def load_settings(self, conf_defs: Path, site_config: Path) -> None:
         self.settings = RuntimeSettings.yaml_definition(conf_defs)

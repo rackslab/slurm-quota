@@ -22,12 +22,14 @@ from slurm_quota.database import (
     get_default_quota_settings,
     grant_api_manager,
     list_users_with_roles,
+    load_gpu_factors,
     query_accounts_aggregate,
     query_users_aggregate,
     revoke_api_manager,
     set_account_gpu_quota as db_set_account_gpu_quota,
     set_account_quota as db_set_account_quota,
     set_default_quota_settings,
+    set_gpu_factor as db_set_gpu_factor,
     set_user_gpu_quota as db_set_user_gpu_quota,
     set_user_quota as db_set_user_quota,
 )
@@ -344,3 +346,38 @@ def adjust_consumption(entity: str, name: str, resource: str) -> Any:
         total,
     )
     return jsonify({"total_consumed_minutes": total})
+
+
+@require_role("admin", "manager")
+def get_gpu_factors() -> Any:
+    try:
+        factors = load_gpu_factors()
+    except sqlite3.Error as exc:
+        logger.error("get gpu factors failed: %s", exc)
+        return jsonify({"error": "db_error"}), 500
+    default_factor = factors.pop("__default__", 1.0)
+    return jsonify({"default_factor": default_factor, "factors": factors})
+
+
+@require_role("admin", "manager")
+def set_gpu_factor(gpu_type: str) -> Any:
+    if not gpu_type:
+        abort(400, description="Invalid gpu_type")
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        abort(400, description="Invalid JSON body")
+    factor = payload.get("factor")
+    if not isinstance(factor, (int, float)) or factor <= 0:
+        abort(400, description="factor must be a positive number")
+    try:
+        db_set_gpu_factor(gpu_type, float(factor))
+    except sqlite3.Error as exc:
+        logger.error("set gpu factor failed: %s", exc)
+        return jsonify({"error": "db_error"}), 500
+    logger.info(
+        "gpu factor: manager=%s gpu_type=%s factor=%s",
+        cast(str, request.user.login),
+        gpu_type,
+        factor,
+    )
+    return "", 204
