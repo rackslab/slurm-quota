@@ -17,6 +17,17 @@
 <form method="post" action="{{ url_for('roles_post') }}" class="roles-grant-form">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <input type="hidden" name="action" value="grant">
+  <input type="hidden" name="role" value="operator">
+  <label>Grant operator to username
+    <input type="text" name="username" placeholder="bob" required>
+  </label>
+  <button type="submit">Grant operator</button>
+</form>
+
+<form method="post" action="{{ url_for('roles_post') }}" class="roles-grant-form">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <input type="hidden" name="action" value="grant">
+  <input type="hidden" name="role" value="manager">
   <label>Grant manager to username
     <input type="text" name="username" placeholder="bob" required>
   </label>
@@ -29,6 +40,7 @@
     <tr>
       <th>Username</th>
       <th>Role</th>
+      <th>Accounts</th>
       <th>Actions</th>
     </tr>
   </thead>
@@ -39,9 +51,49 @@
       <td>{{ entry.role }}</td>
       <td>
         {% if entry.role == "manager" %}
+          {% if entry.accounts %}
+            <ul class="manager-accounts-list">
+              {% for account in entry.accounts %}
+              <li>
+                {{ account }}
+                <form method="post" action="{{ url_for('roles_manager_accounts_post') }}" class="inline-form">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <input type="hidden" name="action" value="remove">
+                  <input type="hidden" name="username" value="{{ entry.username }}">
+                  <input type="hidden" name="account" value="{{ account }}">
+                  <button type="submit">Remove</button>
+                </form>
+              </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <span class="muted">None</span>
+          {% endif %}
+          <form method="post" action="{{ url_for('roles_manager_accounts_post') }}" class="inline-form manager-account-add-form">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="add">
+            <input type="hidden" name="username" value="{{ entry.username }}">
+            <input type="text" name="account" placeholder="hpc" required>
+            <button type="submit">Add account</button>
+          </form>
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if entry.role == "operator" %}
         <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <input type="hidden" name="action" value="revoke">
+          <input type="hidden" name="role" value="operator">
+          <input type="hidden" name="username" value="{{ entry.username }}">
+          <button type="submit">Revoke operator</button>
+        </form>
+        {% elif entry.role == "manager" %}
+        <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <input type="hidden" name="action" value="revoke">
+          <input type="hidden" name="role" value="manager">
           <input type="hidden" name="username" value="{{ entry.username }}">
           <button type="submit">Revoke manager</button>
         </form>
@@ -49,6 +101,14 @@
         <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <input type="hidden" name="action" value="grant">
+  <input type="hidden" name="role" value="operator">
+          <input type="hidden" name="username" value="{{ entry.username }}">
+          <button type="submit">Grant operator</button>
+        </form>
+        <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <input type="hidden" name="action" value="grant">
+  <input type="hidden" name="role" value="manager">
           <input type="hidden" name="username" value="{{ entry.username }}">
           <button type="submit">Grant manager</button>
         </form>

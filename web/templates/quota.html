@@ -1,5 +1,5 @@
 {% macro quota_cell(target, name, resource, usage) %}
-{% if user_role in ("admin", "manager") %}
+{% if user_role in ("admin", "operator") %}
 <form method="post" action="{{ url_for('quotas_post') }}" class="quota-edit-form inline-form">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
   <input type="hidden" name="target" value="{{ target }}">

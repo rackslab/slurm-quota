@@ -1,5 +1,5 @@
 {% macro consumption_cell(target, name, resource, usage) %}
-{% if user_role in ("admin", "manager") %}
+{% if user_role in ("admin", "operator") %}
 <span class="consumption-value">{{ usage.consumed }}</span>
 <form method="post" action="{{ url_for('consumption_post') }}" class="consumption-edit-form inline-form">
   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
