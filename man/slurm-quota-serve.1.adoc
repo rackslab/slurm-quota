@@ -97,6 +97,9 @@ curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/j
   -d '{"delta_minutes":30}' http://127.0.0.1:9911/consumption/user/alice/cpu
 curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
   -d '{"delta_minutes":-60}' http://127.0.0.1:9911/consumption/account/hpc/gpu
+curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/factors/gpu
+curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"factor":0.5}' http://127.0.0.1:9911/factors/gpu/h100
 ....
 
 == Files
