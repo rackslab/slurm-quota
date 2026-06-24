@@ -2,17 +2,41 @@
 
 from __future__ import annotations
 
-from slurm_quota.database import init_database
-
-import os
 from textwrap import dedent
+from unittest.mock import patch
+from urllib.error import URLError
 
-from tests.functional.functional_base import FunctionalCLIBase
+from slurm_quota.token import service_token_path
+
+from tests.functional.functional_base import (
+    FakeJsonUrlopenResponse,
+    FunctionalAPICliBase,
+)
 
 
-class TestDefaultQuotasCommand(FunctionalCLIBase):
-    def test_default_quotas_initializes_db_and_prints_defaults(self):
-        with self.capture_stdout() as out:
+class TestDefaultQuotasCommand(FunctionalAPICliBase):
+    def _default_quotas_urlopen_side_effect(self, request):
+        url = request.full_url
+        method = request.get_method()
+        if method == "GET" and url.endswith("/quotas/defaults"):
+            return FakeJsonUrlopenResponse(
+                {
+                    "user_cpu_minutes": -1,
+                    "user_gpu_minutes": -1,
+                    "account_cpu_minutes": -1,
+                    "account_gpu_minutes": -1,
+                }
+            )
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    def test_default_quotas_calls_api_and_prints_defaults(self):
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                side_effect=self._default_quotas_urlopen_side_effect,
+            ) as m_urlopen,
+            self.capture_stdout() as out,
+        ):
             self.run_cli_main(["slurm-quota", "default-quotas"])
         self.assertEqual(
             out.getvalue(),
@@ -27,17 +51,32 @@ class TestDefaultQuotasCommand(FunctionalCLIBase):
                 """
             ).lstrip("\n"),
         )
-        self.assertTrue(os.path.isfile(self.db_path))
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.get_method(), "GET")
+        self.assertTrue(req.full_url.endswith("/quotas/defaults"))
+        self.assertEqual(req.get_header("Authorization"), "Bearer saved-jwt")
 
-    def test_default_quotas_reflects_settings_table(self):
-        init_database()
-        self.update_settings(
-            default_user_quota_cpu_minutes=100,
-            default_user_quota_gpu_minutes=200,
-            default_account_quota_cpu_minutes=300,
-            default_account_quota_gpu_minutes=400,
-        )
-        with self.capture_stdout() as out:
+    def test_default_quotas_reflects_api_payload(self):
+        def _custom_payload(request):
+            if request.get_method() == "GET" and request.full_url.endswith(
+                "/quotas/defaults"
+            ):
+                return FakeJsonUrlopenResponse(
+                    {
+                        "user_cpu_minutes": 100,
+                        "user_gpu_minutes": 200,
+                        "account_cpu_minutes": 300,
+                        "account_gpu_minutes": 400,
+                    }
+                )
+            raise AssertionError(
+                f"unexpected request: {request.get_method()} {request.full_url}"
+            )
+
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=_custom_payload),
+            self.capture_stdout() as out,
+        ):
             self.run_cli_main(["slurm-quota", "default-quotas"])
         self.assertEqual(
             out.getvalue(),
@@ -54,14 +93,26 @@ class TestDefaultQuotasCommand(FunctionalCLIBase):
         )
 
     def test_default_quotas_shows_infinity_only_for_negative_one(self):
-        init_database()
-        self.update_settings(
-            default_user_quota_cpu_minutes=-1,
-            default_user_quota_gpu_minutes=0,
-            default_account_quota_cpu_minutes=-1,
-            default_account_quota_gpu_minutes=42,
-        )
-        with self.capture_stdout() as out:
+        def _custom_payload(request):
+            if request.get_method() == "GET" and request.full_url.endswith(
+                "/quotas/defaults"
+            ):
+                return FakeJsonUrlopenResponse(
+                    {
+                        "user_cpu_minutes": -1,
+                        "user_gpu_minutes": 0,
+                        "account_cpu_minutes": -1,
+                        "account_gpu_minutes": 42,
+                    }
+                )
+            raise AssertionError(
+                f"unexpected request: {request.get_method()} {request.full_url}"
+            )
+
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=_custom_payload),
+            self.capture_stdout() as out,
+        ):
             self.run_cli_main(["slurm-quota", "default-quotas"])
         self.assertEqual(
             out.getvalue(),
@@ -76,3 +127,36 @@ class TestDefaultQuotasCommand(FunctionalCLIBase):
                 """
             ).lstrip("\n"),
         )
+
+    def test_default_quotas_requires_token(self):
+        service_token_path().unlink()
+        with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+            self.run_cli_main_exit(["slurm-quota", "default-quotas"], 1)
+        self.assertIn("No API token available", log_cm.output[0])
+
+    def test_default_quotas_reports_access_denied_on_forbidden(self):
+        def _forbidden(request):
+            response = FakeJsonUrlopenResponse({})
+            response.status = 403
+            return response
+
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=_forbidden),
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+        ):
+            self.run_cli_main_exit(["slurm-quota", "default-quotas"], 1)
+        self.assertEqual(
+            log_cm.output,
+            [
+                "ERROR:slurm_quota:Access denied: manager or admin role required "
+                "to view default quotas",
+            ],
+        )
+
+    def test_default_quotas_reports_unreachable_service(self):
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=URLError("boom")),
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+        ):
+            self.run_cli_main_exit(["slurm-quota", "default-quotas"], 1)
+        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
