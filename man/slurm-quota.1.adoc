@@ -259,6 +259,7 @@ sudo slurm-quota set-gpu-factor h100 0.5
 *slurm-quota default-quotas*
 
 Show default quotas used for newly auto-created users/accounts.
+Requires a saved API token or `SLURM_QUOTA_TOKEN` (manager or admin role).
 
 
 === set-default-quotas
@@ -267,18 +268,19 @@ Show default quotas used for newly auto-created users/accounts.
 
 Set one or more default quotas for newly auto-created users/accounts.
 At least one option is required at runtime. Argument _minutes_ must be a positive integer or `-1` means unlimited.
-This command must run as `root`.
+Requires a saved API token or `SLURM_QUOTA_TOKEN` (manager or admin role).
 
 Example:
 
 ....
-sudo slurm-quota set-default-quotas --user-cpu 50000 --account-cpu 200000
+slurm-quota set-default-quotas --user-cpu 50000 --account-cpu 200000
 ....
 
 == Environment
 
 *SLURM_QUOTA_URL*::
-  Base URL used by `stats` and `login` when querying the HTTP API.
+  Base URL used by CLI subcommands that query the HTTP API (`stats`, `login`,
+  quota management, and related commands).
   Default: `http://127.0.0.1:9911/`
 
 *SLURM_QUOTA_TOKEN*::
