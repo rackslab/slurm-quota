@@ -41,7 +41,7 @@ In the SQLite database, there are 4 tables:
 
 We record the amount of preallocated time per job rather than a global value per user to allow fine-grained updates during modifications (increase or decrease of `time_limit`/`num_tasks`), targeted deletion of the preallocation upon completion, and robust cleanup of orphans. A global value would hide the detail per job and significantly complicate adjustments and cancellations, with an increased risk of inconsistencies.
 
-The SQLite database file must have the system user `slurm` as owner, with mode `0644` to restrict modification permission to the `slurm` user (used by `slurmctld` for the Lua script, the jobcomp script, and `slurm-quota-serve`) and to administrators with the `root` account. Other users only have read-only access to the database. The `slurm-quota` script, `slurm-quota-charge`, and `slurm-quota-serve` automatically create the database when it is missing (on first service start for the HTTP API, or with root-only commands such as `set-gpu-factor`), setting the correct permissions on the file.
+The SQLite database file must have the system user `slurm` as owner, with mode `0644` to restrict modification permission to the `slurm` user (used by `slurmctld` for the Lua script, the jobcomp script, and `slurm-quota-serve`) and to administrators with the `root` account. Other users only have read-only access to the database. `slurm-quota-charge` and `slurm-quota-serve` automatically create the database when it is missing (on first charge run or HTTP API service start), setting the correct permissions on the file.
 
 The commands `slurm-quota user-quota`, `slurm-quota account-quota`, `slurm-quota user-gpu-quota`, and `slurm-quota account-gpu-quota` respectively allow assigning CPU and GPU quotas to users and accounts through the REST API (manager or admin role required; see below).
 The `slurm-quota adjust` command allows manually adjusting consumed CPU/GPU time for one user or account with an explicitly signed delta through the REST API (manager or admin role required; see below).
@@ -56,7 +56,7 @@ The `slurm-quota-serve` command starts a small HTTP/JSON server designed to work
 
 REST API authentication is required: `GET /stats` always requires a valid Bearer JWT. With `authentication.method=ldap` in site configuration, `POST /login` issues JWT tokens from LDAP credentials. With `authentication.method=jwt`, tokens are issued offline by the root-only `slurm-quota-token` command.
 
-REST API authorization uses three roles. **Admin** users are listed in `[authorization] admins` in `serve.ini` (bootstrap only; not stored in the database). **Manager** users are stored in the SQLite `api_managers` table and can view all statistics. All other authenticated users have the **user** role and can view only their own consumption stats (including Slurm accounts they belong to). Admins can grant or revoke the manager role through `GET /roles`, `PUT /roles/managers/<username>`, and `DELETE /roles/managers/<username>`. The `slurm-quota role` CLI subcommands and the web dashboard **Manage roles** page (admin only) call these endpoints. Managers and admins can set user and account CPU/GPU quotas through `PUT /quotas/users/<username>/cpu`, `PUT /quotas/users/<username>/gpu`, `PUT /quotas/accounts/<account>/cpu`, and `PUT /quotas/accounts/<account>/gpu` (JSON body: `{"quota_minutes": <int>}`, where `-1` means unlimited). The `slurm-quota user-quota`, `account-quota`, `user-gpu-quota`, and `account-gpu-quota` CLI subcommands and the web dashboard quota edit forms call these endpoints. Managers and admins can view and update default quotas applied to newly auto-created users/accounts through `GET /quotas/defaults` and `PUT /quotas/defaults` (JSON body: partial object with any of `user_cpu_minutes`, `user_gpu_minutes`, `account_cpu_minutes`, `account_gpu_minutes`; `-1` means unlimited). The `slurm-quota default-quotas` and `set-default-quotas` CLI subcommands call these endpoints. Managers and admins can adjust consumed CPU/GPU time through `PATCH /consumption/user/<username>/cpu`, `PATCH /consumption/user/<username>/gpu`, `PATCH /consumption/account/<account>/cpu`, and `PATCH /consumption/account/<account>/gpu` (JSON body: `{"delta_minutes": <signed int>}`; response: `{"total_consumed_minutes": <int>}`). The `slurm-quota adjust` CLI subcommand and the web dashboard consumption edit forms call these endpoints.
+REST API authorization uses three roles. **Admin** users are listed in `[authorization] admins` in `serve.ini` (bootstrap only; not stored in the database). **Manager** users are stored in the SQLite `api_managers` table and can view all statistics. All other authenticated users have the **user** role and can view only their own consumption stats (including Slurm accounts they belong to). Admins can grant or revoke the manager role through `GET /roles`, `PUT /roles/managers/<username>`, and `DELETE /roles/managers/<username>`. The `slurm-quota role` CLI subcommands and the web dashboard **Manage roles** page (admin only) call these endpoints. Managers and admins can set user and account CPU/GPU quotas through `PUT /quotas/users/<username>/cpu`, `PUT /quotas/users/<username>/gpu`, `PUT /quotas/accounts/<account>/cpu`, and `PUT /quotas/accounts/<account>/gpu` (JSON body: `{"quota_minutes": <int>}`, where `-1` means unlimited). The `slurm-quota user-quota`, `account-quota`, `user-gpu-quota`, and `account-gpu-quota` CLI subcommands and the web dashboard quota edit forms call these endpoints. Managers and admins can view and update default quotas applied to newly auto-created users/accounts through `GET /quotas/defaults` and `PUT /quotas/defaults` (JSON body: partial object with any of `user_cpu_minutes`, `user_gpu_minutes`, `account_cpu_minutes`, `account_gpu_minutes`; `-1` means unlimited). The `slurm-quota default-quotas` and `set-default-quotas` CLI subcommands call these endpoints. Managers and admins can view and update GPU charging factors through `GET /factors/gpu` (response: `{"default_factor": <float>, "factors": {<gpu_type>: <float>, ...}}`) and `PUT /factors/gpu/<gpu_type>` (JSON body: `{"factor": <positive float>}`). The `slurm-quota gpu-factors` and `set-gpu-factor` CLI subcommands call these endpoints. Managers and admins can adjust consumed CPU/GPU time through `PATCH /consumption/user/<username>/cpu`, `PATCH /consumption/user/<username>/gpu`, `PATCH /consumption/account/<account>/cpu`, and `PATCH /consumption/account/<account>/gpu` (JSON body: `{"delta_minutes": <signed int>}`; response: `{"total_consumed_minutes": <int>}`). The `slurm-quota adjust` CLI subcommand and the web dashboard consumption edit forms call these endpoints.
 
 The `slurm-quota stats` command consumes this HTTP/JSON API by default (URL configurable via the `SLURM_QUOTA_URL` environment variable, default `http://127.0.0.1:9911/`). It queries `/stats` and displays a readable table in the terminal. By specifying a user (`--user` or positional username), an account (`--account`), or the `--all` option, the command transmits the appropriate filters to the service. User and account selectors are mutually exclusive. Users with the **user** role receive `HTTP 403` when requesting data outside their scope. If the service is not available or in case of connection failure to the server, execution fails with an error message.
 
@@ -603,7 +603,7 @@ slurm-quota set-default-quotas --user-gpu 10000 --account-gpu 50000
 slurm-quota set-default-quotas --user-cpu -1 --user-gpu -1 --account-cpu -1 --account-gpu -1
 ```
 
-- `gpu-factors`: Displays the currently configured GPU load factors.
+- `gpu-factors`: Displays the currently configured GPU load factors (manager or admin role).
 
 Example:
 
@@ -611,14 +611,14 @@ Example:
 slurm-quota gpu-factors
 ```
 
-- `set-gpu-factor` (restricted to root): Configures the load factor for a GPU type. Billed GPU minutes are calculated as `number_GPU × time_minutes × factor`. The default factor is 1.0 if no factor is configured for a GPU type.
+- `set-gpu-factor`: Configures the load factor for a GPU type through the REST API (manager or admin role required). Billed GPU minutes are calculated as `number_GPU × time_minutes × factor`. The default factor is 1.0 if no factor is configured for a GPU type. Argument _factor_ must be a positive float (> 0).
 
 Examples:
 
 ```bash
-sudo slurm-quota set-gpu-factor h100 0.5    # Factor 0.5 for h100 GPUs
-sudo slurm-quota set-gpu-factor h200 0.8    # Factor 0.8 for h200 GPUs
-sudo slurm-quota set-gpu-factor default 1.0  # Default factor (used if type is not specified)
+slurm-quota set-gpu-factor h100 0.5    # Factor 0.5 for h100 GPUs
+slurm-quota set-gpu-factor h200 0.8    # Factor 0.8 for h200 GPUs
+slurm-quota set-gpu-factor default 1.0  # Default factor (used if type is not specified)
 ```
 
 
