@@ -17,7 +17,6 @@ import slurm_quota
 from slurm_quota.client import APIClient, ServiceHTTPError
 from slurm_quota.token import load_service_token, save_service_token
 from slurm_quota.database import (
-    adjust_consumed_minutes,
     get_default_quota_settings,
     init_database,
     prune_resources,
@@ -182,19 +181,8 @@ def adjust_command(
     minutes: Optional[int],
     hours: Optional[int],
 ) -> None:
-    """
-    Adjust consumed CPU/GPU time for a user or account.
-    This command can only be executed by root user.
-    """
+    """Adjust consumed CPU/GPU time via the REST API (manager or admin role required)."""
     try:
-        current_user = auth.get_current_user()
-        if current_user != "root":
-            logger.error(
-                "adjust command can only be executed by root user, not by %s",
-                current_user,
-            )
-            sys.exit(1)
-
         target_type = "user" if username is not None else "account"
         target_name = username if username is not None else account
         if target_name is None:
@@ -212,8 +200,8 @@ def adjust_command(
             delta_minutes = hours * 60
             unit_label = "hours"
 
-        init_database()
-        new_total = adjust_consumed_minutes(
+        api = _api_client_from_token()
+        new_total = api.adjust_consumption(
             target_type, target_name, resource, delta_minutes
         )
 
@@ -227,6 +215,16 @@ def adjust_command(
             )
         )
 
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message=(
+                "Access denied: manager or admin role required to adjust consumption"
+            ),
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"adjust command failed: {e}")
         sys.exit(1)

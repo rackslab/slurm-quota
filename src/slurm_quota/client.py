@@ -8,7 +8,7 @@ import json
 
 import os
 from http import HTTPStatus
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from urllib.parse import urlencode, urljoin
 from urllib.request import Request, urlopen
 
@@ -215,3 +215,24 @@ class APIClient:
         )
         if status != HTTPStatus.NO_CONTENT:
             raise ServiceHTTPError(status)
+
+    def adjust_consumption(
+        self,
+        target: Literal["user", "account"],
+        name: str,
+        resource: Literal["cpu", "gpu"],
+        delta_minutes: int,
+    ) -> int:
+        path = f"consumption/{target}/{name}/{resource}"
+        status, payload = self._api_request(
+            "PATCH",
+            path,
+            body={"delta_minutes": delta_minutes},
+            require_token=True,
+        )
+        if status != HTTPStatus.OK:
+            raise ServiceHTTPError(status)
+        total = payload.get("total_consumed_minutes")
+        if not isinstance(total, int):
+            raise ValueError("adjust response did not contain total_consumed_minutes")
+        return total
