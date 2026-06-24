@@ -7,16 +7,23 @@ from unittest.mock import patch
 
 from slurm_quota.database import (
     adjust_consumed_minutes,
-    grant_api_manager,
+    grant_manager,
+    grant_manager_account,
+    grant_operator,
     init_database,
-    is_api_manager,
-    list_api_managers,
+    is_manager,
+    is_operator,
+    list_manager_accounts,
+    list_managers,
+    list_operators,
     list_users_with_roles,
     load_gpu_factors,
     prune_resources,
     query_accounts_aggregate,
     query_users_aggregate,
-    revoke_api_manager,
+    revoke_manager,
+    revoke_manager_account,
+    revoke_operator,
     set_account_gpu_quota,
     set_account_quota,
     set_user_gpu_quota,
@@ -656,58 +663,87 @@ class TestQueryAccountsAggregate(SlurmQuotaTestCase):
         self.assertEqual(accounts[0]["account"], "a1")
 
 
-class TestApiManagers(SlurmQuotaTestCase):
+class TestOperatorsAndManagers(SlurmQuotaTestCase):
     def setUp(self):
         super().setUp()
         init_database()
 
-    def test_is_api_manager_false_until_granted(self):
+    def test_is_operator_false_until_granted(self):
         with self.db_connection() as conn:
-            self.assertFalse(is_api_manager(conn, "carol"))
-            grant_api_manager(conn, "carol")
-            self.assertTrue(is_api_manager(conn, "carol"))
+            self.assertFalse(is_operator(conn, "carol"))
+            grant_operator(conn, "carol")
+            self.assertTrue(is_operator(conn, "carol"))
 
-    def test_list_api_managers_returns_sorted_usernames(self):
+    def test_list_operators_returns_sorted_usernames(self):
         with self.db_connection() as conn:
-            self.assertEqual(list_api_managers(conn), [])
-            grant_api_manager(conn, "carol")
-            grant_api_manager(conn, "bob")
-            self.assertEqual(list_api_managers(conn), ["bob", "carol"])
+            self.assertEqual(list_operators(conn), [])
+            grant_operator(conn, "carol")
+            grant_operator(conn, "bob")
+            self.assertEqual(list_operators(conn), ["bob", "carol"])
 
-    def test_grant_api_manager_is_idempotent(self):
+    def test_grant_operator_is_idempotent(self):
         with self.db_connection() as conn:
-            grant_api_manager(conn, "bob")
-            grant_api_manager(conn, "bob")
-            self.assertEqual(list_api_managers(conn), ["bob"])
+            grant_operator(conn, "bob")
+            grant_operator(conn, "bob")
+            self.assertEqual(list_operators(conn), ["bob"])
 
-    def test_revoke_api_manager_removes_entry(self):
+    def test_revoke_operator_removes_entry(self):
         with self.db_connection() as conn:
-            grant_api_manager(conn, "bob")
-            revoke_api_manager(conn, "bob")
-            self.assertFalse(is_api_manager(conn, "bob"))
-            self.assertEqual(list_api_managers(conn), [])
+            grant_operator(conn, "bob")
+            revoke_operator(conn, "bob")
+            self.assertFalse(is_operator(conn, "bob"))
+            self.assertEqual(list_operators(conn), [])
 
-    def test_revoke_api_manager_is_noop_when_missing(self):
+    def test_is_manager_false_until_granted(self):
         with self.db_connection() as conn:
-            revoke_api_manager(conn, "missing")
-            self.assertEqual(list_api_managers(conn), [])
+            self.assertFalse(is_manager(conn, "carol"))
+            grant_manager(conn, "carol")
+            self.assertTrue(is_manager(conn, "carol"))
 
-    def test_list_users_with_roles_merges_users_admins_and_managers(self):
+    def test_list_managers_returns_sorted_usernames(self):
+        with self.db_connection() as conn:
+            self.assertEqual(list_managers(conn), [])
+            grant_manager(conn, "carol")
+            grant_manager(conn, "bob")
+            self.assertEqual(list_managers(conn), ["bob", "carol"])
+
+    def test_manager_accounts_round_trip(self):
+        with self.db_connection() as conn:
+            grant_manager(conn, "bob")
+            grant_manager_account(conn, "bob", "hpc")
+            grant_manager_account(conn, "bob", "dev")
+            self.assertEqual(list_manager_accounts(conn, "bob"), ["dev", "hpc"])
+            revoke_manager_account(conn, "bob", "dev")
+            self.assertEqual(list_manager_accounts(conn, "bob"), ["hpc"])
+
+    def test_revoke_manager_cascades_accounts(self):
+        with self.db_connection() as conn:
+            grant_manager(conn, "bob")
+            grant_manager_account(conn, "bob", "hpc")
+            revoke_manager(conn, "bob")
+            self.assertFalse(is_manager(conn, "bob"))
+            self.assertEqual(list_manager_accounts(conn, "bob"), [])
+
+    def test_list_users_with_roles_merges_users_admins_operators_and_managers(self):
         with self.db_connection() as conn:
             conn.execute(
                 "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
                 ("bob", 10),
             )
-            grant_api_manager(conn, "carol")
+            grant_operator(conn, "carol")
+            grant_manager(conn, "dave")
+            grant_manager_account(conn, "dave", "hpc")
             conn.commit()
 
-            roles = {
-                entry["username"]: entry["role"]
+            entries = {
+                entry["username"]: entry
                 for entry in list_users_with_roles(conn, {"alice"})
             }
-        self.assertEqual(roles["alice"], "admin")
-        self.assertEqual(roles["bob"], "user")
-        self.assertEqual(roles["carol"], "manager")
+        self.assertEqual(entries["alice"]["role"], "admin")
+        self.assertEqual(entries["bob"]["role"], "user")
+        self.assertEqual(entries["carol"]["role"], "operator")
+        self.assertEqual(entries["dave"]["role"], "manager")
+        self.assertEqual(entries["dave"]["accounts"], ["hpc"])
 
     def test_list_users_with_roles_includes_admin_without_db_user_row(self):
         with self.db_connection() as conn:

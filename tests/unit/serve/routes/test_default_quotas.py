@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from slurm_quota.database import grant_api_manager, init_database
+from slurm_quota.database import grant_operator, init_database
 
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 
@@ -41,7 +41,7 @@ class TestDefaultQuotasRoute(ServeRoutesTestCase):
     def test_manager_gets_default_quotas(self):
         init_database()
         with self.db_connection() as conn:
-            grant_api_manager(conn, "carol")
+            grant_operator(conn, "carol")
             conn.commit()
         client = app.test_client()
         resp = client.get("/quotas/defaults", headers=self._headers("carol"))
@@ -101,7 +101,7 @@ class TestDefaultQuotasRoute(ServeRoutesTestCase):
             default_account_quota_gpu_minutes=4,
         )
         with self.db_connection() as conn:
-            grant_api_manager(conn, "carol")
+            grant_operator(conn, "carol")
             conn.commit()
         client = app.test_client()
         resp = client.put(

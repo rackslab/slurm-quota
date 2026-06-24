@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from unittest.mock import patch
 
-from slurm_quota.database import grant_api_manager, init_database
+from slurm_quota.database import grant_operator, init_database
 
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 
@@ -49,7 +49,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
                 "INSERT INTO users (username, total_consumed_gpu_minutes) VALUES (?, ?)",
                 ("bob", 50),
             )
-            grant_api_manager(conn, "carol")
+            grant_operator(conn, "carol")
             conn.commit()
         client = app.test_client()
         with self.assertLogs("slurm_quota", level="INFO") as log_cm:
@@ -92,7 +92,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
                 "INSERT INTO accounts (account, total_consumed_gpu_minutes) VALUES (?, ?)",
                 ("hpc", 90),
             )
-            grant_api_manager(conn, "carol")
+            grant_operator(conn, "carol")
             conn.commit()
         client = app.test_client()
         resp = client.patch(

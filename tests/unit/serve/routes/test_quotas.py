@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from slurm_quota.database import grant_api_manager, init_database
+from slurm_quota.database import grant_operator, init_database
 
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 
@@ -44,7 +44,7 @@ class TestQuotasRoute(ServeRoutesTestCase):
     def test_manager_sets_user_gpu_quota(self):
         init_database()
         with self.db_connection() as conn:
-            grant_api_manager(conn, "carol")
+            grant_operator(conn, "carol")
             conn.commit()
         client = app.test_client()
         with self.assertLogs("slurm_quota", level="INFO") as log_cm:
@@ -93,7 +93,7 @@ class TestQuotasRoute(ServeRoutesTestCase):
     def test_manager_sets_account_gpu_quota(self):
         init_database()
         with self.db_connection() as conn:
-            grant_api_manager(conn, "carol")
+            grant_operator(conn, "carol")
             conn.commit()
         client = app.test_client()
         with self.assertLogs("slurm_quota", level="INFO") as log_cm:

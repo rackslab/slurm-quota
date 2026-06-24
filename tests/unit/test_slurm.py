@@ -8,6 +8,7 @@ from unittest.mock import patch
 from slurm_quota.slurm import (
     calculate_consumed_gpu_minutes,
     collect_active_job_uuids,
+    get_account_users,
     get_job_info_from_environment,
     get_job_info_from_sacct,
     get_user_accounts,
@@ -62,6 +63,34 @@ class TestGetUserAccounts(SlurmQuotaTestCase):
             ["sacctmgr"], 0, "acc1\nacc2\n", ""
         )
         self.assertEqual(get_user_accounts("u"), {"acc1", "acc2"})
+
+
+class TestGetAccountUsers(SlurmQuotaTestCase):
+    @patch("slurm_quota.slurm.subprocess.run")
+    def test_get_account_users(self, run_mock):
+        run_mock.return_value = subprocess.CompletedProcess(
+            ["sacctmgr"], 0, "alice\nbob\n", ""
+        )
+        self.assertEqual(get_account_users("hpc"), {"alice", "bob"})
+        run_mock.assert_called_once()
+        args = run_mock.call_args[0][0]
+        self.assertEqual(args[0], "sacctmgr")
+        self.assertIn("account=hpc", args)
+
+    @patch("slurm_quota.slurm.subprocess.run")
+    def test_get_account_users_empty_stdout(self, run_mock):
+        run_mock.return_value = subprocess.CompletedProcess(["sacctmgr"], 0, "", "")
+        self.assertEqual(get_account_users("hpc"), set())
+
+    @patch("slurm_quota.slurm.subprocess.run")
+    def test_get_account_users_sacctmgr_failure_returns_empty_set(self, run_mock):
+        run_mock.side_effect = subprocess.CalledProcessError(1, "sacctmgr")
+        self.assertEqual(get_account_users("hpc"), set())
+
+    @patch("slurm_quota.slurm.subprocess.run")
+    def test_get_account_users_missing_sacctmgr_returns_empty_set(self, run_mock):
+        run_mock.side_effect = FileNotFoundError("sacctmgr")
+        self.assertEqual(get_account_users("hpc"), set())
 
 
 class TestCollectActiveJobUuids(SlurmQuotaTestCase):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from slurm_quota.database import grant_api_manager, init_database
+from slurm_quota.database import grant_operator, init_database
 
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 
@@ -31,7 +31,7 @@ class TestGpuFactorsRoute(ServeRoutesTestCase):
     def test_manager_gets_gpu_factors(self):
         init_database()
         with self.db_connection() as conn:
-            grant_api_manager(conn, "carol")
+            grant_operator(conn, "carol")
             conn.commit()
         client = app.test_client()
         resp = client.get("/factors/gpu", headers=self._headers("carol"))
@@ -71,7 +71,7 @@ class TestGpuFactorsRoute(ServeRoutesTestCase):
     def test_manager_sets_gpu_factor(self):
         init_database()
         with self.db_connection() as conn:
-            grant_api_manager(conn, "carol")
+            grant_operator(conn, "carol")
             conn.commit()
         client = app.test_client()
         resp = client.put(
