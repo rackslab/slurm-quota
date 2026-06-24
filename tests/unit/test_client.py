@@ -286,51 +286,137 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         with self.assertRaises(ValueError):
             APIClient(token=None).users_roles()
 
-    def test_grant_manager_sends_put(self):
+    def test_grant_role_sends_put(self):
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse({}, status=204),
         ) as m_urlopen:
-            APIClient(token="jwt").grant_manager("bob")
+            APIClient(token="jwt").grant_role("operator", "bob")
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.method, "PUT")
+        self.assertIn("/roles/operators/bob", req.full_url)
+
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").grant_role("manager", "bob")
+        req = m_urlopen.call_args[0][0]
         self.assertIn("/roles/managers/bob", req.full_url)
 
-    def test_grant_manager_raises_service_http_error_on_bad_status(self):
+    def test_grant_role_raises_service_http_error_on_bad_status(self):
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse({}, status=403),
         ):
             with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").grant_manager("bob")
+                APIClient(token="jwt").grant_role("manager", "bob")
         self.assertEqual(cm.exception.status, 403)
 
-    def test_grant_manager_raises_value_error_when_token_missing(self):
+    def test_grant_role_raises_value_error_when_token_missing(self):
         with self.assertRaises(ValueError):
-            APIClient(token=None).grant_manager("bob")
+            APIClient(token=None).grant_role("manager", "bob")
 
-    def test_revoke_manager_sends_delete(self):
+    def test_revoke_role_sends_delete(self):
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse({}, status=204),
         ) as m_urlopen:
-            APIClient(token="jwt").revoke_manager("bob")
+            APIClient(token="jwt").revoke_role("manager", "bob")
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.method, "DELETE")
         self.assertIn("/roles/managers/bob", req.full_url)
 
-    def test_revoke_manager_raises_service_http_error_on_bad_status(self):
+    def test_revoke_role_raises_service_http_error_on_bad_status(self):
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse({}, status=403),
         ):
             with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").revoke_manager("bob")
+                APIClient(token="jwt").revoke_role("manager", "bob")
         self.assertEqual(cm.exception.status, 403)
 
-    def test_revoke_manager_raises_value_error_when_token_missing(self):
+    def test_revoke_role_raises_value_error_when_token_missing(self):
         with self.assertRaises(ValueError):
-            APIClient(token=None).revoke_manager("bob")
+            APIClient(token=None).revoke_role("manager", "bob")
+
+    def test_list_manager_accounts_sends_get_and_returns_accounts(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"accounts": ["dev", "hpc"]}),
+        ) as m_urlopen:
+            accounts = APIClient(token="jwt").list_manager_accounts("bob")
+        self.assertEqual(accounts, ["dev", "hpc"])
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/roles/managers/bob/accounts", req.full_url)
+
+    def test_list_manager_accounts_returns_empty_list_when_accounts_not_list(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"accounts": "hpc"}),
+        ):
+            accounts = APIClient(token="jwt").list_manager_accounts("bob")
+        self.assertEqual(accounts, [])
+
+    def test_list_manager_accounts_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").list_manager_accounts("bob")
+        self.assertEqual(cm.exception.status, 403)
+
+    def test_list_manager_accounts_raises_value_error_when_token_missing(self):
+        with self.assertRaises(ValueError):
+            APIClient(token=None).list_manager_accounts("bob")
+
+    def test_add_manager_account_sends_put(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").add_manager_account("bob", "hpc")
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.method, "PUT")
+        self.assertIn("/roles/managers/bob/accounts/hpc", req.full_url)
+
+    def test_add_manager_account_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").add_manager_account("bob", "hpc")
+        self.assertEqual(cm.exception.status, 403)
+
+    def test_add_manager_account_raises_value_error_when_token_missing(self):
+        with self.assertRaises(ValueError):
+            APIClient(token=None).add_manager_account("bob", "hpc")
+
+    def test_remove_manager_account_sends_delete(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").remove_manager_account("bob", "hpc")
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.method, "DELETE")
+        self.assertIn("/roles/managers/bob/accounts/hpc", req.full_url)
+
+    def test_remove_manager_account_raises_service_http_error_on_bad_status(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=403),
+        ):
+            with self.assertRaises(ServiceHTTPError) as cm:
+                APIClient(token="jwt").remove_manager_account("bob", "hpc")
+        self.assertEqual(cm.exception.status, 403)
+
+    def test_remove_manager_account_raises_value_error_when_token_missing(self):
+        with self.assertRaises(ValueError):
+            APIClient(token=None).remove_manager_account("bob", "hpc")
 
 
 class TestAPIClientQuotas(SlurmQuotaTestCase):

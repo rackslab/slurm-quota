@@ -63,7 +63,7 @@ class TestUserQuotaCommand(FunctionalAPICliBase):
         self.assertEqual(
             log_cm.output,
             [
-                "ERROR:slurm_quota:Access denied: manager or admin role required "
+                "ERROR:slurm_quota:Access denied: operator or admin role required "
                 "to set quotas",
             ],
         )

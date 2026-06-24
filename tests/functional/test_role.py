@@ -47,6 +47,10 @@ class TestRoleCommand(FunctionalAPICliBase):
                     ]
                 }
             )
+        if "/roles/operators/" in url and method == "PUT":
+            return _RoleUrlopenResponse(status=204)
+        if "/roles/operators/" in url and method == "DELETE":
+            return _RoleUrlopenResponse(status=204)
         if "/roles/managers/" in url and method == "PUT":
             return _RoleUrlopenResponse(status=204)
         if "/roles/managers/" in url and method == "DELETE":
@@ -101,7 +105,7 @@ class TestRoleCommand(FunctionalAPICliBase):
             self.run_cli_main(["slurm-quota", "role", "list"])
         self.assertEqual(out.getvalue(), "No users found\n")
 
-    def test_role_grant_prints_confirmation(self):
+    def test_role_grant_operator_prints_confirmation(self):
         with (
             patch(
                 "slurm_quota.client.urlopen",
@@ -109,14 +113,14 @@ class TestRoleCommand(FunctionalAPICliBase):
             ) as m_urlopen,
             self.capture_stdout() as out,
         ):
-            self.run_cli_main(["slurm-quota", "role", "grant", "bob"])
-        self.assertEqual(out.getvalue(), "Granted manager role to bob\n")
+            self.run_cli_main(["slurm-quota", "role", "grant", "operator", "bob"])
+        self.assertEqual(out.getvalue(), "Granted operator role to bob\n")
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.get_method(), "PUT")
-        self.assertTrue(req.full_url.endswith("/roles/managers/bob"))
+        self.assertTrue(req.full_url.endswith("/roles/operators/bob"))
         self.assertEqual(req.get_header("Authorization"), "Bearer saved-jwt")
 
-    def test_role_revoke_prints_confirmation(self):
+    def test_role_revoke_manager_prints_confirmation(self):
         with (
             patch(
                 "slurm_quota.client.urlopen",
@@ -124,7 +128,7 @@ class TestRoleCommand(FunctionalAPICliBase):
             ) as m_urlopen,
             self.capture_stdout() as out,
         ):
-            self.run_cli_main(["slurm-quota", "role", "revoke", "bob"])
+            self.run_cli_main(["slurm-quota", "role", "revoke", "manager", "bob"])
         self.assertEqual(out.getvalue(), "Revoked manager role from bob\n")
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.get_method(), "DELETE")
@@ -178,10 +182,12 @@ class TestRoleCommand(FunctionalAPICliBase):
             patch("slurm_quota.client.urlopen", side_effect=_forbidden),
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
         ):
-            self.run_cli_main_exit(["slurm-quota", "role", "grant", "bob"], 1)
+            self.run_cli_main_exit(
+                ["slurm-quota", "role", "grant", "operator", "bob"], 1
+            )
         self.assertEqual(
             log_cm.output,
-            ["ERROR:slurm_quota:Access denied: admin role required to grant manager"],
+            ["ERROR:slurm_quota:Access denied: admin role required to grant operator"],
         )
 
     def test_role_revoke_reports_admin_required_on_forbidden(self):
@@ -193,7 +199,9 @@ class TestRoleCommand(FunctionalAPICliBase):
             patch("slurm_quota.client.urlopen", side_effect=_forbidden),
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
         ):
-            self.run_cli_main_exit(["slurm-quota", "role", "revoke", "bob"], 1)
+            self.run_cli_main_exit(
+                ["slurm-quota", "role", "revoke", "manager", "bob"], 1
+            )
         self.assertEqual(
             log_cm.output,
             ["ERROR:slurm_quota:Access denied: admin role required to revoke manager"],
