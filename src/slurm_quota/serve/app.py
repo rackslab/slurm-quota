@@ -60,23 +60,8 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
             methods=["DELETE"],
         )
         self.add_url_rule(
-            "/quotas/users/<username>/cpu",
-            view_func=routes.set_user_cpu_quota,
-            methods=["PUT"],
-        )
-        self.add_url_rule(
-            "/quotas/users/<username>/gpu",
-            view_func=routes.set_user_gpu_quota,
-            methods=["PUT"],
-        )
-        self.add_url_rule(
-            "/quotas/accounts/<account>/cpu",
-            view_func=routes.set_account_cpu_quota,
-            methods=["PUT"],
-        )
-        self.add_url_rule(
-            "/quotas/accounts/<account>/gpu",
-            view_func=routes.set_account_gpu_quota,
+            "/quotas/<entity>/<name>/<resource>",
+            view_func=routes.set_quota,
             methods=["PUT"],
         )
         self.add_url_rule(

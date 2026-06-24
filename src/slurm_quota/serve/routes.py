@@ -60,16 +60,6 @@ def _validate_account(account: str) -> None:
         )
 
 
-def _parse_quota_body() -> int:
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        abort(400, description="Invalid JSON body")
-    quota_minutes = payload.get("quota_minutes")
-    if not isinstance(quota_minutes, int) or quota_minutes < -1:
-        abort(400, description="quota_minutes must be an integer >= -1")
-    return quota_minutes
-
-
 def fetch_stats(
     username_param: Optional[str],
     account_param: Optional[str],
@@ -214,72 +204,41 @@ def revoke_manager(username: str) -> Any:
 
 
 @require_role("admin", "manager")
-def set_user_cpu_quota(username: str) -> Any:
-    _validate_username(username)
-    quota_minutes = _parse_quota_body()
+def set_quota(entity: str, name: str, resource: str) -> Any:
+    if resource not in ("cpu", "gpu"):
+        abort(400, description="Invalid resource")
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        abort(400, description="Invalid JSON body")
+    quota_minutes = payload.get("quota_minutes")
+    if not isinstance(quota_minutes, int) or quota_minutes < -1:
+        abort(400, description="quota_minutes must be an integer >= -1")
     try:
-        db_set_user_quota(username, quota_minutes)
+        if entity == "users":
+            _validate_username(name)
+            entity_label = "user"
+            if resource == "cpu":
+                db_set_user_quota(name, quota_minutes)
+            else:
+                db_set_user_gpu_quota(name, quota_minutes)
+        elif entity == "accounts":
+            _validate_account(name)
+            entity_label = "account"
+            if resource == "cpu":
+                db_set_account_quota(name, quota_minutes)
+            else:
+                db_set_account_gpu_quota(name, quota_minutes)
+        else:
+            abort(404)
     except sqlite3.Error as exc:
-        logger.error("set user CPU quota failed: %s", exc)
+        logger.error("set %s %s quota failed: %s", entity_label, resource, exc)
         return jsonify({"error": "db_error"}), 500
     logger.info(
-        "quota user cpu: manager=%s name=%s value=%s",
+        "quota %s %s: manager=%s name=%s value=%s",
+        entity_label,
+        resource,
         cast(str, request.user.login),
-        username,
-        quota_minutes,
-    )
-    return "", 204
-
-
-@require_role("admin", "manager")
-def set_user_gpu_quota(username: str) -> Any:
-    _validate_username(username)
-    quota_minutes = _parse_quota_body()
-    try:
-        db_set_user_gpu_quota(username, quota_minutes)
-    except sqlite3.Error as exc:
-        logger.error("set user GPU quota failed: %s", exc)
-        return jsonify({"error": "db_error"}), 500
-    logger.info(
-        "quota user gpu: manager=%s name=%s value=%s",
-        cast(str, request.user.login),
-        username,
-        quota_minutes,
-    )
-    return "", 204
-
-
-@require_role("admin", "manager")
-def set_account_cpu_quota(account: str) -> Any:
-    _validate_account(account)
-    quota_minutes = _parse_quota_body()
-    try:
-        db_set_account_quota(account, quota_minutes)
-    except sqlite3.Error as exc:
-        logger.error("set account CPU quota failed: %s", exc)
-        return jsonify({"error": "db_error"}), 500
-    logger.info(
-        "quota account cpu: manager=%s name=%s value=%s",
-        cast(str, request.user.login),
-        account,
-        quota_minutes,
-    )
-    return "", 204
-
-
-@require_role("admin", "manager")
-def set_account_gpu_quota(account: str) -> Any:
-    _validate_account(account)
-    quota_minutes = _parse_quota_body()
-    try:
-        db_set_account_gpu_quota(account, quota_minutes)
-    except sqlite3.Error as exc:
-        logger.error("set account GPU quota failed: %s", exc)
-        return jsonify({"error": "db_error"}), 500
-    logger.info(
-        "quota account gpu: manager=%s name=%s value=%s",
-        cast(str, request.user.login),
-        account,
+        name,
         quota_minutes,
     )
     return "", 204
