@@ -281,3 +281,28 @@ class APIClient:
         if not isinstance(total, int):
             raise ValueError("adjust response did not contain total_consumed_minutes")
         return total
+
+    def get_gpu_factors(self) -> Dict[str, Any]:
+        status, payload = self._api_request("GET", "factors/gpu", require_token=True)
+        if status != HTTPStatus.OK:
+            raise ServiceHTTPError(status)
+        default_factor = payload.get("default_factor")
+        factors = payload.get("factors")
+        if not isinstance(default_factor, (int, float)):
+            raise ValueError("gpu factors response missing default_factor")
+        if not isinstance(factors, dict):
+            raise ValueError("gpu factors response missing factors")
+        return {
+            "default_factor": float(default_factor),
+            "factors": {str(k): float(v) for k, v in factors.items()},
+        }
+
+    def set_gpu_factor(self, gpu_type: str, factor: float) -> None:
+        status, _payload = self._api_request(
+            "PUT",
+            f"factors/gpu/{gpu_type}",
+            body={"factor": factor},
+            require_token=True,
+        )
+        if status != HTTPStatus.NO_CONTENT:
+            raise ServiceHTTPError(status)

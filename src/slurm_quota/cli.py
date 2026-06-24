@@ -238,7 +238,8 @@ def main():
 
     # GPU factor command (set)
     gpu_factor_parser = subparsers.add_parser(
-        "set-gpu-factor", help="Set GPU charging factor for a GPU type (root only)"
+        "set-gpu-factor",
+        help="Set GPU charging factor for a GPU type (manager or admin role required)",
     )
     gpu_factor_parser.add_argument(
         "gpu_type",
