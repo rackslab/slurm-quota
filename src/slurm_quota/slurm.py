@@ -118,6 +118,40 @@ def get_job_info_from_sacct(job_id: str) -> Tuple[Optional[str], Optional[str]]:
         return None, None
 
 
+def get_account_users(account: str) -> set[str]:
+    """
+    Return the set of Slurm users belonging to the given account using sacctmgr.
+
+    Args:
+        account: The Slurm account name
+
+    Returns:
+        A set of usernames (may be empty when none or on error)
+    """
+    try:
+        result = subprocess.run(
+            [
+                "sacctmgr",
+                "list",
+                "associations",
+                "where",
+                f"account={account}",
+                "format=user",
+                "-P",
+                "-n",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        users = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+        logger.debug(f"Account {account} has users: {users}")
+        return users
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.warning(f"Failed to get users for account {account} via sacctmgr: {e}")
+        return set()
+
+
 def get_user_accounts(username: str) -> set[str]:
     """
     Return the set of Slurm accounts the given user belongs to using sacctmgr.

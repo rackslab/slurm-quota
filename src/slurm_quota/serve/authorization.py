@@ -15,9 +15,9 @@ from rfl.settings import RuntimeSettings
 from rfl.web.tokens import check_jwt
 
 import slurm_quota
-from slurm_quota.database import is_api_manager
+from slurm_quota.database import is_manager, is_operator
 
-Role = Literal["admin", "manager", "user"]
+Role = Literal["admin", "operator", "manager", "user"]
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -34,7 +34,9 @@ def resolve_role(
 ) -> Role:
     if login in config_admins(settings):
         return "admin"
-    if is_api_manager(conn, login):
+    if is_operator(conn, login):
+        return "operator"
+    if is_manager(conn, login):
         return "manager"
     return "user"
 
