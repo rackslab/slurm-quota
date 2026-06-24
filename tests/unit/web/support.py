@@ -48,7 +48,7 @@ def roles_users() -> list[dict]:
     return [
         {"username": "alice", "role": "admin"},
         {"username": "bob", "role": "user"},
-        {"username": "carol", "role": "manager"},
+        {"username": "carol", "role": "manager", "accounts": ["hpc"]},
     ]
 
 
