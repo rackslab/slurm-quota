@@ -17,10 +17,8 @@ import slurm_quota
 from slurm_quota.client import APIClient, ServiceHTTPError
 from slurm_quota.token import load_service_token, save_service_token
 from slurm_quota.database import (
-    get_default_quota_settings,
     init_database,
     prune_resources,
-    set_default_quota_settings,
     set_gpu_factor,
 )
 
@@ -323,20 +321,8 @@ def set_default_quotas_command(
     account_cpu: Optional[int],
     account_gpu: Optional[int],
 ) -> None:
-    """
-    Set default quotas used when new users/accounts are auto-created.
-    This command can only be executed by root user.
-    """
+    """Set default quotas via the REST API (manager or admin role required)."""
     try:
-        current_user = auth.get_current_user()
-        if current_user != "root":
-            logger.error(
-                "set-default-quotas command can only be executed by root user, "
-                "not by %s",
-                current_user,
-            )
-            sys.exit(1)
-
         if all(
             value is None for value in (user_cpu, user_gpu, account_cpu, account_gpu)
         ):
@@ -346,43 +332,52 @@ def set_default_quotas_command(
             )
             sys.exit(1)
 
-        init_database()
-        set_default_quota_settings(user_cpu, user_gpu, account_cpu, account_gpu)
+        _api_client_from_token().set_default_quotas(
+            user_cpu=user_cpu,
+            user_gpu=user_gpu,
+            account_cpu=account_cpu,
+            account_gpu=account_gpu,
+        )
         print("Successfully updated default quotas")
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message=(
+                "Access denied: manager or admin role required to set default quotas"
+            ),
+        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"set-default-quotas command failed: {e}")
         sys.exit(1)
 
 
 def show_default_quotas_command() -> None:
-    """
-    Display current default quotas for newly auto-created users/accounts.
-    """
+    """Display default quotas via the REST API (manager or admin role required)."""
 
     def fmt(m: int) -> str:
         return "∞" if m == -1 else str(m)
 
     try:
-        init_database()
-        settings = get_default_quota_settings()
+        settings = _api_client_from_token().get_default_quotas()
         print("Default Quotas For New Entities")
         print("-" * 40)
-        print(
-            f"{'user_cpu_minutes':<24} "
-            f"{fmt(settings['default_user_quota_cpu_minutes'])}"
+        print(f"{'user_cpu_minutes':<24} {fmt(settings['user_cpu_minutes'])}")
+        print(f"{'user_gpu_minutes':<24} {fmt(settings['user_gpu_minutes'])}")
+        print(f"{'account_cpu_minutes':<24} {fmt(settings['account_cpu_minutes'])}")
+        print(f"{'account_gpu_minutes':<24} {fmt(settings['account_gpu_minutes'])}")
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message=(
+                "Access denied: manager or admin role required to view default quotas"
+            ),
         )
-        print(
-            f"{'user_gpu_minutes':<24} "
-            f"{fmt(settings['default_user_quota_gpu_minutes'])}"
-        )
-        print(
-            f"{'account_cpu_minutes':<24} "
-            f"{fmt(settings['default_account_quota_cpu_minutes'])}"
-        )
-        print(
-            f"{'account_gpu_minutes':<24} "
-            f"{fmt(settings['default_account_quota_gpu_minutes'])}"
-        )
+    except URLError as exc:
+        logger.error(f"Failed to contact slurm-quota service: {exc}")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"default-quotas command failed: {e}")
         sys.exit(1)
