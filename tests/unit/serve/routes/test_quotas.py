@@ -152,6 +152,13 @@ class TestQuotasRoute(ServeRoutesTestCase):
             json={"quota_minutes": -2},
         )
         self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            resp.get_json(),
+            {
+                "error": "bad_request",
+                "message": "quota_minutes must be an integer >= -1",
+            },
+        )
 
     def test_missing_quota_minutes_returns_400(self):
         client = app.test_client()
