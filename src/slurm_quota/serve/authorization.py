@@ -14,8 +14,7 @@ from flask import abort, current_app, request
 from rfl.settings import RuntimeSettings
 from rfl.web.tokens import check_jwt
 
-import slurm_quota
-from slurm_quota.database import is_manager, is_operator
+from slurm_quota.database import connect_database, is_manager, is_operator
 
 Role = Literal["admin", "operator", "manager", "user"]
 
@@ -43,7 +42,7 @@ def resolve_role(
 
 def login_role(username: str) -> Role:
     assert current_app.settings is not None
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         return resolve_role(username, current_app.settings, conn)
 
 

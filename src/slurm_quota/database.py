@@ -25,6 +25,46 @@ DEFAULT_QUOTA_SETTINGS = {
 }
 
 
+def configure_connection(conn: sqlite3.Connection) -> None:
+    """Apply per-connection SQLite settings for slurm-quota.
+
+    busy_timeout makes SQLite wait up to five seconds when the database is
+    locked instead of failing immediately. foreign_keys turns on enforcement of
+    foreign key constraints defined in the schema. Both settings must be applied
+    on every new connection because they are not persisted in the database file.
+    """
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA foreign_keys = ON")
+
+
+def connect_database() -> sqlite3.Connection:
+    """Open a connection to the slurm-quota database with standard settings.
+
+    Returns a sqlite3 connection to DB_PATH after applying configure_connection.
+    Callers should use this helper instead of sqlite3.connect directly so that
+    busy_timeout and foreign_keys are always enabled.
+    """
+    conn = sqlite3.connect(slurm_quota.DB_PATH)
+    configure_connection(conn)
+    return conn
+
+
+def enable_wal_mode(conn: sqlite3.Connection) -> None:
+    """Switch the database to WAL journal mode if it is not already active.
+
+    WAL reduces lock contention between concurrent writers such as job_submit.lua
+    and slurm-quota-serve. Unlike busy_timeout and foreign_keys, journal_mode is
+    stored in the database file and only needs to be set once per database. The
+    caller must not be inside an open transaction; this function commits when done.
+    """
+    row = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+    if not row or row[0].lower() != "wal":
+        logger.warning(
+            "Failed to enable WAL journal mode: got %r", row[0] if row else None
+        )
+    conn.commit()
+
+
 def get_default_quota_settings() -> Dict[str, int]:
     """
     Return configured default quotas used for new users/accounts.
@@ -37,7 +77,7 @@ def get_default_quota_settings() -> Dict[str, int]:
         return defaults
 
     try:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?)",
@@ -82,7 +122,7 @@ def set_default_quota_settings(
     if not updates:
         raise ValueError("No default quotas provided")
 
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         cursor = conn.cursor()
         cursor.executemany(
             """
@@ -119,7 +159,7 @@ def load_gpu_factors() -> Dict[str, float]:
         return factors
 
     try:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT gpu_type, factor FROM gpu_factors")
             rows = cursor.fetchall()
@@ -167,7 +207,7 @@ def set_gpu_factor(gpu_type: str, factor: float) -> None:
         factor: Charging factor (float, must be non-negative)
     """
     try:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
 
             cursor.execute(
@@ -189,17 +229,21 @@ def set_gpu_factor(gpu_type: str, factor: float) -> None:
 def init_database() -> None:
     """
     Initialize the SQLite database only if it doesn't exist yet. Set permissions on
-    first creation.
+    first creation. Ensure WAL mode is enabled on every call.
     """
     try:
         # Ensure the directory exists
         os.makedirs(os.path.dirname(slurm_quota.DB_PATH), exist_ok=True)
 
-        # If the database file already exists, do nothing
+        # If the database already exists, enable WAL mode and make sure permissions
+        # are set correctly.
         if os.path.exists(slurm_quota.DB_PATH):
+            with connect_database() as conn:
+                enable_wal_mode(conn)
+            set_database_permissions()
             return
 
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
 
             # Create users table to track resource usage
@@ -285,6 +329,7 @@ def init_database() -> None:
             """)
 
             conn.commit()
+            enable_wal_mode(conn)
             logger.info("Database initialized successfully")
 
         # Set permissions on the database file
@@ -303,15 +348,23 @@ def set_database_permissions() -> None:
     Set database file permissions to allow root and slurm users to modify it and
     others to read it.
     """
+    paths = [slurm_quota.DB_PATH]
+    for suffix in ("-wal", "-shm"):
+        wal_path = slurm_quota.DB_PATH + suffix
+        if os.path.exists(wal_path):
+            paths.append(wal_path)
+
     try:
-        # If root, give database file to slurm user
+        slurm_pw = None
         if auth.get_current_user() == "root":
-            logger.info(f"Giving database file to slurm user for {slurm_quota.DB_PATH}")
             slurm_pw = pwd.getpwnam("slurm")
-            os.chown(slurm_quota.DB_PATH, slurm_pw.pw_uid, slurm_pw.pw_gid)
-        # Set permissions: owner (slurm) can read/write, others can read
-        os.chmod(slurm_quota.DB_PATH, 0o644)
-        logger.info(f"Database permissions set for {slurm_quota.DB_PATH}")
+
+        for path in paths:
+            if slurm_pw is not None:
+                logger.debug("Giving database file to slurm user for %s", path)
+                os.chown(path, slurm_pw.pw_uid, slurm_pw.pw_gid)
+            os.chmod(path, 0o644)
+            logger.debug("Database permissions set for %s", path)
     except OSError as e:
         logger.error(f"Failed to set database permissions: {e}")
         raise
@@ -342,7 +395,7 @@ def prune_resources(
 
     orphan_prealloc_uuids: List[str] = []
     if "preallocs" in targets:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT job_uuid, username, account FROM jobs_preallocations"
@@ -358,7 +411,7 @@ def prune_resources(
 
     users_to_delete: List[str] = []
     if "users" in targets:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
             users_query = """
                 SELECT username
@@ -380,7 +433,7 @@ def prune_resources(
 
     accounts_to_delete: List[str] = []
     if "accounts" in targets:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
             accounts_query = """
                 SELECT account
@@ -406,8 +459,7 @@ def prune_resources(
         return counts
 
     # Delete preallocations first so users/accounts can become eligible in the same run.
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
-        conn.execute("PRAGMA foreign_keys = ON")
+    with connect_database() as conn:
         cursor = conn.cursor()
 
         if orphan_prealloc_uuids:
@@ -469,7 +521,7 @@ def update_user_and_account_resources(
         - "none": no preallocation was changed (including when job_uuid is None)
     """
     try:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
             dq = get_default_quota_settings()
             default_user_cpu = dq["default_user_quota_cpu_minutes"]
@@ -587,7 +639,7 @@ def set_user_quota(username: str, quota_cpu_minutes: int) -> None:
         quota_cpu_minutes: The quota in CPU minutes (-1 for unlimited)
     """
     try:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
             dq = get_default_quota_settings()
             default_gpu = dq["default_user_quota_gpu_minutes"]
@@ -619,7 +671,7 @@ def set_account_quota(account: str, quota_cpu_minutes: int) -> None:
         quota_cpu_minutes: The quota in CPU minutes (-1 for unlimited)
     """
     try:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
             dq = get_default_quota_settings()
             default_gpu = dq["default_account_quota_gpu_minutes"]
@@ -650,7 +702,7 @@ def set_user_gpu_quota(username: str, quota_gpu_minutes: int) -> None:
         quota_gpu_minutes: The quota in GPU minutes (-1 for unlimited)
     """
     try:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
             dq = get_default_quota_settings()
             default_cpu = dq["default_user_quota_cpu_minutes"]
@@ -682,7 +734,7 @@ def set_account_gpu_quota(account: str, quota_gpu_minutes: int) -> None:
         quota_gpu_minutes: The quota in GPU minutes (-1 for unlimited)
     """
     try:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
             dq = get_default_quota_settings()
             default_cpu = dq["default_account_quota_cpu_minutes"]
@@ -738,7 +790,7 @@ def adjust_consumed_minutes(
     table_name, id_column, target_label = target_mapping[target_type]
     consumed_column = resource_mapping[resource]
 
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         cursor = conn.cursor()
         cursor.execute(
             f"SELECT {consumed_column} FROM {table_name} WHERE {id_column} = ?",
