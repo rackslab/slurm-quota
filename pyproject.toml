@@ -47,7 +47,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.data-files]
-"slurm-quota/conf" = ["conf/serve.yml", "conf/serve.ini.example"]
+"slurm-quota/conf" = ["conf/serve.yml", "conf/serve.ini.example", "conf/slurm-quota-web.default"]
 "slurm-quota/web/wsgi" = ["web/wsgi/slurm-quota-web.wsgi"]
 "slurm-quota/web/templates" = ["web/templates/*"]
 "slurm-quota/web/static" = ["web/static/*"]

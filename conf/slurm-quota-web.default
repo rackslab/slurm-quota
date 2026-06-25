@@ -1,0 +1,13 @@
+# Slurm quota web dashboard — environment defaults
+#
+# Copy to /etc/default/slurm-quota-web and adapt.
+#
+# This file is designed to configure environment of web dashboard when
+# loaded by the WSGI script (Apache) or systemd EnvironmentFile. This
+# file is ignored by the standalone slurm-quota-web CLI.
+#
+# SLURM_QUOTA_URL=http://controller:9911/
+# SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key
+# SLURM_QUOTA_WEB_SECURE_COOKIES=1
+# SLURM_QUOTA_TOKEN=eyJ...
+# SLURM_QUOTA_WEB_ASSETS_DIR=/usr/share/slurm-quota/web
