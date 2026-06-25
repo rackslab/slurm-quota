@@ -186,7 +186,22 @@ sudo dnf install slurm-quota-web
 sudo dnf install httpd mod_wsgi httpd-tools
 ```
 
-3) Create the session signing key file (skip when using `authentication.method=jwt`):
+3) Configure the web dashboard environment:
+
+Create `/etc/default/slurm-quota-web`, to set at least `SLURM_QUOTA_URL`; when LDAP browser login is used, also set `SLURM_QUOTA_WEB_SESSION_KEY_FILE`:
+
+```bash
+sudo tee /etc/default/slurm-quota-web <<'EOF'
+SLURM_QUOTA_URL=http://controller:9911/
+SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key
+EOF
+sudo chmod 0644 /etc/default/slurm-quota-web
+```
+
+> [!NOTE]
+> A commented example with additional optional variables ships as `conf/slurm-quota-web.default` in the source tree, or `/usr/share/slurm-quota/conf/slurm-quota-web.default` after RPM install.
+
+4) Create the session signing key file (skip when using `authentication.method=jwt`):
 
 When LDAP authentication is used on the REST API (`/etc/slurm-quota/serve.ini`), store a session key in `/etc/slurm-quota/web-session.key`. This directory is also used by `slurm-quota-serve` for `serve.ini` and is typically already present:
 
@@ -197,21 +212,13 @@ sudo chown apache:apache /etc/slurm-quota/web-session.key
 ```
 
 > [!NOTE]
-> As an alternative for quick testing, you can set the key directly with `SLURM_QUOTA_WEB_SESSION_KEY` (for example `SetEnv SLURM_QUOTA_WEB_SESSION_KEY <random-key>`). This keeps the key in the web server configuration and is less suitable for production.
+> As an alternative for quick testing, you can set `SLURM_QUOTA_WEB_SESSION_KEY` directly in `/etc/default/slurm-quota-web`. This is less suitable for production than a key file.
 
-4) Configure Apache virtual host with mod_wsgi:
+5) Configure Apache virtual host with mod_wsgi:
 
 ```apache
 <VirtualHost *:80>
     ServerName quota.example.org
-
-    # Optional: point web app to remote API endpoint
-    SetEnv SLURM_QUOTA_URL http://127.0.0.1:9911/
-
-    # Required when REST API LDAP authentication is enabled:
-    SetEnv SLURM_QUOTA_WEB_SESSION_KEY_FILE /etc/slurm-quota/web-session.key
-    # Recommended behind HTTPS:
-    # SetEnv SLURM_QUOTA_WEB_SECURE_COOKIES 1
 
     WSGIDaemonProcess slurm-quota-web processes=2 threads=5 display-name=%{GROUP}
     WSGIProcessGroup slurm-quota-web
@@ -246,7 +253,7 @@ sudo apachectl configtest
 sudo systemctl reload httpd
 ```
 
-When `authentication.method=ldap`, users sign in through the web dashboard with their LDAP credentials. Alternatively, set `SLURM_QUOTA_TOKEN` in the web server environment for service-account access without a login page. Behind HTTPS, also set `SLURM_QUOTA_WEB_SECURE_COOKIES=1` so cookies are marked `Secure`. Session lifetime defaults to one day (`SLURM_QUOTA_WEB_SESSION_DAYS`) to match the default JWT duration.
+When `authentication.method=ldap`, users sign in through the web dashboard with their LDAP credentials. Alternatively, set `SLURM_QUOTA_TOKEN` in `/etc/default/slurm-quota-web` for service-account access without a login page. Behind HTTPS, set `SLURM_QUOTA_WEB_SECURE_COOKIES=1` in the same file so cookies are marked `Secure`. Session lifetime defaults to one day (`SLURM_QUOTA_WEB_SESSION_DAYS`) to match the default JWT duration.
 
 Security recommendations:
 
@@ -397,34 +404,28 @@ sudo python3 -m pip install ".[web]"
 
 2) Run standalone (HTTP built-in server, for testing only):
 
+Export configuration variables in the shell; the standalone CLI does not read `/etc/default/slurm-quota-web`:
+
 ```bash
 SLURM_QUOTA_URL=http://127.0.0.1:9911/ slurm-quota-web
 ```
 
-When `authentication.method=ldap` and browser login is used, also configure a session signing key.
+When `authentication.method=ldap` and browser login is used, create a session key file and pass its path:
 
-> [!TIP]
-> Prefer a key file referenced by `SLURM_QUOTA_WEB_SESSION_KEY_FILE`:
->
-> ```bash
-> openssl rand -hex 32 > /tmp/web-session.key
-> chmod 0400 /tmp/web-session.key
-> SLURM_QUOTA_WEB_SESSION_KEY_FILE=/tmp/web-session.key SLURM_QUOTA_URL=http://127.0.0.1:9911/ slurm-quota-web
-> ```
+```bash
+openssl rand -hex 32 > /tmp/web-session.key
+chmod 0400 /tmp/web-session.key
+SLURM_QUOTA_WEB_SESSION_KEY_FILE=/tmp/web-session.key SLURM_QUOTA_URL=http://127.0.0.1:9911/ slurm-quota-web
+```
 
 > [!NOTE]
-> As an alternative, pass the key directly for quick testing:
->
-> ```bash
-> SLURM_QUOTA_WEB_SESSION_KEY=$(openssl rand -hex 32) slurm-quota-web
-> ```
+> Alternatively, pass `SLURM_QUOTA_WEB_SESSION_KEY` directly in the shell for quick testing.
 
-> [!NOTE]
-> Templates and static files are resolved automatically: repo-root `web/` when running from a git checkout, then the pip-installed data directory (for example `{prefix}/slurm-quota/web/`), then `/usr/share/slurm-quota/web`. If needed, set `SLURM_QUOTA_WEB_ASSETS_DIR` environment variable to use a custom directory containing `templates/` and `static/` (for example in Apache: `SetEnv SLURM_QUOTA_WEB_ASSETS_DIR /path/to/assets`).
+> Templates and static files are resolved automatically: repo-root `web/` when running from a git checkout, then the pip-installed data directory (for example `{prefix}/slurm-quota/web/`), then `/usr/share/slurm-quota/web`. If needed, set `SLURM_QUOTA_WEB_ASSETS_DIR` in the environment.
 
-3) Create the session signing key file when using LDAP browser login (`authentication.method=ldap`):
+3) Configure Apache with this manual installation:
 
-When LDAP authentication is used on the REST API (`/etc/slurm-quota/serve.ini`), store a session key in `/etc/slurm-quota/web-session.key`. This directory is also used by `slurm-quota-serve` for `serve.ini` and is typically already present:
+When LDAP browser login is used, create the session signing key file first:
 
 ```bash
 sudo sh -c 'openssl rand -hex 32 > /etc/slurm-quota/web-session.key'
@@ -432,10 +433,18 @@ sudo chmod 0400 /etc/slurm-quota/web-session.key
 sudo chown apache:apache /etc/slurm-quota/web-session.key
 ```
 
-> [!NOTE]
-> As an alternative for quick testing, you can set the key directly with `SLURM_QUOTA_WEB_SESSION_KEY` (for example `SetEnv SLURM_QUOTA_WEB_SESSION_KEY <random-key>`). This keeps the key in the web server configuration and is less suitable for production.
+Create `/etc/default/slurm-quota-web` (loaded by `web/wsgi/slurm-quota-web.wsgi` before the application starts). Set at least `SLURM_QUOTA_URL`; when LDAP browser login is used, also set `SLURM_QUOTA_WEB_SESSION_KEY_FILE`:
 
-4) Configure Apache with this manual installation:
+```bash
+sudo tee /etc/default/slurm-quota-web <<'EOF'
+SLURM_QUOTA_URL=http://controller:9911/
+SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key
+EOF
+sudo chmod 0644 /etc/default/slurm-quota-web
+```
+
+> [!NOTE]
+> A commented example with additional optional variables ships as `conf/slurm-quota-web.default` in the source tree, or `{prefix}/slurm-quota/conf/slurm-quota-web.default` after `pip install` (with `{prefix}` from `python3 -c "import sys; print(sys.prefix)"`).
 
 Install Apache/mod_wsgi packages:
 
@@ -448,12 +457,6 @@ Use the bundled WSGI entry script (`web/wsgi/slurm-quota-web.wsgi` in a git chec
 ```apache
 <VirtualHost *:80>
     ServerName quota.example.org
-
-    SetEnv SLURM_QUOTA_URL http://127.0.0.1:9911/
-
-    # Required when REST API LDAP authentication is enabled:
-    SetEnv SLURM_QUOTA_WEB_SESSION_KEY_FILE /etc/slurm-quota/web-session.key
-    # SetEnv SLURM_QUOTA_WEB_SECURE_COOKIES 1
 
     WSGIDaemonProcess slurm-quota-web processes=2 threads=5 display-name=%{GROUP}
     WSGIProcessGroup slurm-quota-web
@@ -480,7 +483,7 @@ Use the bundled WSGI entry script (`web/wsgi/slurm-quota-web.wsgi` in a git chec
 </VirtualHost>
 ```
 
-Enable and reload Apache as shown in the RPM installation section. When using LDAP browser login or per-user sessions, include `SLURM_QUOTA_WEB_SESSION_KEY_FILE` (or `SLURM_QUOTA_WEB_SESSION_KEY` as an alternative) and `SLURM_QUOTA_WEB_SECURE_COOKIES` behind HTTPS in the virtual host as described above. For service-token access, set `SLURM_QUOTA_TOKEN` instead.
+Enable and reload Apache as shown in the RPM installation section.
 
 ## Usage
 
@@ -727,13 +730,15 @@ Environment variables:
 - `SLURM_QUOTA_WEB_SESSION_KEY`: session signing key passed directly (alternative to `SLURM_QUOTA_WEB_SESSION_KEY_FILE`)
 - `SLURM_QUOTA_WEB_SECURE_COOKIES`: set to `1` to mark session cookies `Secure` (recommended behind HTTPS when using LDAP browser login)
 - `SLURM_QUOTA_WEB_SESSION_DAYS`: browser session lifetime in days (default `1`)
+- `SLURM_QUOTA_WEB_ASSETS_DIR`: custom templates/static directory
 - `SLURM_QUOTA_WEB_HOST`, `SLURM_QUOTA_WEB_PORT`, `SLURM_QUOTA_WEB_DEBUG`: standalone server options
+- `SLURM_QUOTA_WEB_ENV_FILE`: path to defaults file read by the WSGI script (default `/etc/default/slurm-quota-web`; not used by standalone CLI)
 
 Examples:
 
 ```bash
-slurm-quota-web
-SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 slurm-quota-web
+SLURM_QUOTA_URL=http://127.0.0.1:9911/ slurm-quota-web
+SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 SLURM_QUOTA_URL=http://controller:9911/ slurm-quota-web
 SLURM_QUOTA_URL=http://controller:9911/ SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice) slurm-quota-web
 ```
 
