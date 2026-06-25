@@ -155,10 +155,17 @@ end
 local function connect_db()
     local conn, err = DBI.Connect('SQLite3', DB_PATH)
     if conn then
-        -- Set a busy timeout so SQLite waits briefly when the DB is locked
-        -- This reduces immediate failures under concurrent access
+        -- Per-connection settings only: busy_timeout and foreign_keys must be set
+        -- on every connection. WAL (journal_mode) is not set here because it is already
+        -- enabled by slurm-quota-serve, slurm-quota-charge, or slurm-quota-migrate and
+        -- it is persisted in the database file.
         pcall(function()
             local stmt = conn:prepare("PRAGMA busy_timeout = 5000")
+            if stmt then
+                stmt:execute()
+                stmt:close()
+            end
+            stmt = conn:prepare("PRAGMA foreign_keys = ON")
             if stmt then
                 stmt:execute()
                 stmt:close()
