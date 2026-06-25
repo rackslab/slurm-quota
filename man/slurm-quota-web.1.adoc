@@ -99,15 +99,6 @@ To generate a new key:
 openssl rand -hex 32
 ....
 
-For production deployment behind Apache, store the key in a restricted file::
-
-....
-sudo sh -c 'openssl rand -hex 32 > /etc/slurm-quota/web-session.key'
-sudo chmod 0400 /etc/slurm-quota/web-session.key
-sudo chown apache:apache /etc/slurm-quota/web-session.key
-SetEnv SLURM_QUOTA_WEB_SESSION_KEY_FILE /etc/slurm-quota/web-session.key
-....
-
 == Examples
 
 ....
@@ -117,7 +108,7 @@ slurm-quota-web
 # custom API endpoint
 SLURM_QUOTA_URL=http://controller:9911/ slurm-quota-web
 
-# with REST API LDAP authentication enabled (preferred: key file)
+# with REST API LDAP authentication enabled
 SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key slurm-quota-web
 
 # custom bind host/port
@@ -134,4 +125,4 @@ SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 slurm-quota-web
 
 == See Also
 
-`slurm-quota(1)`, `slurm-quota-serve(1)`, `httpd(8)`, `mod_wsgi(8)`, `systemd.service(5)`
+`slurm-quota(1)`, `slurm-quota-serve(1)`, `httpd(8)`, `mod_wsgi(8)`

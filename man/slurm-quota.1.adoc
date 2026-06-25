@@ -296,7 +296,7 @@ slurm-quota set-default-quotas --user-cpu 50000 --account-cpu 200000
 
 *SLURM_QUOTA_TOKEN*::
   JWT for HTTP API authentication. When set, takes precedence over the token
-  file saved by `login` or `token`. Also accepted by `slurm-quota-web`.
+  file saved by `login` or `token`.
 
 *XDG_CONFIG_HOME*::
   Base directory for user-specific configuration. The token saved by `login` is
