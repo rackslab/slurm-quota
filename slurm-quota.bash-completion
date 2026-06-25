@@ -25,7 +25,7 @@ _slurm_quota_complete_accounts() {
 
 _slurm_quota() {
     local cur prev cword
-    local i j
+    local i
     local -a words
 
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -40,6 +40,7 @@ _slurm_quota() {
     public_subcommands=(
         stats
         login
+        role
         gpu-factors
         default-quotas
     )
@@ -56,11 +57,6 @@ _slurm_quota() {
 
     local is_privileged=0
     if [[ "$EUID" -eq 0 || "$USER" == "slurm" ]]; then
-        is_privileged=1
-    fi
-
-    # Allow privileged command completion only for literal "sudo" in first position.
-    if [[ "${words[0]}" == "sudo" ]]; then
         is_privileged=1
     fi
 
@@ -81,13 +77,6 @@ _slurm_quota() {
     # Parse only words after command name and before the one being completed.
     # Including the current partial token here prevents proper autocompletion.
     for (( i=cmd_idx+1; i<cword; i++ )); do
-        if [[ "${words[i]}" == "sudo" ]]; then
-            continue
-        fi
-        if [[ "${words[i]}" == "-u" || "${words[i]}" == "-g" ]]; then
-            (( i++ ))
-            continue
-        fi
         if [[ "${words[i]}" == --debug || "${words[i]}" == -q || "${words[i]}" == --quiet || "${words[i]}" == --version || "${words[i]}" == -h || "${words[i]}" == --help ]]; then
             continue
         fi
@@ -157,6 +146,69 @@ _slurm_quota() {
             ;;
         set-default-quotas)
             COMPREPLY=($(compgen -W "$base_opts --user-cpu --user-gpu --account-cpu --account-gpu" -- "$cur"))
+            ;;
+        role)
+            local role_idx=-1 role_subcmd="" role_subcmd_idx=-1
+            local managers_subcmd="" managers_subcmd_idx=-1
+            for (( i=cmd_idx+1; i<cword; i++ )); do
+                if [[ "${words[i]}" == --debug || "${words[i]}" == -q || "${words[i]}" == --quiet || "${words[i]}" == --version || "${words[i]}" == -h || "${words[i]}" == --help ]]; then
+                    continue
+                fi
+                if [[ "${words[i]}" == -* ]]; then
+                    continue
+                fi
+                if (( role_idx < 0 )); then
+                    if [[ "${words[i]}" == "role" ]]; then
+                        role_idx="$i"
+                    fi
+                    continue
+                fi
+                if [[ -z "$role_subcmd" ]]; then
+                    role_subcmd="${words[i]}"
+                    role_subcmd_idx="$i"
+                    continue
+                fi
+                if [[ "$role_subcmd" == "managers" && -z "$managers_subcmd" ]]; then
+                    managers_subcmd="${words[i]}"
+                    managers_subcmd_idx="$i"
+                fi
+            done
+
+            if (( cword == role_idx + 1 )); then
+                COMPREPLY=($(compgen -W "$base_opts show list grant revoke managers" -- "$cur"))
+            elif [[ "$role_subcmd" == "show" || "$role_subcmd" == "list" ]]; then
+                COMPREPLY=($(compgen -W "$base_opts" -- "$cur"))
+            elif [[ "$role_subcmd" == "grant" || "$role_subcmd" == "revoke" ]]; then
+                if (( cword == role_subcmd_idx + 1 )); then
+                    COMPREPLY=($(compgen -W "operator manager" -- "$cur"))
+                elif (( cword == role_subcmd_idx + 2 )); then
+                    COMPREPLY=($(_slurm_quota_complete_users "$cur"))
+                else
+                    COMPREPLY=($(compgen -W "$base_opts" -- "$cur"))
+                fi
+            elif [[ "$role_subcmd" == "managers" ]]; then
+                if (( cword == role_subcmd_idx + 1 )); then
+                    COMPREPLY=($(compgen -W "list add remove" -- "$cur"))
+                elif [[ "$managers_subcmd" == "list" ]]; then
+                    if (( cword == managers_subcmd_idx + 1 )); then
+                        COMPREPLY=($(_slurm_quota_complete_users "$cur"))
+                    else
+                        COMPREPLY=($(compgen -W "$base_opts" -- "$cur"))
+                    fi
+                elif [[ "$managers_subcmd" == "add" || "$managers_subcmd" == "remove" ]]; then
+                    if (( cword == managers_subcmd_idx + 1 )); then
+                        COMPREPLY=($(_slurm_quota_complete_users "$cur"))
+                    elif (( cword == managers_subcmd_idx + 2 )); then
+                        COMPREPLY=($(_slurm_quota_complete_accounts "$cur"))
+                    else
+                        COMPREPLY=($(compgen -W "$base_opts" -- "$cur"))
+                    fi
+                else
+                    COMPREPLY=($(compgen -W "$base_opts list add remove" -- "$cur"))
+                fi
+            else
+                COMPREPLY=($(compgen -W "$base_opts show list grant revoke managers" -- "$cur"))
+            fi
             ;;
     esac
 
