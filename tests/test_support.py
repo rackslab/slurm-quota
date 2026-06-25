@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Dict
 from unittest.mock import patch
 
+from slurm_quota.database import configure_connection
+
 
 class SlurmQuotaTestCase(unittest.TestCase):
     """Use ``with self.db_connection() as conn:`` for any direct SQLite access in tests."""
@@ -29,6 +31,7 @@ class SlurmQuotaTestCase(unittest.TestCase):
     def db_connection(self):
         # sqlite3.Connection.__exit__ commits/rolls back but does not close; use closing().
         with closing(sqlite3.connect(self.db_path)) as conn:
+            configure_connection(conn)
             yield conn
 
     def env(self, updates: Dict[str, str]):

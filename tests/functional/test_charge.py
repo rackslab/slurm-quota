@@ -150,7 +150,6 @@ class TestChargeCommand(FunctionalCLIBase):
             log_cm.output,
             [
                 "INFO:slurm_quota:Database initialized successfully",
-                f"INFO:slurm_quota:Database permissions set for {self.db_path}",
                 "WARNING:slurm_quota:No job UUID found in admin_comment for job 9",
                 "INFO:slurm_quota:charge: user=u1 account=a1 job_id=9 +30 CPUmins +0 GPUmins "
                 "uuid=none prealloc_status=none",
@@ -172,6 +171,14 @@ class TestChargeCommand(FunctionalCLIBase):
         init_database()
         job_uuid = "prealloc-job-uuid"
         with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username) VALUES (?)",
+                ("u1",),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("a1",),
+            )
             conn.execute(
                 """
                 INSERT INTO jobs_preallocations

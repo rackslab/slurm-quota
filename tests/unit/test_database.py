@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from slurm_quota.database import (
     adjust_consumed_minutes,
+    connect_database,
     grant_manager,
     grant_manager_account,
     grant_operator,
@@ -164,13 +165,13 @@ class TestPruneResources(SlurmQuotaTestCase):
             conn.commit()
 
         # Count how many prune_resources DB contexts are currently open.
-        # prune_resources uses "with sqlite3.connect(...)"; we wrap connect() so
-        # __enter__/__exit__ increment/decrement this counter per connection.
+        # prune_resources uses connect_database(); we wrap it so __enter__/__exit__
+        # increment/decrement this counter per connection.
         open_connections = 0
-        real_connect = sqlite3.connect
+        real_connect_database = connect_database
 
-        def tracking_connect(database, *args, **kwargs):
-            conn = real_connect(database, *args, **kwargs)
+        def tracking_connect_database():
+            conn = real_connect_database()
 
             class TrackingConnection:
                 def __enter__(self):
@@ -196,7 +197,8 @@ class TestPruneResources(SlurmQuotaTestCase):
             return set()
 
         with patch(
-            "slurm_quota.database.sqlite3.connect", side_effect=tracking_connect
+            "slurm_quota.database.connect_database",
+            side_effect=tracking_connect_database,
         ):
             with patch(
                 "slurm_quota.slurm.collect_active_job_uuids",
@@ -749,3 +751,44 @@ class TestOperatorsAndManagers(SlurmQuotaTestCase):
         with self.db_connection() as conn:
             roles = list_users_with_roles(conn, {"alice"})
         self.assertEqual(roles, [{"username": "alice", "role": "admin"}])
+
+
+class TestDatabaseConfiguration(SlurmQuotaTestCase):
+    def test_connect_database_sets_busy_timeout(self):
+        init_database()
+        with connect_database() as conn:
+            timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+            self.assertEqual(int(timeout), 5000)
+
+    def test_connect_database_enables_foreign_keys(self):
+        init_database()
+        with connect_database() as conn:
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute(
+                    """
+                    INSERT INTO jobs_preallocations (
+                        job_uuid, username, account, preallocated_cpu_minutes
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    ("job1", "missing_user", "missing_account", 10),
+                )
+
+    def test_init_database_enables_wal(self):
+        init_database()
+        with self.db_connection() as conn:
+            mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+            self.assertEqual(mode.lower(), "wal")
+
+    def test_init_database_enables_wal_on_existing_db(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("CREATE TABLE users (username TEXT PRIMARY KEY)")
+            conn.commit()
+        with self.db_connection() as conn:
+            mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+            self.assertNotEqual(mode.lower(), "wal")
+
+        init_database()
+
+        with self.db_connection() as conn:
+            mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+            self.assertEqual(mode.lower(), "wal")
