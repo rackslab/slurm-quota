@@ -19,6 +19,7 @@ from rfl.web.tokens import check_jwt
 import slurm_quota
 from slurm_quota.database import (
     adjust_consumed_minutes as db_adjust_consumed_minutes,
+    connect_database,
     get_default_quota_settings,
     grant_manager as db_grant_manager,
     grant_manager_account as db_grant_manager_account,
@@ -109,7 +110,7 @@ def fetch_stats(
             except Exception:
                 accounts_query = set()
 
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             users = query_users_aggregate(conn, usernames_filter)
             accounts = query_accounts_aggregate(conn, accounts_query)
         return {"users": users, "accounts": accounts}, None
@@ -143,7 +144,7 @@ def _resolve_manager_stats_scope(
         are all members of assigned accounts and accounts are the full assigned
         set.
     """
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         assigned = set(list_manager_accounts(conn, login))
 
     if not assigned:
@@ -275,7 +276,7 @@ def me() -> Any:
 def list_roles() -> Any:
     serve_app = cast("SlurmQuotaServeApp", current_app)
     assert serve_app.settings is not None
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         users = list_users_with_roles(conn, config_admins(serve_app.settings))
     return jsonify({"users": users})
 
@@ -287,7 +288,7 @@ def grant_operator(username: str) -> Any:
     assert serve_app.settings is not None
     if username in config_admins(serve_app.settings):
         return "", 204
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         db_grant_operator(conn, username)
     return "", 204
 
@@ -295,7 +296,7 @@ def grant_operator(username: str) -> Any:
 @require_role("admin")
 def revoke_operator(username: str) -> Any:
     _validate_username(username)
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         db_revoke_operator(conn, username)
     return "", 204
 
@@ -307,7 +308,7 @@ def grant_manager(username: str) -> Any:
     assert serve_app.settings is not None
     if username in config_admins(serve_app.settings):
         return "", 204
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         db_grant_manager(conn, username)
     return "", 204
 
@@ -315,7 +316,7 @@ def grant_manager(username: str) -> Any:
 @require_role("admin")
 def revoke_manager(username: str) -> Any:
     _validate_username(username)
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         db_revoke_manager(conn, username)
     return "", 204
 
@@ -323,7 +324,7 @@ def revoke_manager(username: str) -> Any:
 @require_role("admin")
 def list_manager_accounts_route(username: str) -> Any:
     _validate_username(username)
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         if not is_manager(conn, username):
             abort(404, description="User is not a manager")
         accounts = list_manager_accounts(conn, username)
@@ -334,7 +335,7 @@ def list_manager_accounts_route(username: str) -> Any:
 def grant_manager_account_route(username: str, account: str) -> Any:
     _validate_username(username)
     _validate_account(account)
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         if not is_manager(conn, username):
             abort(404, description="User is not a manager")
         db_grant_manager_account(conn, username, account)
@@ -345,7 +346,7 @@ def grant_manager_account_route(username: str, account: str) -> Any:
 def revoke_manager_account_route(username: str, account: str) -> Any:
     _validate_username(username)
     _validate_account(account)
-    with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+    with connect_database() as conn:
         if not is_manager(conn, username):
             abort(404, description="User is not a manager")
         db_revoke_manager_account(conn, username, account)

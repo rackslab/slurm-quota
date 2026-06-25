@@ -12,6 +12,11 @@ import sys
 
 import slurm_quota
 from slurm_quota.auth import get_current_user
+from slurm_quota.database import (
+    connect_database,
+    enable_wal_mode,
+    set_database_permissions,
+)
 from slurm_quota.log import logger, setup_logging
 
 MIGRATE_DEFAULT_QUOTA_SETTINGS = {
@@ -32,7 +37,7 @@ def migrate_database() -> None:
         sys.exit(1)
 
     try:
-        with sqlite3.connect(slurm_quota.DB_PATH) as conn:
+        with connect_database() as conn:
             cursor = conn.cursor()
 
             # Check if array_size column exists in jobs_preallocations
@@ -206,6 +211,9 @@ def migrate_database() -> None:
                 """)
                 conn.commit()
                 logger.info("Migration completed: manager_accounts table created")
+
+            enable_wal_mode(conn)
+            set_database_permissions()
 
     except sqlite3.Error as e:
         logger.error(f"Database migration failed: {e}")
