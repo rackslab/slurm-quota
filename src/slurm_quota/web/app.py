@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from datetime import timedelta
 from http import HTTPStatus
 from typing import Any, Optional
@@ -18,29 +17,27 @@ from werkzeug.exceptions import HTTPException
 from slurm_quota.web import routes
 from slurm_quota.web.auth import login_url, session_token
 from slurm_quota.token import load_service_token
-from slurm_quota.web.settings import assets_root, load_session_key
+from slurm_quota.web.settings import SlurmQuotaWebSettings
 
 logger = logging.getLogger("slurm_quota")
 
 
 class SlurmQuotaWebApp(Flask):
     def __init__(self) -> None:
-        web_root = assets_root()
+        self.settings = SlurmQuotaWebSettings.from_os_environ()
+        web_root = self.settings.assets_root()
         super().__init__(
             "slurm-quota-web",
             template_folder=str(web_root / "templates"),
             static_folder=str(web_root / "static"),
         )
-        session_key = load_session_key()
+        session_key = self.settings.load_session_key()
         if session_key:
             self.secret_key = session_key
         self.config["SESSION_COOKIE_HTTPONLY"] = True
-        self.config["SESSION_COOKIE_SECURE"] = os.environ.get(
-            "SLURM_QUOTA_WEB_SECURE_COOKIES", ""
-        ).lower() in {"1", "true", "yes", "on"}
+        self.config["SESSION_COOKIE_SECURE"] = self.settings.secure_cookies
         self.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-        days = int(os.environ.get("SLURM_QUOTA_WEB_SESSION_DAYS", "1"))
-        self.permanent_session_lifetime = timedelta(days=max(days, 1))
+        self.permanent_session_lifetime = timedelta(days=self.settings.session_days)
 
     def ensure_session_key(self) -> None:
         if self.secret_key:
