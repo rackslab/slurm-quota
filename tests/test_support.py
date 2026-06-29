@@ -6,7 +6,6 @@ import tempfile
 import unittest
 from contextlib import closing, contextmanager
 from pathlib import Path
-from typing import Dict
 from unittest.mock import patch
 
 from slurm_quota.database import configure_connection
@@ -34,7 +33,7 @@ class SlurmQuotaTestCase(unittest.TestCase):
             configure_connection(conn)
             yield conn
 
-    def env(self, updates: Dict[str, str]):
+    def env(self, updates: dict[str, str]):
         p = patch.dict(os.environ, updates, clear=False)
         p.start()
         self.addCleanup(p.stop)

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional
 
 
 def _xdg_config_home() -> Path:
@@ -40,7 +39,7 @@ def save_service_token(token: str) -> Path:
     return path
 
 
-def load_service_token() -> Optional[str]:
+def load_service_token() -> str | None:
     """
     Load a service JWT token for HTTP API authentication.
 

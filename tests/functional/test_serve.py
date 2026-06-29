@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from slurm_quota.database import init_database
-from slurm_quota.serve.settings import conf_defs_path
-
+import contextlib
 import http.client
 import json
 import os
@@ -17,6 +15,8 @@ from unittest.mock import patch
 
 from rfl.authentication.user import AuthenticatedUser
 
+from slurm_quota.database import init_database
+from slurm_quota.serve.settings import conf_defs_path
 from tests.functional.functional_base import FunctionalCLIBase
 from tests.unit.serve.support import (
     issue_test_token,
@@ -320,10 +320,8 @@ class TestServeCommand(FunctionalCLIBase):
                 os.dup2(fd3_backup, 3)
                 os.close(fd3_backup)
             elif not had_fd3:
-                try:
+                with contextlib.suppress(OSError):
                     os.close(3)
-                except OSError:
-                    pass
 
     def test_serve_idle_timeout_zero_disables_shutdown(self):
         init_database()

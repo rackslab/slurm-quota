@@ -10,7 +10,6 @@ from unittest.mock import patch
 from rfl.authentication.jwt import JWTManager
 
 from slurm_quota.serve.settings import conf_defs_path, load_serve_settings
-
 from tests.functional.functional_base import FunctionalCLIBase
 from tests.unit.serve.support import write_jwt_site_ini
 

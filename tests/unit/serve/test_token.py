@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 from slurm_quota.serve.settings import ServeSetupError, conf_defs_path
 from slurm_quota.serve.token import issue_token, main
-
 from tests.test_support import SlurmQuotaTestCase
 from tests.unit.serve.support import write_jwt_site_ini
 
@@ -65,7 +64,7 @@ class TestTokenCLIMain(SlurmQuotaTestCase):
                 "slurm_quota.serve.token.auth.get_current_user", return_value="alice"
             ),
             patch.object(sys, "argv", ["slurm-quota-token", "alice"]),
+            self.assertRaises(SystemExit) as cm,
         ):
-            with self.assertRaises(SystemExit) as cm:
-                main()
+            main()
         self.assertEqual(cm.exception.code, 1)

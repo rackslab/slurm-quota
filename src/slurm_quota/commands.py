@@ -5,20 +5,19 @@
 """CLI command implementations."""
 
 import getpass
+import logging
 import os
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal, Optional
 from urllib.error import URLError
 
 from slurm_quota import auth
 from slurm_quota.client import APIClient, ServiceHTTPError
-from slurm_quota.token import load_service_token, save_service_token
 from slurm_quota.database import (
     prune_resources,
 )
-
-import logging
+from slurm_quota.token import load_service_token, save_service_token
 
 logger = logging.getLogger("slurm_quota")
 
@@ -115,7 +114,9 @@ def set_user_quota_command(username: str, quota: int) -> None:
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: operator or admin role required to set quotas",
+            forbidden_message=(
+                "Access denied: operator or admin role required to set quotas"
+            ),
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")
@@ -130,7 +131,9 @@ def set_account_quota_command(account: str, quota: int) -> None:
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: operator or admin role required to set quotas",
+            forbidden_message=(
+                "Access denied: operator or admin role required to set quotas"
+            ),
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")
@@ -145,7 +148,9 @@ def set_user_gpu_quota_command(username: str, quota: int) -> None:
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: operator or admin role required to set quotas",
+            forbidden_message=(
+                "Access denied: operator or admin role required to set quotas"
+            ),
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")
@@ -160,7 +165,9 @@ def set_account_gpu_quota_command(account: str, quota: int) -> None:
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: operator or admin role required to set quotas",
+            forbidden_message=(
+                "Access denied: operator or admin role required to set quotas"
+            ),
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")
@@ -175,7 +182,10 @@ def adjust_command(
     minutes: Optional[int],
     hours: Optional[int],
 ) -> None:
-    """Adjust consumed CPU/GPU time via the REST API (operator or admin role required)."""
+    """Adjust consumed CPU/GPU time via the REST API.
+
+    Operator or admin role required.
+    """
     try:
         target_type = "user" if username is not None else "account"
         target_name = username if username is not None else account
@@ -202,11 +212,9 @@ def adjust_command(
         delta_source = minutes if minutes is not None else hours
         target_label = "user" if target_type == "user" else "account"
         print(
-            (
-                f"Successfully adjusted {resource.upper()} consumed time "
-                f"for {target_label} {target_name}: "
-                f"{delta_source:+d} {unit_label} (new total: {new_total} minutes)"
-            )
+            f"Successfully adjusted {resource.upper()} consumed time "
+            f"for {target_label} {target_name}: "
+            f"{delta_source:+d} {unit_label} (new total: {new_total} minutes)"
         )
 
     except ServiceHTTPError as exc:
@@ -365,7 +373,8 @@ def prune_command(
         current_user = auth.get_current_user()
         if current_user != "root":
             logger.error(
-                f"Prune command can only be executed by root user, not by {current_user}"
+                "Prune command can only be executed by root user, "
+                f"not by {current_user}"
             )
             sys.exit(1)
 
@@ -499,8 +508,8 @@ def show_user_stats(
         return f"{value_minutes}"
 
     def compute_first_column_width(
-        users: List[Dict[str, Any]],
-        accounts: List[Dict[str, Any]],
+        users: list[dict[str, Any]],
+        accounts: list[dict[str, Any]],
         max_width: int = 30,
     ) -> int:
         labels = [
@@ -536,11 +545,40 @@ def show_user_stats(
                     value_str = f"{value_str[: first_column_width - 1]}…"
             return f"{value_str:<{first_column_width}}"
 
+        def format_stats_subheader(label: str) -> str:
+            cpu = f"{'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29}"
+            gpu = (
+                f"{'CONSUMED':>11} {'PREALLOC(JOBS)':>15} "
+                f"{'QUOTA':>8} {'STATUS':<29} | {'LAST UPDATED':<25}"
+            )
+            return f"{format_first_column(label)} | {cpu} | {gpu}"
+
+        def format_stats_row(
+            label: str,
+            cpu_consumed_str: str,
+            cpu_preallocated_str: str,
+            cpu_quota_str: str,
+            cpu_status_bar: str,
+            gpu_consumed_str: str,
+            gpu_preallocated_str: str,
+            gpu_quota_str: str,
+            gpu_status_bar: str,
+            last_updated_str: str,
+        ) -> str:
+            cpu = (
+                f"{cpu_consumed_str:>11} {cpu_preallocated_str:>15} "
+                f"{cpu_quota_str:>8} {cpu_status_bar:<29}"
+            )
+            gpu = (
+                f"{gpu_consumed_str:>11} {gpu_preallocated_str:>15} "
+                f"{gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
+            )
+            return f"{format_first_column(label)} | {cpu} | {gpu}"
+
         if users_data:
             header = (
                 f"{'':<{first_column_width}} | {'CPU':^66} | {'GPU':^66} |\n"
-                f"{format_first_column('USER')} | {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} "
-                f"| {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} | {'LAST UPDATED':<25}"
+                f"{format_stats_subheader('USER')}"
             )
             print(header)
             print("-" * int(len(header) / 2))
@@ -578,15 +616,24 @@ def show_user_stats(
                 gpu_preallocated_str = f"{format_value(gpu_preallocated)}({job_count})"
 
                 print(
-                    f"{format_first_column(uname)} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
-                    f"| {gpu_consumed_str:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
+                    format_stats_row(
+                        uname,
+                        cpu_consumed_str,
+                        cpu_preallocated_str,
+                        cpu_quota_str,
+                        cpu_status_bar,
+                        gpu_consumed_str,
+                        gpu_preallocated_str,
+                        gpu_quota_str,
+                        gpu_status_bar,
+                        last_updated_str,
+                    )
                 )
             print()
 
         header = (
             f"{'':<{first_column_width}} | {'CPU':^66} | {'GPU':^66} |\n"
-            f"{format_first_column('ACCOUNT')} | {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} "
-            f"| {'CONSUMED':>11} {'PREALLOC(JOBS)':>15} {'QUOTA':>8} {'STATUS':<29} | {'LAST UPDATED':<25}"
+            f"{format_stats_subheader('ACCOUNT')}"
         )
         print(header)
         print("-" * int(len(header) / 2))
@@ -624,8 +671,18 @@ def show_user_stats(
             gpu_preallocated_str = f"{format_value(gpu_preallocated)}({job_count})"
 
             print(
-                f"{format_first_column(account_name)} | {cpu_consumed_str:>11} {cpu_preallocated_str:>15} {cpu_quota_str:>8} {cpu_status_bar:<29} "
-                f"| {gpu_consumed_str:>11} {gpu_preallocated_str:>15} {gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
+                format_stats_row(
+                    account_name,
+                    cpu_consumed_str,
+                    cpu_preallocated_str,
+                    cpu_quota_str,
+                    cpu_status_bar,
+                    gpu_consumed_str,
+                    gpu_preallocated_str,
+                    gpu_quota_str,
+                    gpu_status_bar,
+                    last_updated_str,
+                )
             )
     except ServiceHTTPError as e:
         logger.error(f"Failed to fetch stats: HTTP {e.status}")
@@ -674,9 +731,9 @@ def role_list_command() -> None:
     role_width = max(len("ROLE"), max(len(str(u.get("role", ""))) for u in users))
     print(f"{'USERNAME':<{username_width}}  {'ROLE':<{role_width}}")
     for entry in users:
-        print(
-            f"{str(entry.get('username', '?')):<{username_width}}  {str(entry.get('role', '?')):<{role_width}}"
-        )
+        username = str(entry.get("username", "?"))
+        role = str(entry.get("role", "?"))
+        print(f"{username:<{username_width}}  {role:<{role_width}}")
 
 
 def role_grant_command(role: Literal["operator", "manager"], username: str) -> None:
@@ -715,7 +772,9 @@ def role_managers_list_command(username: str) -> None:
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: admin role required to list manager accounts",
+            forbidden_message=(
+                "Access denied: admin role required to list manager accounts"
+            ),
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")
@@ -735,7 +794,9 @@ def role_managers_add_command(username: str, account: str) -> None:
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: admin role required to assign manager accounts",
+            forbidden_message=(
+                "Access denied: admin role required to assign manager accounts"
+            ),
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")
@@ -749,7 +810,9 @@ def role_managers_remove_command(username: str, account: str) -> None:
     except ServiceHTTPError as exc:
         _handle_api_error(
             exc,
-            forbidden_message="Access denied: admin role required to remove manager accounts",
+            forbidden_message=(
+                "Access denied: admin role required to remove manager accounts"
+            ),
         )
     except URLError as exc:
         logger.error(f"Failed to contact slurm-quota service: {exc}")

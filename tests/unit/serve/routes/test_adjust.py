@@ -6,7 +6,6 @@ import sqlite3
 from unittest.mock import patch
 
 from slurm_quota.database import grant_operator, init_database
-
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 
 

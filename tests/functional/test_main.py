@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from slurm_quota import APP_VERSION
-
 from tests.functional.functional_base import FunctionalCLIBase
 
 

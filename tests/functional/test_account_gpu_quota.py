@@ -25,7 +25,7 @@ class TestAccountGpuQuotaCommand(FunctionalAPICliBase):
             )
         self.assertEqual(
             out.getvalue(),
-            "Successfully set GPU quota for account genomics_facility: 200 GPU minutes\n",
+            "Successfully set GPU quota for account genomics_facility: 200 GPU minutes\n",  # noqa: E501
         )
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.get_method(), "PUT")

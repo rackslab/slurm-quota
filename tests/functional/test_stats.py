@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from contextlib import nullcontext
+from copy import deepcopy
 from pathlib import Path
-from typing import Optional
 from unittest.mock import patch
 
 from slurm_quota.token import service_token_path
-
 from tests.functional import functional_base
 from tests.functional.functional_base import FunctionalCLIBase
 from tests.testing_utils import dedent_lines
@@ -21,8 +19,8 @@ class TestStatsCommand(FunctionalCLIBase):
         argv: list[str],
         *,
         expected: str,
-        current_user: Optional[str] = None,
-        payload_extend: Optional[dict] = None,
+        current_user: str | None = None,
+        payload_extend: dict | None = None,
     ) -> None:
         self.env({"NO_COLOR": "1"})
         payload = deepcopy(functional_base.stats_payload_full())

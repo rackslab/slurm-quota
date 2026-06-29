@@ -9,13 +9,13 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from flask import Flask, jsonify
-from werkzeug.exceptions import BadRequest, Forbidden, Unauthorized
 from rfl.authentication.ldap import LDAPAuthentifier
 from rfl.settings import RuntimeSettings
 from rfl.web.tokens import RFLTokenizedWebApp
+from werkzeug.exceptions import BadRequest, Forbidden, Unauthorized
 
 from slurm_quota import auth
 from slurm_quota.database import init_database
@@ -31,8 +31,8 @@ logger = logging.getLogger("slurm_quota")
 class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
     def __init__(self) -> None:
         Flask.__init__(self, "slurm-quota-serve")
-        self.settings: Optional[RuntimeSettings] = None
-        self.authentifier: Optional[LDAPAuthentifier] = None
+        self.settings: RuntimeSettings | None = None
+        self.authentifier: LDAPAuthentifier | None = None
         self._last_activity = time.monotonic()
 
     def register(self) -> None:

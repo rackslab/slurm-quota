@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 from functools import wraps
-from typing import Any, Callable, Literal, Set, TypeVar, cast
+from typing import Any, Callable, Literal, TypeVar, cast
 
 from flask import abort, current_app, request
 from rfl.settings import RuntimeSettings
@@ -21,7 +21,7 @@ Role = Literal["admin", "operator", "manager", "user"]
 F = TypeVar("F", bound=Callable[..., Any])
 
 
-def config_admins(settings: RuntimeSettings) -> Set[str]:
+def config_admins(settings: RuntimeSettings) -> set[str]:
     admins = getattr(settings.authorization, "admins", None)
     if not admins:
         return set()

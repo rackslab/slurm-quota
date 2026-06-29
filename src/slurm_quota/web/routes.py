@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.error import URLError
 
 from flask import (
@@ -54,12 +54,10 @@ def _display_hours_from_unit(unit: str, hours_legacy: str) -> bool:
         return True
     if normalized in ("minutes", "m", "min"):
         return False
-    if hours_legacy.lower() in {"1", "true", "yes", "on"}:
-        return True
-    return False
+    return hours_legacy.lower() in {"1", "true", "yes", "on"}
 
 
-def _resolve_dashboard_filters() -> Tuple[Optional[str], Optional[str], bool]:
+def _resolve_dashboard_filters() -> tuple[str | None, str | None, bool]:
     """Resolve dashboard filter state using query parameters and session.
 
     When the request includes any of username, account, unit, or hours query
@@ -192,9 +190,9 @@ def dashboard() -> Response | str:
     role = current_role()
     username, account, display_hours = _resolve_dashboard_filters()
 
-    error: Optional[str] = None
-    users: List[Dict[str, Any]] = []
-    accounts: List[Dict[str, Any]] = []
+    error: str | None = None
+    users: list[dict[str, Any]] = []
+    accounts: list[dict[str, Any]] = []
 
     logged_in_username = session.get("username")
     if isinstance(logged_in_username, str):
@@ -244,8 +242,8 @@ def roles() -> Response | str:
     if role != "admin":
         return redirect(url_for("dashboard"))
 
-    error: Optional[str] = None
-    users: List[Dict[str, Any]] = []
+    error: str | None = None
+    users: list[dict[str, Any]] = []
     try:
         users = api_client().users_roles()
     except ServiceHTTPError as exc:

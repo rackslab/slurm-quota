@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 def _parse_int(value: Any, default: int = 0) -> int:
@@ -28,13 +28,13 @@ def _quota_label(quota: int, display_hours: bool) -> str:
     return _format_minutes(quota, display_hours)
 
 
-def _usage_percent(consumed: int, preallocated: int, quota: int) -> Optional[float]:
+def _usage_percent(consumed: int, preallocated: int, quota: int) -> float | None:
     if quota <= 0:
         return None
     return min(((consumed + preallocated) / quota) * 100.0, 100.0)
 
 
-def _status_class(percent: Optional[float]) -> str:
+def _status_class(percent: float | None) -> str:
     if percent is None:
         return "bar-unlimited"
     if percent >= 95.0:
@@ -45,9 +45,9 @@ def _status_class(percent: Optional[float]) -> str:
 
 
 def decorate_rows(
-    rows: List[Dict[str, Any]], name_key: str, display_hours: bool
-) -> List[Dict[str, Any]]:
-    decorated: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]], name_key: str, display_hours: bool
+) -> list[dict[str, Any]]:
+    decorated: list[dict[str, Any]] = []
     for item in rows:
         cpu_consumed = _parse_int(item.get("total_consumed_cpu_minutes"))
         cpu_preallocated = _parse_int(item.get("total_preallocated_cpu_minutes"))

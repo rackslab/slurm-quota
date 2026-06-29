@@ -5,7 +5,6 @@
 """Database migration CLI for slurm-quota."""
 
 import argparse
-
 import os
 import sqlite3
 import sys
@@ -68,7 +67,8 @@ def migrate_database() -> None:
                 """)
                 conn.commit()
                 logger.info(
-                    "Migration completed: total_consumed_gpu_minutes column added to users"
+                    "Migration completed: total_consumed_gpu_minutes "
+                    "column added to users"
                 )
 
             if "quota_gpu_minutes" not in user_columns:
@@ -96,7 +96,8 @@ def migrate_database() -> None:
                 """)
                 conn.commit()
                 logger.info(
-                    "Migration completed: total_consumed_gpu_minutes column added to accounts"
+                    "Migration completed: total_consumed_gpu_minutes "
+                    "column added to accounts"
                 )
 
             if "quota_gpu_minutes" not in account_columns:
@@ -113,7 +114,8 @@ def migrate_database() -> None:
             # Check and add GPU column to jobs_preallocations table
             if "preallocated_gpu_minutes" not in columns:
                 logger.info(
-                    "Adding preallocated_gpu_minutes column to jobs_preallocations table"
+                    "Adding preallocated_gpu_minutes column to "
+                    "jobs_preallocations table"
                 )
                 cursor.execute("""
                     ALTER TABLE jobs_preallocations
@@ -121,12 +123,14 @@ def migrate_database() -> None:
                 """)
                 conn.commit()
                 logger.info(
-                    "Migration completed: preallocated_gpu_minutes column added to jobs_preallocations"
+                    "Migration completed: preallocated_gpu_minutes column "
+                    "added to jobs_preallocations"
                 )
 
             # Ensure gpu_factors table exists
             cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='gpu_factors'"
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='gpu_factors'"
             )
             if cursor.fetchone() is None:
                 logger.info("Creating gpu_factors table")
@@ -197,7 +201,8 @@ def migrate_database() -> None:
 
             # Ensure manager_accounts table exists
             cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='manager_accounts'"
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='manager_accounts'"
             )
             if cursor.fetchone() is None:
                 logger.info("Creating manager_accounts table")
@@ -206,7 +211,8 @@ def migrate_database() -> None:
                         manager_username TEXT NOT NULL,
                         account TEXT NOT NULL,
                         PRIMARY KEY (manager_username, account),
-                        FOREIGN KEY (manager_username) REFERENCES managers(username) ON DELETE CASCADE
+                        FOREIGN KEY (manager_username) REFERENCES managers(username)
+                        ON DELETE CASCADE
                     )
                 """)
                 conn.commit()

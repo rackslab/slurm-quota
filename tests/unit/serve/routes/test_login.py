@@ -11,7 +11,6 @@ from rfl.authentication.errors import LDAPAuthenticationError
 from rfl.authentication.user import AuthenticatedUser
 
 from slurm_quota.serve.settings import conf_defs_path
-
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 from tests.unit.serve.support import write_ldap_site_ini
 

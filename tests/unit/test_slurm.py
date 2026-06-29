@@ -14,7 +14,6 @@ from slurm_quota.slurm import (
     get_user_accounts,
     parse_alloc_tres,
 )
-
 from tests.test_support import SlurmQuotaTestCase
 
 

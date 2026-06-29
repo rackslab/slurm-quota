@@ -7,7 +7,6 @@ from unittest.mock import patch
 from urllib.error import URLError
 
 from slurm_quota.token import service_token_path
-
 from tests.functional.functional_base import (
     FakeJsonUrlopenResponse,
     FakeNoContentUrlopenResponse,

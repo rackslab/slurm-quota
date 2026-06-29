@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import sysconfig
 import tempfile
 import textwrap
 from pathlib import Path
-import sysconfig
 from unittest.mock import patch
 
 from rfl.authentication.errors import JWTDecodeError, LDAPAuthenticationError
@@ -21,7 +21,6 @@ from slurm_quota.serve.settings import (
     site_config_path,
     validate_auth_settings,
 )
-
 from tests.test_support import SlurmQuotaTestCase
 from tests.unit.serve.support import write_jwt_site_ini
 

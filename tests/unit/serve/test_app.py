@@ -13,7 +13,6 @@ from rfl.authentication.user import AuthenticatedUser
 from slurm_quota.database import init_database
 from slurm_quota.serve.app import SlurmQuotaServeApp
 from slurm_quota.serve.settings import ServeSetupError, conf_defs_path
-
 from tests.test_support import SlurmQuotaTestCase
 from tests.unit.serve.support import write_jwt_site_ini
 
