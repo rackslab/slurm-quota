@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 from contextlib import redirect_stdout
 from unittest.mock import patch
-
 from urllib.error import URLError
 
 from slurm_quota.client import ServiceHTTPError
@@ -21,7 +20,6 @@ from slurm_quota.commands import (
     role_show_command,
     show_user_stats,
 )
-
 from tests.test_support import SlurmQuotaTestCase
 from tests.testing_utils import dedent_lines
 
@@ -272,9 +270,11 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.assertEqual(out, dedent_lines("No data found for account: hpc"))
 
     def test_get_current_user_keyerror_exits(self):
-        with patch("slurm_quota.auth.get_current_user", side_effect=KeyError):
-            with self.assertRaises(SystemExit) as cm:
-                show_user_stats(show_all=False)
+        with (
+            patch("slurm_quota.auth.get_current_user", side_effect=KeyError),
+            self.assertRaises(SystemExit) as cm,
+        ):
+            show_user_stats(show_all=False)
         self.assertEqual(cm.exception.code, 1)
 
     def test_stats_http_error_exits(self):
@@ -345,11 +345,11 @@ class TestRoleCommands(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.grant_role.side_effect = ServiceHTTPError(403)
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    role_grant_command("operator", "bob")
+            role_grant_command("operator", "bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,
@@ -360,11 +360,11 @@ class TestRoleCommands(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.grant_role.side_effect = URLError("boom")
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    role_grant_command("operator", "bob")
+            role_grant_command("operator", "bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
         self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
@@ -384,11 +384,11 @@ class TestRoleCommands(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.revoke_role.side_effect = ServiceHTTPError(403)
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    role_revoke_command("manager", "bob")
+            role_revoke_command("manager", "bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,
@@ -399,11 +399,11 @@ class TestRoleCommands(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.revoke_role.side_effect = URLError("boom")
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    role_revoke_command("manager", "bob")
+            role_revoke_command("manager", "bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
         self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
@@ -435,13 +435,13 @@ class TestRoleCommands(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.list_manager_accounts.side_effect = ServiceHTTPError(
                 403
             )
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    role_managers_list_command("bob")
+            role_managers_list_command("bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,
@@ -454,11 +454,11 @@ class TestRoleCommands(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.list_manager_accounts.side_effect = URLError("boom")
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    role_managers_list_command("bob")
+            role_managers_list_command("bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
         self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
@@ -478,13 +478,13 @@ class TestRoleCommands(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.add_manager_account.side_effect = ServiceHTTPError(
                 403
             )
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    role_managers_add_command("bob", "hpc")
+            role_managers_add_command("bob", "hpc")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,
@@ -497,11 +497,11 @@ class TestRoleCommands(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.add_manager_account.side_effect = URLError("boom")
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    role_managers_add_command("bob", "hpc")
+            role_managers_add_command("bob", "hpc")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
         self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
@@ -523,13 +523,13 @@ class TestRoleCommands(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.remove_manager_account.side_effect = ServiceHTTPError(
                 403
             )
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    role_managers_remove_command("bob", "hpc")
+            role_managers_remove_command("bob", "hpc")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(
             log_cm.output,
@@ -542,11 +542,11 @@ class TestRoleCommands(SlurmQuotaTestCase):
         with (
             patch("slurm_quota.commands.load_service_token", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.remove_manager_account.side_effect = URLError("boom")
-            with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
-                with self.assertRaises(SystemExit) as cm:
-                    role_managers_remove_command("bob", "hpc")
+            role_managers_remove_command("bob", "hpc")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
         self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])

@@ -9,8 +9,8 @@ import logging
 import sys
 
 from slurm_quota import APP_VERSION, auth
-from slurm_quota.log import setup_logging
 from slurm_quota.database import init_database, update_user_and_account_resources
+from slurm_quota.log import setup_logging
 from slurm_quota.slurm import get_job_info_from_environment
 
 logger = logging.getLogger("slurm_quota")
@@ -47,11 +47,9 @@ def charge_command() -> None:
         )
 
         logger.info(
-            (
-                f"charge: user={username} account={account} job_id={job_id} "
-                f"+{consumed_cpu_minutes} CPUmins +{consumed_gpu_minutes} GPUmins "
-                f"uuid={job_uuid or 'none'} prealloc_status={prealloc_status}"
-            )
+            f"charge: user={username} account={account} job_id={job_id} "
+            f"+{consumed_cpu_minutes} CPUmins +{consumed_gpu_minutes} GPUmins "
+            f"uuid={job_uuid or 'none'} prealloc_status={prealloc_status}"
         )
 
     except Exception as e:

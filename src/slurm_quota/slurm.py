@@ -4,29 +4,29 @@
 
 """Slurm integration via subprocess and environment."""
 
+import logging
 import os
 import re
 import subprocess
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 from slurm_quota import database as database_layer
-
-import logging
 
 logger = logging.getLogger("slurm_quota")
 
 
-def parse_alloc_tres(alloc_tres: str) -> Dict[str, int]:
+def parse_alloc_tres(alloc_tres: str) -> dict[str, int]:
     """
     Parse AllocTRES field from sacct to extract GPU allocations.
 
     Args:
-        alloc_tres: AllocTRES string, e.g., "billing=1,cpu=1,gres/gpu:h100=2,gres/gpu:h200=1,mem=512M,node=1"
+        alloc_tres: AllocTRES string, e.g.,
+            "billing=1,cpu=1,gres/gpu:h100=2,gres/gpu:h200=1,mem=512M,node=1"
 
     Returns:
         Dictionary mapping GPU type to count (e.g., {"h100": 2, "h200": 1})
     """
-    gpu_counts: Dict[str, int] = {}
+    gpu_counts: dict[str, int] = {}
 
     if not alloc_tres:
         return gpu_counts
@@ -45,7 +45,7 @@ def parse_alloc_tres(alloc_tres: str) -> Dict[str, int]:
 
 
 def calculate_consumed_gpu_minutes(
-    gpu_counts: Dict[str, int], job_duration_minutes: int, factors: Dict[str, float]
+    gpu_counts: dict[str, int], job_duration_minutes: int, factors: dict[str, float]
 ) -> int:
     """
     Calculate consumed GPU minutes based on GPU allocations, duration, and factors.
@@ -68,7 +68,7 @@ def calculate_consumed_gpu_minutes(
     return int(total_gpu_minutes)
 
 
-def get_job_info_from_sacct(job_id: str) -> Tuple[Optional[str], Optional[str]]:
+def get_job_info_from_sacct(job_id: str) -> tuple[Optional[str], Optional[str]]:
     """
     Get the admin_comment and AllocTRES fields for a Slurm job.
 
@@ -219,12 +219,13 @@ def collect_active_job_uuids() -> set[str]:
     return uuids
 
 
-def get_job_info_from_environment() -> Tuple[str, str, int, str, Optional[str], int]:
+def get_job_info_from_environment() -> tuple[str, str, int, str, Optional[str], int]:
     """
     Extract job information from Slurm environment variables.
 
     Returns:
-        Tuple of (username, job_id, consumed_cpu_minutes, account, job_uuid, consumed_gpu_minutes)
+        Tuple of (username, job_id, consumed_cpu_minutes, account, job_uuid,
+        consumed_gpu_minutes)
 
     Raises:
         ValueError: If the job ID or username is not found

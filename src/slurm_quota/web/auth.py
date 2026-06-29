@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import secrets
-from typing import Optional
 from urllib.parse import quote
 
 from flask import request, session, url_for
@@ -16,7 +15,7 @@ from slurm_quota.client import APIClient
 from slurm_quota.token import load_service_token
 
 
-def session_token() -> Optional[str]:
+def session_token() -> str | None:
     token = session.get("token")
     if isinstance(token, str) and token:
         return token
@@ -27,7 +26,7 @@ def api_client() -> APIClient:
     return APIClient(token=session_token() or load_service_token())
 
 
-def current_role() -> Optional[str]:
+def current_role() -> str | None:
     role = session.get("role")
     if isinstance(role, str) and role:
         return role
@@ -50,7 +49,7 @@ def validate_csrf() -> bool:
     return secrets.compare_digest(submitted, expected)
 
 
-def login_url(*, message: Optional[str] = None) -> str:
+def login_url(*, message: str | None = None) -> str:
     next_url = request.full_path if request.method == "GET" else request.path
     if next_url in ("/login", "/login?"):
         next_url = "/"

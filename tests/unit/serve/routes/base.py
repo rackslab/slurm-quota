@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 from slurm_quota.database import init_database
 from slurm_quota.serve.settings import conf_defs_path
-
 from tests.test_support import SlurmQuotaTestCase
 from tests.unit.serve.support import (
     issue_test_token,

@@ -12,7 +12,6 @@ from slurm_quota.database import (
     grant_operator,
     init_database,
 )
-
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 
 

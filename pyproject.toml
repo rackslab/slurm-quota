@@ -72,3 +72,14 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
+
+[tool.ruff.lint]
+# pycodestyle (E), Pyflakes (F), isort (I), flake8-bugbear (B), pyupgrade (UP),
+# flake8-simplify (SIM).
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501"]

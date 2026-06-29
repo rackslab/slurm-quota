@@ -12,7 +12,6 @@ import site
 import sysconfig
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 DEFAULT_ENV_FILE = "/etc/default/slurm-quota-web"
 DEFAULT_HOST = "127.0.0.1"
@@ -22,13 +21,13 @@ DEFAULT_SESSION_DAYS = 1
 logger = logging.getLogger("slurm_quota")
 
 
-def _parse_bool(value: Optional[str], *, default: bool = False) -> bool:
+def _parse_bool(value: str | None, *, default: bool = False) -> bool:
     if value is None:
         return default
     return value.lower() in {"1", "true", "yes", "on"}
 
 
-def _parse_int(value: Optional[str], *, default: int) -> int:
+def _parse_int(value: str | None, *, default: int) -> int:
     if value is None:
         return default
     try:
@@ -37,7 +36,7 @@ def _parse_int(value: Optional[str], *, default: int) -> int:
         return default
 
 
-def _optional_path(value: Optional[str]) -> Optional[Path]:
+def _optional_path(value: str | None) -> Path | None:
     if value is None:
         return None
     return Path(value)
@@ -47,13 +46,13 @@ def _optional_path(value: Optional[str]) -> Optional[Path]:
 class SlurmQuotaWebSettings:
     """Web dashboard configuration read from the process environment."""
 
-    quota_url: Optional[str]
-    token: Optional[str]
-    session_key: Optional[str]
-    session_key_file: Optional[Path]
+    quota_url: str | None
+    token: str | None
+    session_key: str | None
+    session_key_file: Path | None
     secure_cookies: bool
     session_days: int
-    assets_dir: Optional[Path]
+    assets_dir: Path | None
     host: str
     port: int
     debug: bool
@@ -116,7 +115,7 @@ class SlurmQuotaWebSettings:
 
         return Path("/usr/share/slurm-quota/web")
 
-    def load_session_key(self) -> Optional[str]:
+    def load_session_key(self) -> str | None:
         """Return the session signing key from env or a key file."""
         if self.session_key:
             return self.session_key

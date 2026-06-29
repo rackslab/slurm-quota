@@ -12,6 +12,13 @@ from slurm_quota import APP_VERSION
 from slurm_quota.commands import (
     adjust_command,
     login_command,
+    role_grant_command,
+    role_list_command,
+    role_managers_add_command,
+    role_managers_list_command,
+    role_managers_remove_command,
+    role_revoke_command,
+    role_show_command,
     set_account_gpu_quota_command,
     set_account_quota_command,
     set_default_quotas_command,
@@ -22,13 +29,6 @@ from slurm_quota.commands import (
     show_gpu_factors_command,
     show_user_stats,
     token_save_command,
-    role_grant_command,
-    role_list_command,
-    role_managers_add_command,
-    role_managers_list_command,
-    role_managers_remove_command,
-    role_revoke_command,
-    role_show_command,
 )
 from slurm_quota.log import setup_logging
 from slurm_quota.token import service_token_path

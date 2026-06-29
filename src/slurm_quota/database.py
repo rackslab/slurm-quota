@@ -4,16 +4,14 @@
 
 """SQLite database schema and operations."""
 
+import logging
 import os
 import pwd
 import sqlite3
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
-from slurm_quota import auth
 import slurm_quota
-from slurm_quota import slurm as slurm_integration
-
-import logging
+from slurm_quota import auth, slurm as slurm_integration
 
 logger = logging.getLogger("slurm_quota")
 
@@ -65,7 +63,7 @@ def enable_wal_mode(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def get_default_quota_settings() -> Dict[str, int]:
+def get_default_quota_settings() -> dict[str, int]:
     """
     Return configured default quotas used for new users/accounts.
 
@@ -109,7 +107,7 @@ def set_default_quota_settings(
     """
     Set one or more default quotas used for newly auto-created entities.
     """
-    updates: Dict[str, int] = {}
+    updates: dict[str, int] = {}
     if default_user_cpu is not None:
         updates["default_user_quota_cpu_minutes"] = default_user_cpu
     if default_user_gpu is not None:
@@ -135,7 +133,7 @@ def set_default_quota_settings(
         conn.commit()
 
 
-def load_gpu_factors() -> Dict[str, float]:
+def load_gpu_factors() -> dict[str, float]:
     """
     Load GPU type charging factors from the SQLite database.
 
@@ -150,7 +148,7 @@ def load_gpu_factors() -> Dict[str, float]:
         Dictionary mapping GPU type to factor. The key ``"__default__"`` holds
         the default factor (1.0 when not configured).
     """
-    factors: Dict[str, float] = {}
+    factors: dict[str, float] = {}
     default_factor = 1.0
 
     if not os.path.exists(slurm_quota.DB_PATH):
@@ -324,7 +322,8 @@ def init_database() -> None:
                     manager_username TEXT NOT NULL,
                     account TEXT NOT NULL,
                     PRIMARY KEY (manager_username, account),
-                    FOREIGN KEY (manager_username) REFERENCES managers(username) ON DELETE CASCADE
+                    FOREIGN KEY (manager_username) REFERENCES managers(username)
+                    ON DELETE CASCADE
                 )
             """)
 
@@ -375,7 +374,7 @@ def prune_resources(
     dry_run: bool = False,
     user_filter: Optional[str] = None,
     account_filter: Optional[str] = None,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """
     Prune selected resource records from the database.
 
@@ -393,7 +392,7 @@ def prune_resources(
         logger.info("Database not found; nothing to prune")
         return counts
 
-    orphan_prealloc_uuids: List[str] = []
+    orphan_prealloc_uuids: list[str] = []
     if "preallocs" in targets:
         with connect_database() as conn:
             cursor = conn.cursor()
@@ -409,7 +408,7 @@ def prune_resources(
         ]
         counts["preallocs"] = len(orphan_prealloc_uuids)
 
-    users_to_delete: List[str] = []
+    users_to_delete: list[str] = []
     if "users" in targets:
         with connect_database() as conn:
             cursor = conn.cursor()
@@ -419,7 +418,7 @@ def prune_resources(
                 WHERE total_consumed_cpu_minutes = 0
                   AND total_consumed_gpu_minutes = 0
             """
-            users_params: List[str] = []
+            users_params: list[str] = []
             if user_filter:
                 users_query += " AND username = ?"
                 users_params.append(user_filter)
@@ -431,7 +430,7 @@ def prune_resources(
                 logger.info("Eligible user for pruning: %s", username)
             counts["users"] = len(users_to_delete)
 
-    accounts_to_delete: List[str] = []
+    accounts_to_delete: list[str] = []
     if "accounts" in targets:
         with connect_database() as conn:
             cursor = conn.cursor()
@@ -441,7 +440,7 @@ def prune_resources(
                 WHERE total_consumed_cpu_minutes = 0
                   AND total_consumed_gpu_minutes = 0
             """
-            accounts_params: List[str] = []
+            accounts_params: list[str] = []
             if account_filter:
                 accounts_query += " AND account = ?"
                 accounts_params.append(account_filter)
@@ -532,8 +531,10 @@ def update_user_and_account_resources(
             # Update consumed CPU and GPU minutes for user
             cursor.execute(
                 """
-                INSERT INTO users (username, total_consumed_cpu_minutes, quota_cpu_minutes,
-                    total_consumed_gpu_minutes, quota_gpu_minutes, last_updated)
+                INSERT INTO users (
+                    username, total_consumed_cpu_minutes, quota_cpu_minutes,
+                    total_consumed_gpu_minutes, quota_gpu_minutes, last_updated
+                )
                 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (username) DO
                 UPDATE SET total_consumed_cpu_minutes = total_consumed_cpu_minutes + ?,
@@ -554,8 +555,10 @@ def update_user_and_account_resources(
             # Update consumed CPU and GPU minutes for account
             cursor.execute(
                 """
-                INSERT INTO accounts (account, total_consumed_cpu_minutes, quota_cpu_minutes,
-                    total_consumed_gpu_minutes, quota_gpu_minutes, last_updated)
+                INSERT INTO accounts (
+                    account, total_consumed_cpu_minutes, quota_cpu_minutes,
+                    total_consumed_gpu_minutes, quota_gpu_minutes, last_updated
+                )
                 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (account) DO
                 UPDATE SET total_consumed_cpu_minutes = total_consumed_cpu_minutes + ?,
@@ -612,7 +615,8 @@ def update_user_and_account_resources(
                             (new_array_size, job_uuid),
                         )
                         logger.debug(
-                            "Decremented preallocation array_size for job UUID %s: %d -> %d",
+                            "Decremented preallocation array_size "
+                            "for job UUID %s: %d -> %d",
                             job_uuid,
                             current_array_size,
                             new_array_size,
@@ -647,7 +651,9 @@ def set_user_quota(username: str, quota_cpu_minutes: int) -> None:
             # Insert or update user with quota
             cursor.execute(
                 """
-                INSERT INTO users (username, quota_cpu_minutes, quota_gpu_minutes, last_updated)
+                INSERT INTO users (
+                    username, quota_cpu_minutes, quota_gpu_minutes, last_updated
+                )
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (username) DO
                 UPDATE SET quota_cpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
@@ -678,7 +684,9 @@ def set_account_quota(account: str, quota_cpu_minutes: int) -> None:
 
             cursor.execute(
                 """
-                INSERT INTO accounts (account, quota_cpu_minutes, quota_gpu_minutes, last_updated)
+                INSERT INTO accounts (
+                    account, quota_cpu_minutes, quota_gpu_minutes, last_updated
+                )
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (account) DO
                 UPDATE SET quota_cpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
@@ -710,7 +718,9 @@ def set_user_gpu_quota(username: str, quota_gpu_minutes: int) -> None:
             # Insert or update user with GPU quota
             cursor.execute(
                 """
-                INSERT INTO users (username, quota_cpu_minutes, quota_gpu_minutes, last_updated)
+                INSERT INTO users (
+                    username, quota_cpu_minutes, quota_gpu_minutes, last_updated
+                )
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (username) DO
                 UPDATE SET quota_gpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
@@ -741,7 +751,9 @@ def set_account_gpu_quota(account: str, quota_gpu_minutes: int) -> None:
 
             cursor.execute(
                 """
-                INSERT INTO accounts (account, quota_cpu_minutes, quota_gpu_minutes, last_updated)
+                INSERT INTO accounts (
+                    account, quota_cpu_minutes, quota_gpu_minutes, last_updated
+                )
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (account) DO
                 UPDATE SET quota_gpu_minutes = ?, last_updated = CURRENT_TIMESTAMP
@@ -817,7 +829,7 @@ def adjust_consumed_minutes(
 def query_users_aggregate(
     conn: sqlite3.Connection,
     usernames: Optional[set[str]] = None,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     cursor = conn.cursor()
     if usernames is not None:
         if len(usernames) == 0:
@@ -826,9 +838,15 @@ def query_users_aggregate(
         cursor.execute(
             f"""
             SELECT u.username, u.total_consumed_cpu_minutes,
-                   COALESCE(SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_cpu_minutes,
+                   COALESCE(
+                       SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)),
+                       0
+                   ) as total_preallocated_cpu_minutes,
                    u.quota_cpu_minutes, u.total_consumed_gpu_minutes,
-                   COALESCE(SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_gpu_minutes,
+                   COALESCE(
+                       SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)),
+                       0
+                   ) as total_preallocated_gpu_minutes,
                    u.quota_gpu_minutes, u.last_updated,
                    COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
             FROM users u
@@ -844,9 +862,15 @@ def query_users_aggregate(
         cursor.execute(
             """
             SELECT u.username, u.total_consumed_cpu_minutes,
-                   COALESCE(SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_cpu_minutes,
+                   COALESCE(
+                       SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)),
+                       0
+                   ) as total_preallocated_cpu_minutes,
                    u.quota_cpu_minutes, u.total_consumed_gpu_minutes,
-                   COALESCE(SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_gpu_minutes,
+                   COALESCE(
+                       SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)),
+                       0
+                   ) as total_preallocated_gpu_minutes,
                    u.quota_gpu_minutes, u.last_updated,
                    COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
             FROM users u
@@ -857,7 +881,7 @@ def query_users_aggregate(
             """
         )
     rows = cursor.fetchall()
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     for row in rows:
         (
             uname,
@@ -888,7 +912,7 @@ def query_users_aggregate(
 
 def query_accounts_aggregate(
     conn: sqlite3.Connection, accounts_filter: Optional[set[str]] = None
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     cursor = conn.cursor()
     if accounts_filter is not None:
         if len(accounts_filter) == 0:
@@ -897,9 +921,15 @@ def query_accounts_aggregate(
         cursor.execute(
             f"""
             SELECT a.account, a.total_consumed_cpu_minutes,
-                   COALESCE(SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_cpu_minutes,
+                   COALESCE(
+                       SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)),
+                       0
+                   ) as total_preallocated_cpu_minutes,
                    a.quota_cpu_minutes, a.total_consumed_gpu_minutes,
-                   COALESCE(SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_gpu_minutes,
+                   COALESCE(
+                       SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)),
+                       0
+                   ) as total_preallocated_gpu_minutes,
                    a.quota_gpu_minutes, a.last_updated,
                    COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
             FROM accounts a
@@ -915,9 +945,15 @@ def query_accounts_aggregate(
         cursor.execute(
             """
             SELECT a.account, a.total_consumed_cpu_minutes,
-                   COALESCE(SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_cpu_minutes,
+                   COALESCE(
+                       SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)),
+                       0
+                   ) as total_preallocated_cpu_minutes,
                    a.quota_cpu_minutes, a.total_consumed_gpu_minutes,
-                   COALESCE(SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)), 0) as total_preallocated_gpu_minutes,
+                   COALESCE(
+                       SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)),
+                       0
+                   ) as total_preallocated_gpu_minutes,
                    a.quota_gpu_minutes, a.last_updated,
                    COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
             FROM accounts a
@@ -928,7 +964,7 @@ def query_accounts_aggregate(
             """
         )
     rows = cursor.fetchall()
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     for row in rows:
         (
             account,
@@ -966,7 +1002,7 @@ def is_operator(conn: sqlite3.Connection, username: str) -> bool:
     return cursor.fetchone() is not None
 
 
-def list_operators(conn: sqlite3.Connection) -> List[str]:
+def list_operators(conn: sqlite3.Connection) -> list[str]:
     cursor = conn.cursor()
     cursor.execute("SELECT username FROM operators ORDER BY username")
     return [row[0] for row in cursor.fetchall()]
@@ -996,7 +1032,7 @@ def is_manager(conn: sqlite3.Connection, username: str) -> bool:
     return cursor.fetchone() is not None
 
 
-def list_managers(conn: sqlite3.Connection) -> List[str]:
+def list_managers(conn: sqlite3.Connection) -> list[str]:
     cursor = conn.cursor()
     cursor.execute("SELECT username FROM managers ORDER BY username")
     return [row[0] for row in cursor.fetchall()]
@@ -1021,7 +1057,7 @@ def revoke_manager(conn: sqlite3.Connection, username: str) -> None:
     conn.commit()
 
 
-def list_manager_accounts(conn: sqlite3.Connection, username: str) -> List[str]:
+def list_manager_accounts(conn: sqlite3.Connection, username: str) -> list[str]:
     cursor = conn.cursor()
     cursor.execute(
         """
@@ -1062,7 +1098,7 @@ def revoke_manager_account(
     conn.commit()
 
 
-def list_all_manager_accounts(conn: sqlite3.Connection) -> Dict[str, List[str]]:
+def list_all_manager_accounts(conn: sqlite3.Connection) -> dict[str, list[str]]:
     cursor = conn.cursor()
     cursor.execute(
         """
@@ -1070,7 +1106,7 @@ def list_all_manager_accounts(conn: sqlite3.Connection) -> Dict[str, List[str]]:
         ORDER BY manager_username, account
         """
     )
-    result: Dict[str, List[str]] = {}
+    result: dict[str, list[str]] = {}
     for manager_username, account in cursor.fetchall():
         result.setdefault(manager_username, []).append(account)
     return result
@@ -1078,7 +1114,7 @@ def list_all_manager_accounts(conn: sqlite3.Connection) -> Dict[str, List[str]]:
 
 def list_users_with_roles(
     conn: sqlite3.Connection, config_admins: set[str]
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     cursor = conn.cursor()
     cursor.execute("SELECT username FROM users")
     usernames = {row[0] for row in cursor.fetchall()}
@@ -1089,7 +1125,7 @@ def list_users_with_roles(
     usernames.update(managers)
     manager_accounts = list_all_manager_accounts(conn)
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     for username in sorted(usernames):
         if username in config_admins:
             role = "admin"
@@ -1099,7 +1135,7 @@ def list_users_with_roles(
             role = "manager"
         else:
             role = "user"
-        entry: Dict[str, Any] = {"username": username, "role": role}
+        entry: dict[str, Any] = {"username": username, "role": role}
         if role == "manager":
             entry["accounts"] = manager_accounts.get(username, [])
         results.append(entry)

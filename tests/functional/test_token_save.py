@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from slurm_quota.token import service_token_path
-
 from tests.functional.functional_base import FunctionalCLIBase
 
 

@@ -10,13 +10,14 @@ import logging
 import os
 import re
 import sqlite3
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from flask import abort, current_app, jsonify, request
 from rfl.authentication.errors import LDAPAuthenticationError
 from rfl.web.tokens import check_jwt
 
 import slurm_quota
+from slurm_quota import slurm as slurm_integration
 from slurm_quota.database import (
     adjust_consumed_minutes as db_adjust_consumed_minutes,
     connect_database,
@@ -40,7 +41,6 @@ from slurm_quota.database import (
     set_user_gpu_quota as db_set_user_gpu_quota,
     set_user_quota as db_set_user_quota,
 )
-from slurm_quota import slurm as slurm_integration
 from slurm_quota.serve.authorization import (
     config_admins,
     login_role,
@@ -72,9 +72,9 @@ def _validate_account(account: str) -> None:
 
 
 def fetch_stats(
-    usernames_filter: Optional[set[str]] = None,
-    accounts_filter: Optional[set[str]] = None,
-) -> Tuple[Optional[Dict[str, Any]], Optional[Tuple[Any, int]]]:
+    usernames_filter: set[str] | None = None,
+    accounts_filter: set[str] | None = None,
+) -> tuple[dict[str, Any] | None, tuple[Any, int] | None]:
     """Load aggregated user and account consumption stats from the database.
 
     Applies optional username and account filters before querying. When the
@@ -121,9 +121,9 @@ def fetch_stats(
 
 def _resolve_manager_stats_scope(
     login: str,
-    username_param: Optional[str],
-    account_param: Optional[str],
-) -> Tuple[Optional[set[str]], Optional[set[str]]]:
+    username_param: str | None,
+    account_param: str | None,
+) -> tuple[set[str] | None, set[str] | None]:
     """Build username and account filters for a manager viewing stats.
 
     Managers may only see users and accounts within their assigned scope.
@@ -228,8 +228,8 @@ def stats() -> Any:
 
     login = cast(str, request.user.login)
     role = login_role(login)
-    usernames_filter: Optional[set[str]] = None
-    accounts_filter: Optional[set[str]] = None
+    usernames_filter: set[str] | None = None
+    accounts_filter: set[str] | None = None
 
     if role == "manager":
         usernames_filter, accounts_filter = _resolve_manager_stats_scope(
@@ -376,7 +376,7 @@ def set_default_quotas() -> Any:
     if not isinstance(payload, dict):
         abort(400, description="Invalid JSON body")
 
-    updates: Dict[str, Optional[int]] = {
+    updates: dict[str, int | None] = {
         "user_cpu_minutes": None,
         "user_gpu_minutes": None,
         "account_cpu_minutes": None,

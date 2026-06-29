@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-
 from urllib.error import URLError
 
 from slurm_quota import web
 from slurm_quota.client import ServiceHTTPError
-
 from tests.test_support import SlurmQuotaTestCase
 from tests.unit.web.support import (
     auth_disabled,

@@ -5,14 +5,12 @@
 """HTTP client for the slurm-quota stats API."""
 
 import json
-
+import logging
 import os
 from http import HTTPStatus
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal, Optional
 from urllib.parse import urlencode, urljoin
 from urllib.request import Request, urlopen
-
-import logging
 
 logger = logging.getLogger("slurm_quota")
 
@@ -36,7 +34,7 @@ class APIClient:
         self.token = token
         self.base_url = base_url if base_url is not None else _default_base_url()
 
-    def _request_headers(self, *, include_auth: bool = False) -> Dict[str, str]:
+    def _request_headers(self, *, include_auth: bool = False) -> dict[str, str]:
         headers = {"Accept": "application/json"}
         if include_auth and self.token:
             headers["Authorization"] = f"Bearer {self.token}"
@@ -47,11 +45,11 @@ class APIClient:
         method: str,
         path: str,
         *,
-        body: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, str]] = None,
+        body: Optional[dict[str, Any]] = None,
+        params: Optional[dict[str, str]] = None,
         require_token: bool = True,
         include_auth: Optional[bool] = None,
-    ) -> Tuple[int, Dict[str, Any]]:
+    ) -> tuple[int, dict[str, Any]]:
         if require_token and not self.token:
             raise ValueError("API token is required")
         if include_auth is None:
@@ -70,10 +68,10 @@ class APIClient:
             raw = resp.read()
             if not raw:
                 return status, {}
-            payload: Dict[str, Any] = json.loads(raw)
+            payload: dict[str, Any] = json.loads(raw)
             return status, payload
 
-    def login(self, username: str, password: str) -> Dict[str, Any]:
+    def login(self, username: str, password: str) -> dict[str, Any]:
         """
         Request a JWT from POST /login and store it on this client.
 
@@ -110,7 +108,7 @@ class APIClient:
         selected_username: Optional[str],
         selected_account: Optional[str],
         show_all: bool,
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """
         Request /stats and return user and account rows.
 
@@ -128,7 +126,7 @@ class APIClient:
             ServiceHTTPError: Response status was not HTTP OK.
             URLError: Network or URL handling failure from urlopen.
         """
-        stats_params: Dict[str, str] = {}
+        stats_params: dict[str, str] = {}
         if selected_username and not show_all:
             stats_params["username"] = selected_username
         if selected_account:
@@ -143,17 +141,17 @@ class APIClient:
         if status != HTTPStatus.OK:
             raise ServiceHTTPError(status)
 
-        users_data: List[Dict[str, Any]] = list(stats_payload.get("users", []))
-        accounts_data: List[Dict[str, Any]] = list(stats_payload.get("accounts", []))
+        users_data: list[dict[str, Any]] = list(stats_payload.get("users", []))
+        accounts_data: list[dict[str, Any]] = list(stats_payload.get("accounts", []))
         return users_data, accounts_data
 
-    def me(self) -> Dict[str, Any]:
+    def me(self) -> dict[str, Any]:
         status, payload = self._api_request("GET", "me")
         if status != HTTPStatus.OK:
             raise ServiceHTTPError(status)
         return payload
 
-    def users_roles(self) -> List[Dict[str, Any]]:
+    def users_roles(self) -> list[dict[str, Any]]:
         status, payload = self._api_request("GET", "roles")
         if status != HTTPStatus.OK:
             raise ServiceHTTPError(status)
@@ -176,7 +174,7 @@ class APIClient:
         if status != HTTPStatus.NO_CONTENT:
             raise ServiceHTTPError(status)
 
-    def list_manager_accounts(self, username: str) -> List[str]:
+    def list_manager_accounts(self, username: str) -> list[str]:
         status, payload = self._api_request(
             "GET", f"roles/managers/{username}/accounts", require_token=True
         )
@@ -245,13 +243,13 @@ class APIClient:
         if status != HTTPStatus.NO_CONTENT:
             raise ServiceHTTPError(status)
 
-    def get_default_quotas(self) -> Dict[str, int]:
+    def get_default_quotas(self) -> dict[str, int]:
         status, payload = self._api_request(
             "GET", "quotas/defaults", require_token=True
         )
         if status != HTTPStatus.OK:
             raise ServiceHTTPError(status)
-        result: Dict[str, int] = {}
+        result: dict[str, int] = {}
         for field in (
             "user_cpu_minutes",
             "user_gpu_minutes",
@@ -272,7 +270,7 @@ class APIClient:
         account_cpu: Optional[int] = None,
         account_gpu: Optional[int] = None,
     ) -> None:
-        body: Dict[str, int] = {}
+        body: dict[str, int] = {}
         if user_cpu is not None:
             body["user_cpu_minutes"] = user_cpu
         if user_gpu is not None:
@@ -311,7 +309,7 @@ class APIClient:
             raise ValueError("adjust response did not contain total_consumed_minutes")
         return total
 
-    def get_gpu_factors(self) -> Dict[str, Any]:
+    def get_gpu_factors(self) -> dict[str, Any]:
         status, payload = self._api_request("GET", "factors/gpu", require_token=True)
         if status != HTTPStatus.OK:
             raise ServiceHTTPError(status)

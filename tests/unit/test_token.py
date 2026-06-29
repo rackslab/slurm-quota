@@ -10,7 +10,6 @@ from slurm_quota.token import (
     save_service_token,
     service_token_path,
 )
-
 from tests.test_support import SlurmQuotaTestCase
 
 

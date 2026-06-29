@@ -13,7 +13,6 @@ from slurm_quota.web.settings import (
     SlurmQuotaWebSettings,
     load_env_file,
 )
-
 from tests.test_support import SlurmQuotaTestCase
 
 

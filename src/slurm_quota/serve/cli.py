@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import os
 import socket
@@ -14,7 +15,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from werkzeug.serving import make_server
 
@@ -44,7 +45,7 @@ def _run_server(
     host: str,
     port: int,
     idle_timeout: int,
-    sd_sock: Optional[socket.socket] = None,
+    sd_sock: socket.socket | None = None,
 ) -> None:
     idle_timeout = max(0, int(idle_timeout))
     app.touch_activity()
@@ -67,7 +68,7 @@ def _run_server(
         server.server_close()
 
 
-def _systemd_listen_socket() -> Optional[socket.socket]:
+def _systemd_listen_socket() -> socket.socket | None:
     try:
         listen_pid = int(os.environ.get("LISTEN_PID", "0"))
         listen_fds = int(os.environ.get("LISTEN_FDS", "0"))
@@ -108,10 +109,8 @@ def run_serve_command(
         try:
             _run_server(app, host, port, idle_timeout, sd_sock=sd_sock)
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 sd_sock.close()
-            except Exception:
-                pass
         return
 
     logger.info("Starting HTTP JSON service on %s:%s", host, port)

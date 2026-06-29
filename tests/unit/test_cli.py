@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 
 from slurm_quota.cli import parse_signed_int
-
 from tests.test_support import SlurmQuotaTestCase
 
 

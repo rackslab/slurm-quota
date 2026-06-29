@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 from unittest.mock import patch
-
 from urllib.error import URLError
 
 from slurm_quota.client import APIClient, ServiceHTTPError
 from slurm_quota.token import save_service_token
-
 from tests.test_support import SlurmQuotaTestCase
 
 
@@ -120,18 +118,22 @@ class TestAPIClientStats(SlurmQuotaTestCase):
         self.assertIn("/stats", req.full_url)
 
     def test_raises_stats_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=500),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=500),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient().stats(None, None, True)
+            APIClient().stats(None, None, True)
         self.assertEqual(cm.exception.status, 500)
 
     def test_urlerror_propagates(self):
-        with patch("slurm_quota.client.urlopen", side_effect=URLError("boom")):
-            with self.assertRaises(URLError):
-                APIClient().stats(None, None, True)
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=URLError("boom")),
+            self.assertRaises(URLError),
+        ):
+            APIClient().stats(None, None, True)
 
     def test_adds_authorization_header_when_token_set(self):
         with patch(
@@ -188,26 +190,32 @@ class TestAPIClientLogin(SlurmQuotaTestCase):
         )
 
     def test_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=401),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=401),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient().login("alice", "wrong")
+            APIClient().login("alice", "wrong")
         self.assertEqual(cm.exception.status, 401)
 
     def test_raises_value_error_when_token_missing(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}),
+            ),
+            self.assertRaises(ValueError),
         ):
-            with self.assertRaises(ValueError):
-                APIClient().login("alice", "secret")
+            APIClient().login("alice", "secret")
 
     def test_urlerror_propagates(self):
-        with patch("slurm_quota.client.urlopen", side_effect=URLError("boom")):
-            with self.assertRaises(URLError):
-                APIClient().login("alice", "secret")
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=URLError("boom")),
+            self.assertRaises(URLError),
+        ):
+            APIClient().login("alice", "secret")
 
     def test_stats_uses_token_from_login(self):
         users_payload = _sample_payload()
@@ -251,12 +259,14 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         self.assertEqual(payload["role"], "admin")
 
     def test_me_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").me()
+            APIClient(token="jwt").me()
         self.assertEqual(cm.exception.status, 403)
 
     def test_me_raises_value_error_when_token_missing(self):
@@ -274,12 +284,14 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         self.assertEqual(users[0]["username"], "bob")
 
     def test_users_roles_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").users_roles()
+            APIClient(token="jwt").users_roles()
         self.assertEqual(cm.exception.status, 403)
 
     def test_users_roles_raises_value_error_when_token_missing(self):
@@ -305,12 +317,14 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         self.assertIn("/roles/managers/bob", req.full_url)
 
     def test_grant_role_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").grant_role("manager", "bob")
+            APIClient(token="jwt").grant_role("manager", "bob")
         self.assertEqual(cm.exception.status, 403)
 
     def test_grant_role_raises_value_error_when_token_missing(self):
@@ -328,12 +342,14 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         self.assertIn("/roles/managers/bob", req.full_url)
 
     def test_revoke_role_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").revoke_role("manager", "bob")
+            APIClient(token="jwt").revoke_role("manager", "bob")
         self.assertEqual(cm.exception.status, 403)
 
     def test_revoke_role_raises_value_error_when_token_missing(self):
@@ -360,12 +376,14 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         self.assertEqual(accounts, [])
 
     def test_list_manager_accounts_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").list_manager_accounts("bob")
+            APIClient(token="jwt").list_manager_accounts("bob")
         self.assertEqual(cm.exception.status, 403)
 
     def test_list_manager_accounts_raises_value_error_when_token_missing(self):
@@ -383,12 +401,14 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         self.assertIn("/roles/managers/bob/accounts/hpc", req.full_url)
 
     def test_add_manager_account_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").add_manager_account("bob", "hpc")
+            APIClient(token="jwt").add_manager_account("bob", "hpc")
         self.assertEqual(cm.exception.status, 403)
 
     def test_add_manager_account_raises_value_error_when_token_missing(self):
@@ -406,12 +426,14 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         self.assertIn("/roles/managers/bob/accounts/hpc", req.full_url)
 
     def test_remove_manager_account_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").remove_manager_account("bob", "hpc")
+            APIClient(token="jwt").remove_manager_account("bob", "hpc")
         self.assertEqual(cm.exception.status, 403)
 
     def test_remove_manager_account_raises_value_error_when_token_missing(self):
@@ -444,12 +466,14 @@ class TestAPIClientQuotas(SlurmQuotaTestCase):
         self.assertEqual(body, {"quota_minutes": -1})
 
     def test_set_user_gpu_quota_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").set_user_gpu_quota("bob", 100)
+            APIClient(token="jwt").set_user_gpu_quota("bob", 100)
         self.assertEqual(cm.exception.status, 403)
 
     def test_set_account_cpu_quota_raises_value_error_when_token_missing(self):
@@ -488,12 +512,14 @@ class TestAPIClientDefaultQuotas(SlurmQuotaTestCase):
         self.assertEqual(body, {"user_cpu_minutes": 999})
 
     def test_set_default_quotas_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").set_default_quotas(account_cpu=50)
+            APIClient(token="jwt").set_default_quotas(account_cpu=50)
         self.assertEqual(cm.exception.status, 403)
 
     def test_get_default_quotas_raises_value_error_when_token_missing(self):
@@ -515,32 +541,38 @@ class TestAPIClientGpuFactors(SlurmQuotaTestCase):
         self.assertEqual(result, {"default_factor": 1.0, "factors": {"h100": 0.5}})
 
     def test_get_gpu_factors_raises_value_error_when_default_factor_missing(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({"factors": {}}),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({"factors": {}}),
+            ),
+            self.assertRaises(ValueError) as cm,
         ):
-            with self.assertRaises(ValueError) as cm:
-                APIClient(token="jwt").get_gpu_factors()
+            APIClient(token="jwt").get_gpu_factors()
         self.assertEqual(
             str(cm.exception), "gpu factors response missing default_factor"
         )
 
     def test_get_gpu_factors_raises_value_error_when_factors_missing(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({"default_factor": 1.0}),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({"default_factor": 1.0}),
+            ),
+            self.assertRaises(ValueError) as cm,
         ):
-            with self.assertRaises(ValueError) as cm:
-                APIClient(token="jwt").get_gpu_factors()
+            APIClient(token="jwt").get_gpu_factors()
         self.assertEqual(str(cm.exception), "gpu factors response missing factors")
 
     def test_get_gpu_factors_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").get_gpu_factors()
+            APIClient(token="jwt").get_gpu_factors()
         self.assertEqual(cm.exception.status, 403)
 
     def test_set_gpu_factor_sends_put(self):
@@ -556,12 +588,14 @@ class TestAPIClientGpuFactors(SlurmQuotaTestCase):
         self.assertEqual(body, {"factor": 0.25})
 
     def test_set_gpu_factor_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").set_gpu_factor("h100", 0.5)
+            APIClient(token="jwt").set_gpu_factor("h100", 0.5)
         self.assertEqual(cm.exception.status, 403)
 
 
@@ -594,12 +628,14 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
         self.assertEqual(body, {"delta_minutes": -10})
 
     def test_adjust_raises_service_http_error_on_bad_status(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}, status=403),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}, status=403),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
         ):
-            with self.assertRaises(ServiceHTTPError) as cm:
-                APIClient(token="jwt").adjust_consumption("user", "bob", "gpu", 10)
+            APIClient(token="jwt").adjust_consumption("user", "bob", "gpu", 10)
         self.assertEqual(cm.exception.status, 403)
 
     def test_adjust_raises_value_error_when_token_missing(self):
@@ -607,9 +643,11 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
             APIClient(token=None).adjust_consumption("user", "bob", "cpu", 10)
 
     def test_adjust_raises_value_error_when_total_missing(self):
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({}),
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                return_value=_FakeUrlopenResponse({}),
+            ),
+            self.assertRaises(ValueError),
         ):
-            with self.assertRaises(ValueError):
-                APIClient(token="jwt").adjust_consumption("user", "bob", "cpu", 10)
+            APIClient(token="jwt").adjust_consumption("user", "bob", "cpu", 10)

@@ -31,7 +31,6 @@ from slurm_quota.database import (
     set_user_quota,
     update_user_and_account_resources,
 )
-
 from tests.test_support import SlurmQuotaTestCase
 
 
@@ -98,13 +97,14 @@ class TestPruneResources(SlurmQuotaTestCase):
             )
             conn.commit()
 
-        with patch(
-            "slurm_quota.slurm.collect_active_job_uuids", return_value={"uuid-active"}
+        with (
+            patch(
+                "slurm_quota.slurm.collect_active_job_uuids",
+                return_value={"uuid-active"},
+            ),
+            self.assertLogs("slurm_quota", level="INFO") as log_cm,
         ):
-            with self.assertLogs("slurm_quota", level="INFO") as log_cm:
-                counts = prune_resources(
-                    {"preallocs", "users", "accounts"}, dry_run=True
-                )
+            counts = prune_resources({"preallocs", "users", "accounts"}, dry_run=True)
 
         self.assertEqual(counts, {"preallocs": 1, "users": 3, "accounts": 3})
         self.assertIn(
@@ -196,15 +196,17 @@ class TestPruneResources(SlurmQuotaTestCase):
             self.assertEqual(open_connections, 0)
             return set()
 
-        with patch(
-            "slurm_quota.database.connect_database",
-            side_effect=tracking_connect_database,
-        ):
-            with patch(
+        with (
+            patch(
+                "slurm_quota.database.connect_database",
+                side_effect=tracking_connect_database,
+            ),
+            patch(
                 "slurm_quota.slurm.collect_active_job_uuids",
                 side_effect=collect_without_db_lock,
-            ):
-                counts = prune_resources({"preallocs"}, dry_run=True)
+            ),
+        ):
+            counts = prune_resources({"preallocs"}, dry_run=True)
 
         self.assertEqual(counts, {"preallocs": 1, "users": 0, "accounts": 0})
 
@@ -272,11 +274,11 @@ class TestPruneResources(SlurmQuotaTestCase):
             )
             conn.commit()
 
-        with patch("slurm_quota.slurm.collect_active_job_uuids", return_value=set()):
-            with self.assertLogs("slurm_quota", level="INFO") as log_cm:
-                counts = prune_resources(
-                    {"preallocs", "users", "accounts"}, dry_run=False
-                )
+        with (
+            patch("slurm_quota.slurm.collect_active_job_uuids", return_value=set()),
+            self.assertLogs("slurm_quota", level="INFO") as log_cm,
+        ):
+            counts = prune_resources({"preallocs", "users", "accounts"}, dry_run=False)
 
         self.assertEqual(counts, {"preallocs": 1, "users": 1, "accounts": 1})
         self.assertIn(
@@ -762,16 +764,15 @@ class TestDatabaseConfiguration(SlurmQuotaTestCase):
 
     def test_connect_database_enables_foreign_keys(self):
         init_database()
-        with connect_database() as conn:
-            with self.assertRaises(sqlite3.IntegrityError):
-                conn.execute(
-                    """
+        with connect_database() as conn, self.assertRaises(sqlite3.IntegrityError):
+            conn.execute(
+                """
                     INSERT INTO jobs_preallocations (
                         job_uuid, username, account, preallocated_cpu_minutes
                     ) VALUES (?, ?, ?, ?)
                     """,
-                    ("job1", "missing_user", "missing_account", 10),
-                )
+                ("job1", "missing_user", "missing_account", 10),
+            )
 
     def test_init_database_enables_wal(self):
         init_database()

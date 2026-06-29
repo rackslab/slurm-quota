@@ -9,14 +9,14 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 from http import HTTPStatus
-from typing import Any, Optional
+from typing import Any
 
 from flask import Flask, abort, redirect, render_template, request
 from werkzeug.exceptions import HTTPException
 
+from slurm_quota.token import load_service_token
 from slurm_quota.web import routes
 from slurm_quota.web.auth import login_url, session_token
-from slurm_quota.token import load_service_token
 from slurm_quota.web.settings import SlurmQuotaWebSettings
 
 logger = logging.getLogger("slurm_quota")
@@ -74,7 +74,7 @@ class SlurmQuotaWebApp(Flask):
     def service_unavailable(self, error: HTTPException) -> tuple[str, int]:
         return render_template("error.html"), error.code
 
-    def require_login(self) -> Optional[Any]:
+    def require_login(self) -> Any | None:
         if request.endpoint in {"static", "login", "login_post", "logout"}:
             return None
 

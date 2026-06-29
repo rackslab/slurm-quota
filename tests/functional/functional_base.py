@@ -7,17 +7,16 @@ import json
 import sys
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import patch
 from urllib.parse import parse_qs, unquote, urlparse
 
-from slurm_quota.cli import main as cli_main
 from slurm_quota.charge import main as charge_main
+from slurm_quota.cli import main as cli_main
 from slurm_quota.serve.cli import main as serve_main
 from slurm_quota.serve.prune import main as prune_main
 from slurm_quota.serve.token import main as token_main
 from slurm_quota.token import save_service_token
-
 from tests.test_support import SlurmQuotaTestCase
 
 
@@ -74,15 +73,13 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
             token_main()
 
     def run_cli_main_exit(self, argv, code=1):
-        with patch.object(sys, "argv", argv):
-            with self.assertRaises(SystemExit) as cm:
-                cli_main()
+        with patch.object(sys, "argv", argv), self.assertRaises(SystemExit) as cm:
+            cli_main()
         self.assertEqual(cm.exception.code, code)
 
     def run_token_main_exit(self, argv, code=1):
-        with patch.object(sys, "argv", argv):
-            with self.assertRaises(SystemExit) as cm:
-                token_main()
+        with patch.object(sys, "argv", argv), self.assertRaises(SystemExit) as cm:
+            token_main()
         self.assertEqual(cm.exception.code, code)
 
     @contextmanager
@@ -102,7 +99,7 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
             conn.commit()
 
     @staticmethod
-    def stats_json_payload() -> Dict[str, List[Dict[str, Any]]]:
+    def stats_json_payload() -> dict[str, list[dict[str, Any]]]:
         """Full multi-user / multi-account payload (no ``?username=`` filter)."""
         return stats_payload_full()
 
@@ -116,8 +113,8 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
         qs = parse_qs(urlparse(request.full_url).query)
         raw_username = qs.get("username", [None])[0]
         raw_account = qs.get("account", [None])[0]
-        username: Optional[str] = unquote(raw_username) if raw_username else None
-        account: Optional[str] = unquote(raw_account) if raw_account else None
+        username: str | None = unquote(raw_username) if raw_username else None
+        account: str | None = unquote(raw_account) if raw_account else None
         payload = _stats_payload_filtered(username, account)
         return FakeJsonUrlopenResponse(payload)
 
@@ -142,7 +139,7 @@ def _stats_user_row(
     consumed_gpu: int = 0,
     prealloc_gpu: int = 0,
     quota_gpu: int = -1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "username": name,
         "job_count": job_count,
@@ -166,7 +163,7 @@ def _stats_account_row(
     consumed_gpu: int = 0,
     prealloc_gpu: int = 0,
     quota_gpu: int = -1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "account": name,
         "job_count": job_count,
@@ -181,7 +178,7 @@ def _stats_account_row(
 
 
 # Single canonical REST body for functional ``urlopen`` mocks (all users and accounts).
-_STATS_REST_PAYLOAD: Dict[str, List[Dict[str, Any]]] = {
+_STATS_REST_PAYLOAD: dict[str, list[dict[str, Any]]] = {
     "users": [
         _stats_user_row("alice", 120, job_count=2, prealloc_cpu=60, quota_cpu=600),
         _stats_user_row("bob", 30, job_count=1),
@@ -192,14 +189,14 @@ _STATS_REST_PAYLOAD: Dict[str, List[Dict[str, Any]]] = {
     ],
 }
 
-# Which accounts appear when ``GET /stats?username=`` is set (like ``get_user_accounts``).
-_STATS_ACCOUNT_NAMES_BY_USER: Dict[str, frozenset[str]] = {
+# Which accounts appear when ``GET /stats?username=`` is set (like ``get_user_accounts``).  # noqa: E501
+_STATS_ACCOUNT_NAMES_BY_USER: dict[str, frozenset[str]] = {
     "alice": frozenset({"hpc"}),
     "bob": frozenset({"dev"}),
 }
 
 
-def _stats_payload_filtered_for_user(username: str) -> Dict[str, List[Dict[str, Any]]]:
+def _stats_payload_filtered_for_user(username: str) -> dict[str, list[dict[str, Any]]]:
     names = _STATS_ACCOUNT_NAMES_BY_USER.get(username)
     if not names:
         return {"users": [], "accounts": []}
@@ -209,17 +206,17 @@ def _stats_payload_filtered_for_user(username: str) -> Dict[str, List[Dict[str, 
 
 
 def _stats_payload_filtered(
-    username: Optional[str], account: Optional[str]
-) -> Dict[str, List[Dict[str, Any]]]:
+    username: str | None, account: str | None
+) -> dict[str, list[dict[str, Any]]]:
     """
-    Return the shared multi-user / multi-account stats body (filtered) by mimicking the real
+    Return the shared multi-user / multi-account stats body (filtered) by mimicking the real  # noqa: E501
     ``/stats`` handler.
     """
     if username is None and account is None:
         return _STATS_REST_PAYLOAD
 
-    users: List[Dict[str, Any]]
-    accounts_filter: Optional[set[str]] = None
+    users: list[dict[str, Any]]
+    accounts_filter: set[str] | None = None
     if username is None:
         users = _STATS_REST_PAYLOAD["users"]
     else:
@@ -246,6 +243,6 @@ def _stats_payload_filtered(
     return {"users": users, "accounts": accounts}
 
 
-def stats_payload_full() -> Dict[str, List[Dict[str, Any]]]:
+def stats_payload_full() -> dict[str, list[dict[str, Any]]]:
     """Return the shared multi-user / multi-account stats body (unfiltered)."""
     return _STATS_REST_PAYLOAD

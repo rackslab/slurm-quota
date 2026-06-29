@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-
 from slurm_quota.database import init_database
 from slurm_quota.migrate import migrate_database
-
 from tests.test_support import SlurmQuotaTestCase
 
 

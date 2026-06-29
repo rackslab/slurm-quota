@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from slurm_quota import web
-
 from tests.test_support import SlurmQuotaTestCase
 from tests.unit.web.support import configure_web_app
 
