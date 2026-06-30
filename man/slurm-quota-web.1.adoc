@@ -52,7 +52,7 @@ authenticate API calls with a service token (no per-user login page).
   dashboard is served over HTTPS.
 
 *SLURM_QUOTA_WEB_SESSION_DAYS*::
-  Session cookie lifetime in days. Default: `1` (aligned with default JWT
+  Session cookie lifetime in days. Default: `7` (aligned with default JWT
   duration on the REST API).
 
 *SLURM_QUOTA_WEB_ASSETS_DIR*::
