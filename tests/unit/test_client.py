@@ -6,7 +6,7 @@ import json
 from unittest.mock import patch
 from urllib.error import URLError
 
-from slurm_quota.client import APIClient, ServiceHTTPError
+from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableError
 from slurm_quota.token import save_service_token
 from tests.test_support import SlurmQuotaTestCase
 from tests.testing_utils import fake_http_error
@@ -129,12 +129,13 @@ class TestAPIClientStats(SlurmQuotaTestCase):
             APIClient().stats(None, None, True)
         self.assertEqual(cm.exception.status, 500)
 
-    def test_urlerror_propagates(self):
+    def test_urlerror_is_wrapped(self):
         with (
             patch("slurm_quota.client.urlopen", side_effect=URLError("boom")),
-            self.assertRaises(URLError),
+            self.assertRaises(ServiceUnreachableError) as cm,
         ):
             APIClient().stats(None, None, True)
+        self.assertEqual(str(cm.exception), "boom")
 
     def test_adds_authorization_header_when_token_set(self):
         with patch(
@@ -259,12 +260,13 @@ class TestAPIClientLogin(SlurmQuotaTestCase):
         ):
             APIClient().login("alice", "secret")
 
-    def test_urlerror_propagates(self):
+    def test_urlerror_is_wrapped(self):
         with (
             patch("slurm_quota.client.urlopen", side_effect=URLError("boom")),
-            self.assertRaises(URLError),
+            self.assertRaises(ServiceUnreachableError) as cm,
         ):
             APIClient().login("alice", "secret")
+        self.assertEqual(str(cm.exception), "boom")
 
     def test_stats_uses_token_from_login(self):
         users_payload = _sample_payload()

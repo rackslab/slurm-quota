@@ -5,9 +5,8 @@ from __future__ import annotations
 import io
 from contextlib import redirect_stdout
 from unittest.mock import patch
-from urllib.error import URLError
 
-from slurm_quota.client import ServiceHTTPError
+from slurm_quota.client import ServiceHTTPError, ServiceUnreachableError
 from slurm_quota.commands import (
     RELOGIN_GUIDANCE,
     create_status_bar,
@@ -296,7 +295,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.assertEqual(cm.exception.code, 1)
 
     def test_urlerror_exits(self):
-        self._mock_stats(side_effect=URLError("down"))
+        self._mock_stats(side_effect=ServiceUnreachableError("down"))
         with self.assertRaises(SystemExit) as cm:
             show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
@@ -420,7 +419,9 @@ class TestRoleCommands(SlurmQuotaTestCase):
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
         ):
-            m_client.return_value.grant_role.side_effect = URLError("boom")
+            m_client.return_value.grant_role.side_effect = ServiceUnreachableError(
+                "boom"
+            )
             role_grant_command("operator", "bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
@@ -459,7 +460,9 @@ class TestRoleCommands(SlurmQuotaTestCase):
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
         ):
-            m_client.return_value.revoke_role.side_effect = URLError("boom")
+            m_client.return_value.revoke_role.side_effect = ServiceUnreachableError(
+                "boom"
+            )
             role_revoke_command("manager", "bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
@@ -514,7 +517,9 @@ class TestRoleCommands(SlurmQuotaTestCase):
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
         ):
-            m_client.return_value.list_manager_accounts.side_effect = URLError("boom")
+            m_client.return_value.list_manager_accounts.side_effect = (
+                ServiceUnreachableError("boom")
+            )
             role_managers_list_command("bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
@@ -557,7 +562,9 @@ class TestRoleCommands(SlurmQuotaTestCase):
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
         ):
-            m_client.return_value.add_manager_account.side_effect = URLError("boom")
+            m_client.return_value.add_manager_account.side_effect = (
+                ServiceUnreachableError("boom")
+            )
             role_managers_add_command("bob", "hpc")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
@@ -602,7 +609,9 @@ class TestRoleCommands(SlurmQuotaTestCase):
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
         ):
-            m_client.return_value.remove_manager_account.side_effect = URLError("boom")
+            m_client.return_value.remove_manager_account.side_effect = (
+                ServiceUnreachableError("boom")
+            )
             role_managers_remove_command("bob", "hpc")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)

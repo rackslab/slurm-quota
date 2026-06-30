@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-from urllib.error import URLError
 
 from slurm_quota import web
-from slurm_quota.client import ServiceHTTPError
+from slurm_quota.client import ServiceHTTPError, ServiceUnreachableError
 from tests.test_support import SlurmQuotaTestCase
 from tests.unit.web.support import (
     auth_disabled,
@@ -62,7 +61,7 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
 
     def test_urlerror_is_rendered_in_page(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
-            m_client.return_value.stats.side_effect = URLError("boom")
+            m_client.return_value.stats.side_effect = ServiceUnreachableError("boom")
             client = web.application.test_client()
             resp = client.get("/")
         self.assertEqual(resp.status_code, 200)
@@ -119,7 +118,9 @@ class TestAuthRoutes(SlurmQuotaTestCase):
 
     def test_login_post_api_unreachable_shows_error_page(self):
         with patch("slurm_quota.web.routes.APIClient") as m_client_cls:
-            m_client_cls.return_value.login.side_effect = URLError("boom")
+            m_client_cls.return_value.login.side_effect = ServiceUnreachableError(
+                "boom"
+            )
             client = web.application.test_client()
             login_page = client.get("/login")
             csrf = extract_csrf(login_page.get_data(as_text=True))
