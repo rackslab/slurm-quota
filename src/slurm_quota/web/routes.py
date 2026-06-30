@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import secrets
 from typing import TYPE_CHECKING, Any, Literal, cast
-from urllib.error import URLError
 
 from flask import (
     Response,
@@ -22,7 +21,7 @@ from flask import (
     url_for,
 )
 
-from slurm_quota.client import APIClient, ServiceHTTPError
+from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableError
 from slurm_quota.web import dashboard as dashboard_view
 from slurm_quota.web.auth import (
     api_client,
@@ -161,7 +160,7 @@ def login_post() -> Any:
             next_url=next_url,
             auth_required=True,
         )
-    except (URLError, ValueError) as exc:
+    except (ServiceUnreachableError, ValueError) as exc:
         return render_template(
             "login.html",
             error=f"Login failed: {exc}",
@@ -218,7 +217,7 @@ def dashboard() -> Response | str:
                 session.clear()
                 return redirect(login_url(message="session_expired"))
             error = f"Failed to retrieve stats from service: {exc}"
-        except URLError as exc:
+        except ServiceUnreachableError as exc:
             error = f"Failed to retrieve stats from service: {exc}"
 
     return render_template(
@@ -251,7 +250,7 @@ def roles() -> Response | str:
             session.clear()
             return redirect(login_url(message="session_expired"))
         error = f"Failed to retrieve roles from service: HTTP {exc.status}"
-    except URLError as exc:
+    except ServiceUnreachableError as exc:
         error = f"Failed to retrieve roles from service: {exc}"
 
     return render_template(
@@ -286,7 +285,7 @@ def roles_post() -> Any:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-    except URLError:
+    except ServiceUnreachableError:
         pass
 
     return redirect(url_for("roles"))
@@ -316,7 +315,7 @@ def roles_manager_accounts_post() -> Any:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-    except URLError:
+    except ServiceUnreachableError:
         pass
 
     return redirect(url_for("roles"))
@@ -363,7 +362,7 @@ def quotas_post() -> Any:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-    except URLError:
+    except ServiceUnreachableError:
         pass
 
     return redirect(url_for("dashboard"))
@@ -397,7 +396,7 @@ def consumption_post() -> Any:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-    except URLError:
+    except ServiceUnreachableError:
         pass
 
     return redirect(url_for("dashboard"))
