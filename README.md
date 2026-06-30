@@ -645,7 +645,7 @@ Environment variables:
 - `SLURM_QUOTA_WEB_SESSION_KEY_FILE`: path to a file containing the session signing key (required for LDAP authentication).
 - `SLURM_QUOTA_WEB_SESSION_KEY`: session signing key passed directly (alternative to `SLURM_QUOTA_WEB_SESSION_KEY_FILE`)
 - `SLURM_QUOTA_WEB_SECURE_COOKIES`: set to `1` to mark session cookies `Secure` (recommended behind HTTPS when using LDAP browser login)
-- `SLURM_QUOTA_WEB_SESSION_DAYS`: browser session lifetime in days (default `1`)
+- `SLURM_QUOTA_WEB_SESSION_DAYS`: browser session lifetime in days (default `7`)
 - `SLURM_QUOTA_WEB_ASSETS_DIR`: custom templates/static directory
 - `SLURM_QUOTA_WEB_HOST`, `SLURM_QUOTA_WEB_PORT`, `SLURM_QUOTA_WEB_DEBUG`: standalone server options
 - `SLURM_QUOTA_WEB_ENV_FILE`: path to defaults file read by the WSGI script (default `/etc/default/slurm-quota-web`; not used by standalone CLI)
