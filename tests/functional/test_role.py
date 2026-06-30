@@ -11,7 +11,7 @@ from tests.functional.functional_base import (
     FakeJsonUrlopenResponse,
     FunctionalAPICliBase,
 )
-from tests.testing_utils import dedent_lines
+from tests.testing_utils import dedent_lines, fake_http_error
 
 
 class _RoleUrlopenResponse:
@@ -145,9 +145,7 @@ class TestRoleCommand(FunctionalAPICliBase):
 
     def test_role_show_reports_access_denied_on_forbidden(self):
         def _forbidden(request):
-            response = FakeJsonUrlopenResponse({})
-            response.status = 403
-            return response
+            raise fake_http_error(403, url=request.full_url)
 
         with (
             patch("slurm_quota.client.urlopen", side_effect=_forbidden),
@@ -158,9 +156,7 @@ class TestRoleCommand(FunctionalAPICliBase):
 
     def test_role_list_reports_admin_required_on_forbidden(self):
         def _forbidden(request):
-            response = FakeJsonUrlopenResponse({})
-            response.status = 403
-            return response
+            raise fake_http_error(403, url=request.full_url)
 
         with (
             patch("slurm_quota.client.urlopen", side_effect=_forbidden),
@@ -174,8 +170,7 @@ class TestRoleCommand(FunctionalAPICliBase):
 
     def test_role_grant_reports_admin_required_on_forbidden(self):
         def _forbidden(request):
-            response = _RoleUrlopenResponse(status=403)
-            return response
+            raise fake_http_error(403, url=request.full_url)
 
         with (
             patch("slurm_quota.client.urlopen", side_effect=_forbidden),
@@ -191,8 +186,7 @@ class TestRoleCommand(FunctionalAPICliBase):
 
     def test_role_revoke_reports_admin_required_on_forbidden(self):
         def _forbidden(request):
-            response = _RoleUrlopenResponse(status=403)
-            return response
+            raise fake_http_error(403, url=request.full_url)
 
         with (
             patch("slurm_quota.client.urlopen", side_effect=_forbidden),

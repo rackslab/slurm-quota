@@ -11,6 +11,7 @@ from tests.functional.functional_base import (
     FakeJsonUrlopenResponse,
     FunctionalAPICliBase,
 )
+from tests.testing_utils import fake_http_error
 
 
 class TestGpuFactorsCommand(FunctionalAPICliBase):
@@ -56,9 +57,7 @@ class TestGpuFactorsCommand(FunctionalAPICliBase):
 
     def test_gpu_factors_reports_access_denied_on_forbidden(self):
         def _forbidden(request):
-            response = FakeJsonUrlopenResponse({})
-            response.status = 403
-            return response
+            raise fake_http_error(403, url=request.full_url)
 
         with (
             patch("slurm_quota.client.urlopen", side_effect=_forbidden),

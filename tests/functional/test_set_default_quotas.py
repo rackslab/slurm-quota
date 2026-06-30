@@ -11,6 +11,7 @@ from tests.functional.functional_base import (
     FakeNoContentUrlopenResponse,
     FunctionalAPICliBase,
 )
+from tests.testing_utils import fake_http_error
 
 
 class TestSetDefaultQuotasCommand(FunctionalAPICliBase):
@@ -95,7 +96,7 @@ class TestSetDefaultQuotasCommand(FunctionalAPICliBase):
 
     def test_set_default_quotas_reports_access_denied_on_forbidden(self):
         def _forbidden(request):
-            return FakeNoContentUrlopenResponse(status=403)
+            raise fake_http_error(403, url=request.full_url)
 
         with (
             patch("slurm_quota.client.urlopen", side_effect=_forbidden),
