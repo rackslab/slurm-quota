@@ -9,9 +9,9 @@ from urllib.error import URLError
 from slurm_quota.token import service_token_path
 from tests.functional.functional_base import (
     FakeJsonUrlopenResponse,
-    FakeNoContentUrlopenResponse,
     FunctionalAPICliBase,
 )
+from tests.testing_utils import fake_http_error
 
 
 class TestAdjustCommand(FunctionalAPICliBase):
@@ -117,7 +117,7 @@ class TestAdjustCommand(FunctionalAPICliBase):
 
     def test_adjust_reports_access_denied_on_forbidden(self):
         def _forbidden(request):
-            return FakeNoContentUrlopenResponse(status=403)
+            raise fake_http_error(403, url=request.full_url)
 
         with (
             patch("slurm_quota.client.urlopen", side_effect=_forbidden),
@@ -178,7 +178,7 @@ class TestAdjustCommand(FunctionalAPICliBase):
 
     def test_adjust_reports_api_error_on_missing_target(self):
         def _bad_request(request):
-            return FakeNoContentUrlopenResponse(status=400)
+            raise fake_http_error(400, url=request.full_url)
 
         with (
             patch("slurm_quota.client.urlopen", side_effect=_bad_request),

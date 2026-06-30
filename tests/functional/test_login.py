@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from slurm_quota.token import service_token_path
 from tests.functional.functional_base import FakeJsonUrlopenResponse, FunctionalCLIBase
+from tests.testing_utils import fake_http_error
 
 
 class TestLoginCommand(FunctionalCLIBase):
@@ -73,9 +74,7 @@ class TestLoginCommand(FunctionalCLIBase):
         self.env({"XDG_CONFIG_HOME": str(config_home)})
 
         def _unauthorized(request):
-            response = FakeJsonUrlopenResponse({})
-            response.status = 401
-            return response
+            raise fake_http_error(401, url=request.full_url)
 
         with (
             patch("slurm_quota.client.urlopen", side_effect=_unauthorized),
@@ -90,9 +89,7 @@ class TestLoginCommand(FunctionalCLIBase):
         self.env({"XDG_CONFIG_HOME": str(config_home)})
 
         def _not_found(request):
-            response = FakeJsonUrlopenResponse({"error": "not_found"})
-            response.status = 404
-            return response
+            raise fake_http_error(404, {"error": "not_found"}, url=request.full_url)
 
         with (
             patch("slurm_quota.client.urlopen", side_effect=_not_found),

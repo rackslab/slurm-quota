@@ -7,10 +7,11 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
-from slurm_quota.token import service_token_path
+from slurm_quota.commands import RELOGIN_GUIDANCE
+from slurm_quota.token import save_service_token, service_token_path
 from tests.functional import functional_base
 from tests.functional.functional_base import FunctionalCLIBase
-from tests.testing_utils import dedent_lines
+from tests.testing_utils import dedent_lines, fake_http_error
 
 
 class TestStatsCommand(FunctionalCLIBase):
@@ -350,3 +351,25 @@ class TestStatsCommand(FunctionalCLIBase):
             self.run_cli_main(["slurm-quota", "stats", "alice"])
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.get_header("Authorization"), "Bearer saved-jwt")
+
+    def test_stats_expired_token_via_http_error(self):
+        config_home = Path(self._tmp.name) / "xdg-config"
+        self.env({"NO_COLOR": "1", "XDG_CONFIG_HOME": str(config_home)})
+        save_service_token("saved-jwt")
+
+        def _expired(_request):
+            raise fake_http_error(
+                401,
+                {
+                    "error": "unauthorized",
+                    "message": "Token is expired",
+                },
+            )
+
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=_expired),
+            self.assertLogs("slurm_quota", level="INFO") as log_cm,
+        ):
+            self.run_cli_main_exit(["slurm-quota", "stats", "alice"], 1)
+        self.assertIn("expired", log_cm.output[0].lower())
+        self.assertIn(RELOGIN_GUIDANCE, log_cm.output[1])

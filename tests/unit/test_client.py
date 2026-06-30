@@ -9,6 +9,7 @@ from urllib.error import URLError
 from slurm_quota.client import APIClient, ServiceHTTPError
 from slurm_quota.token import save_service_token
 from tests.test_support import SlurmQuotaTestCase
+from tests.testing_utils import fake_http_error
 
 
 class _FakeUrlopenResponse:
@@ -121,7 +122,7 @@ class TestAPIClientStats(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=500),
+                side_effect=fake_http_error(500),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -153,6 +154,54 @@ class TestAPIClientStats(SlurmQuotaTestCase):
             APIClient(token=None).stats(None, None, True)
         req = m_urlopen.call_args[0][0]
         self.assertIsNone(req.get_header("Authorization"))
+
+
+class TestAPIClientHTTPError(SlurmQuotaTestCase):
+    def test_http_error_parses_expired_token_message(self):
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                side_effect=fake_http_error(
+                    401,
+                    {
+                        "error": "unauthorized",
+                        "message": "Token is expired",
+                    },
+                ),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
+        ):
+            APIClient(token="jwt").stats(None, None, True)
+        exc = cm.exception
+        self.assertEqual(exc.status, 401)
+        self.assertEqual(exc.message, "Token is expired")
+        self.assertEqual(exc.error, "unauthorized")
+
+    def test_http_error_without_json_body(self):
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                side_effect=fake_http_error(401, body=b""),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
+        ):
+            APIClient(token="jwt").stats(None, None, True)
+        exc = cm.exception
+        self.assertEqual(exc.status, 401)
+        self.assertIsNone(exc.message)
+        self.assertIsNone(exc.error)
+
+    def test_http_error_with_invalid_json_body(self):
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                side_effect=fake_http_error(401, body=b"not-json"),
+            ),
+            self.assertRaises(ServiceHTTPError) as cm,
+        ):
+            APIClient(token="jwt").stats(None, None, True)
+        self.assertEqual(cm.exception.status, 401)
+        self.assertIsNone(cm.exception.message)
 
 
 class TestAPIClientLogin(SlurmQuotaTestCase):
@@ -193,7 +242,7 @@ class TestAPIClientLogin(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=401),
+                side_effect=fake_http_error(401),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -262,7 +311,7 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -287,7 +336,7 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -320,7 +369,7 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -345,7 +394,7 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -379,7 +428,7 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -404,7 +453,7 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -429,7 +478,7 @@ class TestAPIClientRoles(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -469,7 +518,7 @@ class TestAPIClientQuotas(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -515,7 +564,7 @@ class TestAPIClientDefaultQuotas(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -568,7 +617,7 @@ class TestAPIClientGpuFactors(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -591,7 +640,7 @@ class TestAPIClientGpuFactors(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
@@ -631,7 +680,7 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
         with (
             patch(
                 "slurm_quota.client.urlopen",
-                return_value=_FakeUrlopenResponse({}, status=403),
+                side_effect=fake_http_error(403),
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
