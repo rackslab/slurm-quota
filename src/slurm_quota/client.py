@@ -4,11 +4,14 @@
 
 """HTTP client for the slurm-quota stats API."""
 
+from __future__ import annotations
+
 import json
 import logging
 import os
 from http import HTTPStatus
-from typing import Any, Literal, Optional
+from typing import Any, Literal
+from urllib.error import HTTPError
 from urllib.parse import urlencode, urljoin
 from urllib.request import Request, urlopen
 
@@ -18,9 +21,36 @@ logger = logging.getLogger("slurm_quota")
 class ServiceHTTPError(Exception):
     """Raised when an HTTP service endpoint returns a non-success status."""
 
-    def __init__(self, status: int):
+    def __init__(
+        self,
+        status: int,
+        *,
+        message: str | None = None,
+        error: str | None = None,
+    ):
         self.status = status
+        self.message = message
+        self.error = error
         super().__init__(f"HTTP {status}")
+
+    @classmethod
+    def from_http_error(cls, exc: HTTPError) -> ServiceHTTPError:
+        payload: dict[str, Any] = {}
+        try:
+            raw = exc.read()
+            if raw:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    payload = parsed
+        except (json.JSONDecodeError, OSError):
+            pass
+        message = payload.get("message")
+        error = payload.get("error")
+        return cls(
+            exc.code,
+            message=message if isinstance(message, str) else None,
+            error=error if isinstance(error, str) else None,
+        )
 
 
 def _default_base_url() -> str:
@@ -30,7 +60,7 @@ def _default_base_url() -> str:
 class APIClient:
     """HTTP client for the slurm-quota REST API."""
 
-    def __init__(self, token: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, token: str | None = None, base_url: str | None = None):
         self.token = token
         self.base_url = base_url if base_url is not None else _default_base_url()
 
@@ -45,11 +75,12 @@ class APIClient:
         method: str,
         path: str,
         *,
-        body: Optional[dict[str, Any]] = None,
-        params: Optional[dict[str, str]] = None,
+        body: dict[str, Any] | None = None,
+        params: dict[str, str] | None = None,
         require_token: bool = True,
-        include_auth: Optional[bool] = None,
-    ) -> tuple[int, dict[str, Any]]:
+        include_auth: bool | None = None,
+        success_status: int = HTTPStatus.OK,
+    ) -> dict[str, Any]:
         if require_token and not self.token:
             raise ValueError("API token is required")
         if include_auth is None:
@@ -63,13 +94,20 @@ class APIClient:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"
         request = Request(url, data=data, headers=headers, method=method)
-        with urlopen(request) as resp:
-            status = resp.status
-            raw = resp.read()
-            if not raw:
-                return status, {}
-            payload: dict[str, Any] = json.loads(raw)
-            return status, payload
+        try:
+            with urlopen(request) as resp:
+                status = resp.status
+                raw = resp.read()
+                payload: dict[str, Any] = {}
+                if raw:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, dict):
+                        payload = parsed
+                if status != success_status:
+                    raise ServiceHTTPError(status)
+                return payload
+        except HTTPError as exc:
+            raise ServiceHTTPError.from_http_error(exc) from exc
 
     def login(self, username: str, password: str) -> dict[str, Any]:
         """
@@ -87,15 +125,13 @@ class APIClient:
             URLError: Network or URL handling failure from urlopen.
             ValueError: Response body did not contain a token.
         """
-        status, payload = self._api_request(
+        payload = self._api_request(
             "POST",
             "login",
             body={"username": username, "password": password},
             require_token=False,
             include_auth=False,
         )
-        if status != HTTPStatus.OK:
-            raise ServiceHTTPError(status)
 
         token = payload.get("token")
         if not isinstance(token, str) or not token:
@@ -105,8 +141,8 @@ class APIClient:
 
     def stats(
         self,
-        selected_username: Optional[str],
-        selected_account: Optional[str],
+        selected_username: str | None,
+        selected_account: str | None,
         show_all: bool,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """
@@ -131,124 +167,107 @@ class APIClient:
             stats_params["username"] = selected_username
         if selected_account:
             stats_params["account"] = selected_account
-        status, stats_payload = self._api_request(
+        stats_payload = self._api_request(
             "GET",
             "stats",
             params=stats_params or None,
             require_token=False,
             include_auth=True,
         )
-        if status != HTTPStatus.OK:
-            raise ServiceHTTPError(status)
 
         users_data: list[dict[str, Any]] = list(stats_payload.get("users", []))
         accounts_data: list[dict[str, Any]] = list(stats_payload.get("accounts", []))
         return users_data, accounts_data
 
     def me(self) -> dict[str, Any]:
-        status, payload = self._api_request("GET", "me")
-        if status != HTTPStatus.OK:
-            raise ServiceHTTPError(status)
-        return payload
+        return self._api_request("GET", "me")
 
     def users_roles(self) -> list[dict[str, Any]]:
-        status, payload = self._api_request("GET", "roles")
-        if status != HTTPStatus.OK:
-            raise ServiceHTTPError(status)
+        payload = self._api_request("GET", "roles")
         users = payload.get("users", [])
         if not isinstance(users, list):
             return []
         return list(users)
 
     def grant_role(self, role: Literal["operator", "manager"], username: str) -> None:
-        status, _payload = self._api_request(
-            "PUT", f"roles/{role}s/{username}", require_token=True
+        self._api_request(
+            "PUT",
+            f"roles/{role}s/{username}",
+            require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
         )
-        if status != HTTPStatus.NO_CONTENT:
-            raise ServiceHTTPError(status)
 
     def revoke_role(self, role: Literal["operator", "manager"], username: str) -> None:
-        status, _payload = self._api_request(
-            "DELETE", f"roles/{role}s/{username}", require_token=True
+        self._api_request(
+            "DELETE",
+            f"roles/{role}s/{username}",
+            require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
         )
-        if status != HTTPStatus.NO_CONTENT:
-            raise ServiceHTTPError(status)
 
     def list_manager_accounts(self, username: str) -> list[str]:
-        status, payload = self._api_request(
+        payload = self._api_request(
             "GET", f"roles/managers/{username}/accounts", require_token=True
         )
-        if status != HTTPStatus.OK:
-            raise ServiceHTTPError(status)
         accounts = payload.get("accounts", [])
         if not isinstance(accounts, list):
             return []
         return [str(account) for account in accounts]
 
     def add_manager_account(self, username: str, account: str) -> None:
-        status, _payload = self._api_request(
+        self._api_request(
             "PUT",
             f"roles/managers/{username}/accounts/{account}",
             require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
         )
-        if status != HTTPStatus.NO_CONTENT:
-            raise ServiceHTTPError(status)
 
     def remove_manager_account(self, username: str, account: str) -> None:
-        status, _payload = self._api_request(
+        self._api_request(
             "DELETE",
             f"roles/managers/{username}/accounts/{account}",
             require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
         )
-        if status != HTTPStatus.NO_CONTENT:
-            raise ServiceHTTPError(status)
 
     def set_user_cpu_quota(self, username: str, quota_minutes: int) -> None:
-        status, _payload = self._api_request(
+        self._api_request(
             "PUT",
             f"quotas/users/{username}/cpu",
             body={"quota_minutes": quota_minutes},
             require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
         )
-        if status != HTTPStatus.NO_CONTENT:
-            raise ServiceHTTPError(status)
 
     def set_user_gpu_quota(self, username: str, quota_minutes: int) -> None:
-        status, _payload = self._api_request(
+        self._api_request(
             "PUT",
             f"quotas/users/{username}/gpu",
             body={"quota_minutes": quota_minutes},
             require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
         )
-        if status != HTTPStatus.NO_CONTENT:
-            raise ServiceHTTPError(status)
 
     def set_account_cpu_quota(self, account: str, quota_minutes: int) -> None:
-        status, _payload = self._api_request(
+        self._api_request(
             "PUT",
             f"quotas/accounts/{account}/cpu",
             body={"quota_minutes": quota_minutes},
             require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
         )
-        if status != HTTPStatus.NO_CONTENT:
-            raise ServiceHTTPError(status)
 
     def set_account_gpu_quota(self, account: str, quota_minutes: int) -> None:
-        status, _payload = self._api_request(
+        self._api_request(
             "PUT",
             f"quotas/accounts/{account}/gpu",
             body={"quota_minutes": quota_minutes},
             require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
         )
-        if status != HTTPStatus.NO_CONTENT:
-            raise ServiceHTTPError(status)
 
     def get_default_quotas(self) -> dict[str, int]:
-        status, payload = self._api_request(
-            "GET", "quotas/defaults", require_token=True
-        )
-        if status != HTTPStatus.OK:
-            raise ServiceHTTPError(status)
+        payload = self._api_request("GET", "quotas/defaults", require_token=True)
         result: dict[str, int] = {}
         for field in (
             "user_cpu_minutes",
@@ -265,10 +284,10 @@ class APIClient:
     def set_default_quotas(
         self,
         *,
-        user_cpu: Optional[int] = None,
-        user_gpu: Optional[int] = None,
-        account_cpu: Optional[int] = None,
-        account_gpu: Optional[int] = None,
+        user_cpu: int | None = None,
+        user_gpu: int | None = None,
+        account_cpu: int | None = None,
+        account_gpu: int | None = None,
     ) -> None:
         body: dict[str, int] = {}
         if user_cpu is not None:
@@ -279,14 +298,13 @@ class APIClient:
             body["account_cpu_minutes"] = account_cpu
         if account_gpu is not None:
             body["account_gpu_minutes"] = account_gpu
-        status, _payload = self._api_request(
+        self._api_request(
             "PUT",
             "quotas/defaults",
             body=body,
             require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
         )
-        if status != HTTPStatus.NO_CONTENT:
-            raise ServiceHTTPError(status)
 
     def adjust_consumption(
         self,
@@ -296,23 +314,19 @@ class APIClient:
         delta_minutes: int,
     ) -> int:
         path = f"consumption/{target}/{name}/{resource}"
-        status, payload = self._api_request(
+        payload = self._api_request(
             "PATCH",
             path,
             body={"delta_minutes": delta_minutes},
             require_token=True,
         )
-        if status != HTTPStatus.OK:
-            raise ServiceHTTPError(status)
         total = payload.get("total_consumed_minutes")
         if not isinstance(total, int):
             raise ValueError("adjust response did not contain total_consumed_minutes")
         return total
 
     def get_gpu_factors(self) -> dict[str, Any]:
-        status, payload = self._api_request("GET", "factors/gpu", require_token=True)
-        if status != HTTPStatus.OK:
-            raise ServiceHTTPError(status)
+        payload = self._api_request("GET", "factors/gpu", require_token=True)
         default_factor = payload.get("default_factor")
         factors = payload.get("factors")
         if not isinstance(default_factor, (int, float)):
@@ -325,11 +339,10 @@ class APIClient:
         }
 
     def set_gpu_factor(self, gpu_type: str, factor: float) -> None:
-        status, _payload = self._api_request(
+        self._api_request(
             "PUT",
             f"factors/gpu/{gpu_type}",
             body={"factor": factor},
             require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
         )
-        if status != HTTPStatus.NO_CONTENT:
-            raise ServiceHTTPError(status)

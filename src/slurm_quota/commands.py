@@ -21,14 +21,14 @@ from slurm_quota.token import load_service_token, save_service_token
 
 logger = logging.getLogger("slurm_quota")
 
+RELOGIN_GUIDANCE = "Run 'slurm-quota login --save' to obtain a new token."
+
 
 def _api_client_from_token() -> APIClient:
     token = load_service_token()
     if not token:
-        logger.error(
-            "No API token available. Use 'slurm-quota login --save', "
-            "'slurm-quota token', or set SLURM_QUOTA_TOKEN."
-        )
+        logger.error("No API token available.")
+        logger.info(RELOGIN_GUIDANCE)
         sys.exit(1)
     return APIClient(token=token)
 
@@ -36,6 +36,13 @@ def _api_client_from_token() -> APIClient:
 def _handle_api_error(exc: ServiceHTTPError, *, forbidden_message: str) -> None:
     if exc.status == 403:
         logger.error(forbidden_message)
+    elif exc.status == 401:
+        if exc.message == "Token is expired":
+            logger.error("Authentication token has expired.")
+        else:
+            detail = exc.message or "invalid or missing token"
+            logger.error(f"Authentication failed: {detail}.")
+        logger.info(RELOGIN_GUIDANCE)
     else:
         logger.error(f"API request failed: HTTP {exc.status}")
     sys.exit(1)
@@ -685,8 +692,10 @@ def show_user_stats(
                 )
             )
     except ServiceHTTPError as e:
-        logger.error(f"Failed to fetch stats: HTTP {e.status}")
-        sys.exit(1)
+        _handle_api_error(
+            e,
+            forbidden_message="Access denied: insufficient permissions to view stats",
+        )
     except URLError as e:
         logger.error(f"Failed to contact slurm-quota service: {e}")
         sys.exit(1)
