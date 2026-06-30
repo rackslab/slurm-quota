@@ -16,7 +16,7 @@ from pathlib import Path
 DEFAULT_ENV_FILE = "/etc/default/slurm-quota-web"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5000
-DEFAULT_SESSION_DAYS = 1
+DEFAULT_SESSION_DAYS = 7
 
 logger = logging.getLogger("slurm_quota")
 
