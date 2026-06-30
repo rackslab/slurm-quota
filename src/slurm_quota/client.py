@@ -11,7 +11,7 @@ import logging
 import os
 from http import HTTPStatus
 from typing import Any, Literal
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin
 from urllib.request import Request, urlopen
 
@@ -51,6 +51,16 @@ class ServiceHTTPError(Exception):
             message=message if isinstance(message, str) else None,
             error=error if isinstance(error, str) else None,
         )
+
+
+class ServiceUnreachableError(Exception):
+    """Raised when the slurm-quota service cannot be reached."""
+
+    @classmethod
+    def from_url_error(cls, exc: URLError) -> ServiceUnreachableError:
+        if exc.reason is not None:
+            return cls(str(exc.reason))
+        return cls(str(exc))
 
 
 def _default_base_url() -> str:
@@ -108,6 +118,8 @@ class APIClient:
                 return payload
         except HTTPError as exc:
             raise ServiceHTTPError.from_http_error(exc) from exc
+        except URLError as exc:
+            raise ServiceUnreachableError.from_url_error(exc) from exc
 
     def login(self, username: str, password: str) -> dict[str, Any]:
         """
@@ -122,7 +134,7 @@ class APIClient:
 
         Raises:
             ServiceHTTPError: Response status was not HTTP OK.
-            URLError: Network or URL handling failure from urlopen.
+            ServiceUnreachableError: Network or URL handling failure from urlopen.
             ValueError: Response body did not contain a token.
         """
         payload = self._api_request(
@@ -160,7 +172,7 @@ class APIClient:
 
         Raises:
             ServiceHTTPError: Response status was not HTTP OK.
-            URLError: Network or URL handling failure from urlopen.
+            ServiceUnreachableError: Network or URL handling failure from urlopen.
         """
         stats_params: dict[str, str] = {}
         if selected_username and not show_all:

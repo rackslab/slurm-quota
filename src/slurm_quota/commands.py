@@ -10,10 +10,9 @@ import os
 import sys
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
-from urllib.error import URLError
 
 from slurm_quota import auth
-from slurm_quota.client import APIClient, ServiceHTTPError
+from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableError
 from slurm_quota.database import (
     prune_resources,
 )
@@ -45,6 +44,11 @@ def _handle_api_error(exc: ServiceHTTPError, *, forbidden_message: str) -> None:
         logger.info(RELOGIN_GUIDANCE)
     else:
         logger.error(f"API request failed: HTTP {exc.status}")
+    sys.exit(1)
+
+
+def _handle_unreachable_error(exc: ServiceUnreachableError) -> None:
+    logger.error(f"Failed to contact slurm-quota service: {exc}")
     sys.exit(1)
 
 
@@ -125,9 +129,8 @@ def set_user_quota_command(username: str, quota: int) -> None:
                 "Access denied: operator or admin role required to set quotas"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
 
 
 def set_account_quota_command(account: str, quota: int) -> None:
@@ -142,9 +145,8 @@ def set_account_quota_command(account: str, quota: int) -> None:
                 "Access denied: operator or admin role required to set quotas"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
 
 
 def set_user_gpu_quota_command(username: str, quota: int) -> None:
@@ -159,9 +161,8 @@ def set_user_gpu_quota_command(username: str, quota: int) -> None:
                 "Access denied: operator or admin role required to set quotas"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
 
 
 def set_account_gpu_quota_command(account: str, quota: int) -> None:
@@ -176,9 +177,8 @@ def set_account_gpu_quota_command(account: str, quota: int) -> None:
                 "Access denied: operator or admin role required to set quotas"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
 
 
 def adjust_command(
@@ -231,9 +231,8 @@ def adjust_command(
                 "Access denied: operator or admin role required to adjust consumption"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
     except Exception as e:
         logger.error(f"adjust command failed: {e}")
         sys.exit(1)
@@ -260,9 +259,8 @@ def show_gpu_factors_command() -> None:
                 "Access denied: operator or admin role required to view GPU factors"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
     except Exception as e:
         logger.error(f"gpu-factors command failed: {e}")
         sys.exit(1)
@@ -287,9 +285,8 @@ def set_gpu_factor_command(gpu_type: str, factor: float) -> None:
                 "Access denied: operator or admin role required to set GPU factors"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
     except Exception as e:
         logger.error(f"set-gpu-factor command failed: {e}")
         sys.exit(1)
@@ -326,9 +323,8 @@ def set_default_quotas_command(
                 "Access denied: operator or admin role required to set default quotas"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
     except Exception as e:
         logger.error(f"set-default-quotas command failed: {e}")
         sys.exit(1)
@@ -355,9 +351,8 @@ def show_default_quotas_command() -> None:
                 "Access denied: operator or admin role required to view default quotas"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
     except Exception as e:
         logger.error(f"default-quotas command failed: {e}")
         sys.exit(1)
@@ -465,9 +460,8 @@ def login_command(username: Optional[str] = None, save: bool = False) -> None:
     except OSError as e:
         logger.error(f"Failed to save authentication token: {e}")
         sys.exit(1)
-    except URLError as e:
-        logger.error(f"Failed to contact slurm-quota service: {e}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
     except Exception as e:
         logger.error(f"Login failed: {e}")
         sys.exit(1)
@@ -696,9 +690,8 @@ def show_user_stats(
             e,
             forbidden_message="Access denied: insufficient permissions to view stats",
         )
-    except URLError as e:
-        logger.error(f"Failed to contact slurm-quota service: {e}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
     except Exception as e:
         logger.error(f"Failed to retrieve stats from service: {e}")
         sys.exit(1)
@@ -709,9 +702,8 @@ def role_show_command() -> None:
         payload = _api_client_from_token().me()
     except ServiceHTTPError as exc:
         _handle_api_error(exc, forbidden_message="Access denied")
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
 
     username = payload.get("username", "?")
     role = payload.get("role", "?")
@@ -726,9 +718,8 @@ def role_list_command() -> None:
         _handle_api_error(
             exc, forbidden_message="Access denied: admin role required to list roles"
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
 
     if not users:
         print("No users found")
@@ -754,9 +745,8 @@ def role_grant_command(role: Literal["operator", "manager"], username: str) -> N
             exc,
             forbidden_message=f"Access denied: admin role required to grant {role}",
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
     print(f"Granted {role} role to {username}")
 
 
@@ -769,9 +759,8 @@ def role_revoke_command(role: Literal["operator", "manager"], username: str) -> 
             exc,
             forbidden_message=f"Access denied: admin role required to revoke {role}",
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
     print(f"Revoked {role} role from {username}")
 
 
@@ -785,9 +774,8 @@ def role_managers_list_command(username: str) -> None:
                 "Access denied: admin role required to list manager accounts"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
 
     if not accounts:
         print(f"No accounts assigned to manager {username}")
@@ -807,9 +795,8 @@ def role_managers_add_command(username: str, account: str) -> None:
                 "Access denied: admin role required to assign manager accounts"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
     print(f"Assigned account {account} to manager {username}")
 
 
@@ -823,7 +810,6 @@ def role_managers_remove_command(username: str, account: str) -> None:
                 "Access denied: admin role required to remove manager accounts"
             ),
         )
-    except URLError as exc:
-        logger.error(f"Failed to contact slurm-quota service: {exc}")
-        sys.exit(1)
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
     print(f"Removed account {account} from manager {username}")
