@@ -86,7 +86,7 @@ jwt:
     doc: Path to the JWT signing key file
   duration:
     type: int
-    default: 1
+    default: 7
     doc: Token validity duration in days
   algorithm:
     type: str
