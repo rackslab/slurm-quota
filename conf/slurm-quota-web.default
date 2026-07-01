@@ -6,7 +6,8 @@
 # loaded by the WSGI script (Apache) or systemd EnvironmentFile. This
 # file is ignored by the standalone slurm-quota-web CLI.
 #
-# SLURM_QUOTA_URL=http://controller:9911/
+# SLURM_QUOTA_URL=https://controller:9911/
+# SLURM_QUOTA_CA_CERT=/etc/slurm-quota/tls/ca.pem
 # SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key
 # SLURM_QUOTA_WEB_SECURE_COOKIES=1
 # SLURM_QUOTA_TOKEN=eyJ...

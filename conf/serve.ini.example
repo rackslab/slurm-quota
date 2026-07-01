@@ -20,3 +20,10 @@ group_base=ou=groups,dc=example,dc=org
 [authorization]
 admins=
   admin-user
+
+# Native HTTPS (optional; cert and key are required when enabled):
+#
+# [tls]
+# enabled=true
+# cert=/etc/slurm-quota/tls/cert.pem
+# key=/etc/slurm-quota/tls/key.pem

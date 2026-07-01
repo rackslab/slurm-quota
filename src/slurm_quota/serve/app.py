@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import ssl
 import time
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,7 @@ from slurm_quota.database import init_database
 from slurm_quota.serve.settings import (
     ServeSetupError,
     load_bind_password,
-    validate_auth_settings,
+    validate_settings,
 )
 
 logger = logging.getLogger("slurm_quota")
@@ -33,7 +34,12 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
         Flask.__init__(self, "slurm-quota-serve")
         self.settings: RuntimeSettings | None = None
         self.authentifier: LDAPAuthentifier | None = None
+        self.ssl_context: ssl.SSLContext | None = None
         self._last_activity = time.monotonic()
+
+    @property
+    def scheme(self) -> str:
+        return "HTTPS" if self.ssl_context is not None else "HTTP"
 
     def register(self) -> None:
         """Wire before-request hook, error handlers, and API routes."""
@@ -127,7 +133,21 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
     def setup(self, conf_defs: Path, site_config: Path) -> None:
         self.load_settings(conf_defs, site_config)
         assert self.settings is not None
-        validate_auth_settings(self.settings)
+        validate_settings(self.settings)
+        self.ssl_context = None
+        if self.settings.tls.enabled:
+            cert = self.settings.tls.cert
+            key = self.settings.tls.key
+            assert cert is not None and key is not None
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            try:
+                context.load_cert_chain(certfile=str(cert), keyfile=str(key))
+            except (OSError, ssl.SSLError) as exc:
+                raise ServeSetupError(
+                    f"Unable to load TLS certificate chain from {cert} and {key}: {exc}"
+                ) from exc
+            self.ssl_context = context
         self.authentifier = None
         RFLTokenizedWebApp.__init__(
             self,

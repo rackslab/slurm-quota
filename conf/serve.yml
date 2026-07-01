@@ -119,3 +119,16 @@ jwt:
     type: bool
     default: false
     doc: Create parent directories when automatically creating the signing key file
+
+tls:
+  _doc: HTTPS/TLS settings for the REST API
+  enabled:
+    type: bool
+    default: false
+    doc: Enable HTTPS for the REST API (requires cert and key)
+  cert:
+    type: path
+    doc: Path to the server TLS certificate file in PEM format (required when enabled)
+  key:
+    type: path
+    doc: Path to the server TLS private key file in PEM format (required when enabled)
