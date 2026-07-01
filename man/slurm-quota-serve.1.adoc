@@ -73,35 +73,36 @@ Notes:
 
 ....
 slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 600
-curl http://127.0.0.1:9911/health
+curl https://127.0.0.1:9911/health
+
 TOKEN=$(sudo slurm-quota-token alice)
-curl -H 'Authorization: Bearer '"$TOKEN" http://127.0.0.1:9911/stats
-curl -H 'Authorization: Bearer '"$TOKEN" 'http://127.0.0.1:9911/stats?username=alice'
-curl -H 'Authorization: Bearer '"$TOKEN" 'http://127.0.0.1:9911/stats?account=hpc'
+curl -H 'Authorization: Bearer '"$TOKEN" https://127.0.0.1:9911/stats
+curl -H 'Authorization: Bearer '"$TOKEN" 'https://127.0.0.1:9911/stats?username=alice'
+curl -H 'Authorization: Bearer '"$TOKEN" 'https://127.0.0.1:9911/stats?account=hpc'
 
 slurm-quota-serve --dump-config
 
 # With authentication.method=ldap in /etc/slurm-quota/serve.ini
-curl -s -X POST http://127.0.0.1:9911/login \
+curl -s -X POST https://127.0.0.1:9911/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"alice","password":"secret"}'
-curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/stats
-curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/me
-curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles
-curl -X PUT -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles/operators/bob
-curl -X PUT -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles/managers/bob
-curl -X PUT -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/roles/managers/bob/accounts/hpc
-curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/quotas/defaults
+curl -H 'Authorization: Bearer <token>' https://127.0.0.1:9911/stats
+curl -H 'Authorization: Bearer <token>' https://127.0.0.1:9911/me
+curl -H 'Authorization: Bearer <token>' https://127.0.0.1:9911/roles
+curl -X PUT -H 'Authorization: Bearer <token>' https://127.0.0.1:9911/roles/operators/bob
+curl -X PUT -H 'Authorization: Bearer <token>' https://127.0.0.1:9911/roles/managers/bob
+curl -X PUT -H 'Authorization: Bearer <token>' https://127.0.0.1:9911/roles/managers/bob/accounts/hpc
+curl -H 'Authorization: Bearer <token>' https://127.0.0.1:9911/quotas/defaults
 curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
   -d '{"user_cpu_minutes":50000,"account_cpu_minutes":200000}' \
-  http://127.0.0.1:9911/quotas/defaults
+  https://127.0.0.1:9911/quotas/defaults
 curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
-  -d '{"delta_minutes":30}' http://127.0.0.1:9911/consumption/user/alice/cpu
+  -d '{"delta_minutes":30}' https://127.0.0.1:9911/consumption/user/alice/cpu
 curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
-  -d '{"delta_minutes":-60}' http://127.0.0.1:9911/consumption/account/hpc/gpu
-curl -H 'Authorization: Bearer <token>' http://127.0.0.1:9911/factors/gpu
+  -d '{"delta_minutes":-60}' https://127.0.0.1:9911/consumption/account/hpc/gpu
+curl -H 'Authorization: Bearer <token>' https://127.0.0.1:9911/factors/gpu
 curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
-  -d '{"factor":0.5}' http://127.0.0.1:9911/factors/gpu/h100
+  -d '{"factor":0.5}' https://127.0.0.1:9911/factors/gpu/h100
 ....
 
 == Files
@@ -113,7 +114,7 @@ curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/jso
   YAML settings definition for the HTTP service.
 
 `/etc/slurm-quota/serve.ini`::
-  Site configuration overrides (authentication, LDAP, JWT, authorization admins).
+  Site configuration overrides (authentication, LDAP, JWT, TLS, authorization admins).
 
 `/var/lib/slurm-quota/jwt.key`::
   Default path for the JWT signing key.

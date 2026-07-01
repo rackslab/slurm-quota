@@ -35,6 +35,11 @@ authenticate API calls with a service token (no per-user login page).
   Base URL of the slurm-quota HTTP API queried by the dashboard.
   Default: `http://127.0.0.1:9911/`
 
+*SLURM_QUOTA_CA_CERT*::
+  Path to a CA certificate file used to verify the REST API TLS certificate when
+  `SLURM_QUOTA_URL` uses `https://` and the certificate is not trusted by the
+  system default store.
+
 *SLURM_QUOTA_TOKEN*::
   JWT for HTTP API authentication. When set, the dashboard uses this token for
   `/stats` requests and skips the login page.
