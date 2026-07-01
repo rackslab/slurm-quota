@@ -15,7 +15,7 @@ from tests.testing_utils import fake_http_error
 
 
 class TestDefaultQuotasCommand(FunctionalAPICliBase):
-    def _default_quotas_urlopen_side_effect(self, request):
+    def _default_quotas_urlopen_side_effect(self, request, **_kwargs):
         url = request.full_url
         method = request.get_method()
         if method == "GET" and url.endswith("/quotas/defaults"):
@@ -57,7 +57,7 @@ class TestDefaultQuotasCommand(FunctionalAPICliBase):
         self.assertEqual(req.get_header("Authorization"), "Bearer saved-jwt")
 
     def test_default_quotas_reflects_api_payload(self):
-        def _custom_payload(request):
+        def _custom_payload(request, **_kwargs):
             if request.get_method() == "GET" and request.full_url.endswith(
                 "/quotas/defaults"
             ):
@@ -93,7 +93,7 @@ class TestDefaultQuotasCommand(FunctionalAPICliBase):
         )
 
     def test_default_quotas_shows_infinity_only_for_negative_one(self):
-        def _custom_payload(request):
+        def _custom_payload(request, **_kwargs):
             if request.get_method() == "GET" and request.full_url.endswith(
                 "/quotas/defaults"
             ):
@@ -135,7 +135,7 @@ class TestDefaultQuotasCommand(FunctionalAPICliBase):
         self.assertIn("No API token available", log_cm.output[0])
 
     def test_default_quotas_reports_access_denied_on_forbidden(self):
-        def _forbidden(request):
+        def _forbidden(request, **_kwargs):
             raise fake_http_error(403, url=request.full_url)
 
         with (

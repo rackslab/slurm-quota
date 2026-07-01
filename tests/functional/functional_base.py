@@ -104,7 +104,9 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
         return stats_payload_full()
 
     @staticmethod
-    def stats_urlopen_side_effect(request: Any) -> FakeJsonUrlopenResponse:
+    def stats_urlopen_side_effect(
+        request: Any, **_kwargs: Any
+    ) -> FakeJsonUrlopenResponse:
         """
         Return JSON like the real ``/stats`` handler: full list without query param,
         or users/accounts filtered from ``_STATS_REST_PAYLOAD`` when

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import ssl
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 from urllib.error import URLError
 
@@ -10,6 +13,7 @@ from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableEr
 from slurm_quota.token import save_service_token
 from tests.test_support import SlurmQuotaTestCase
 from tests.testing_utils import fake_http_error
+from tests.unit.serve.support import write_test_tls_certs
 
 
 class _FakeUrlopenResponse:
@@ -271,7 +275,7 @@ class TestAPIClientLogin(SlurmQuotaTestCase):
     def test_stats_uses_token_from_login(self):
         users_payload = _sample_payload()
 
-        def urlopen_side_effect(request):
+        def urlopen_side_effect(request, **kwargs):
             if request.full_url.endswith("/login"):
                 return _FakeUrlopenResponse({"token": "jwt-token"})
             return _FakeUrlopenResponse(users_payload)
@@ -702,3 +706,36 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
             self.assertRaises(ValueError),
         ):
             APIClient(token="jwt").adjust_consumption("user", "bob", "cpu", 10)
+
+
+class TestAPIClientTls(SlurmQuotaTestCase):
+    def test_http_url_passes_no_ssl_context(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
+        ) as m_urlopen:
+            APIClient().stats(None, None, True)
+        self.assertIsNone(m_urlopen.call_args.kwargs.get("context"))
+
+    def test_https_url_passes_ssl_context(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
+        ) as m_urlopen:
+            APIClient(base_url="https://controller:9911/").stats(None, None, True)
+        context = m_urlopen.call_args.kwargs.get("context")
+        self.assertIsInstance(context, ssl.SSLContext)
+
+    def test_ca_cert_env_passes_ssl_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cert, _key = write_test_tls_certs(Path(tmp))
+            with (
+                patch.dict("os.environ", {"SLURM_QUOTA_CA_CERT": str(cert)}),
+                patch(
+                    "slurm_quota.client.urlopen",
+                    return_value=_FakeUrlopenResponse(_sample_payload()),
+                ) as m_urlopen,
+            ):
+                APIClient().stats(None, None, True)
+        context = m_urlopen.call_args.kwargs.get("context")
+        self.assertIsInstance(context, ssl.SSLContext)

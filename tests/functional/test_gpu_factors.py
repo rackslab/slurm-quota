@@ -15,7 +15,7 @@ from tests.testing_utils import fake_http_error
 
 
 class TestGpuFactorsCommand(FunctionalAPICliBase):
-    def _gpu_factors_urlopen_side_effect(self, request):
+    def _gpu_factors_urlopen_side_effect(self, request, **_kwargs):
         url = request.full_url
         method = request.get_method()
         if method == "GET" and url.endswith("/factors/gpu"):
@@ -56,7 +56,7 @@ class TestGpuFactorsCommand(FunctionalAPICliBase):
         self.assertIn("No API token available", log_cm.output[0])
 
     def test_gpu_factors_reports_access_denied_on_forbidden(self):
-        def _forbidden(request):
+        def _forbidden(request, **_kwargs):
             raise fake_http_error(403, url=request.full_url)
 
         with (

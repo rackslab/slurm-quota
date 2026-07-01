@@ -357,7 +357,7 @@ class TestStatsCommand(FunctionalCLIBase):
         self.env({"NO_COLOR": "1", "XDG_CONFIG_HOME": str(config_home)})
         save_service_token("saved-jwt")
 
-        def _expired(_request):
+        def _expired(_request, **_kwargs):
             raise fake_http_error(
                 401,
                 {
