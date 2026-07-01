@@ -278,9 +278,9 @@ AccountingStorageTRES=gres/gpu:<type1>,gres/gpu:<type2>
 
 The `AccountingStorageTRES` parameter enables recording of complementary resource allocations (e.g., GPU, licenses) in addition to generic resources (e.g., nodes, cores, memory) in the Slurm accounting database. It is necessary to enable tracking of all GPU types in the cluster so that the `slurm-quota-charge` command can determine the GPUs allocated to completed jobs and account for the time consumed on these GPUs.
 
-4) Configure REST API authentication
+4) Configure REST API authentication and HTTPS
 
-Authentication is required for `GET /stats`. Copy and adapt `/etc/slurm-quota/serve.ini` (from `conf/serve.ini.example` or `/usr/share/slurm-quota/conf/serve.ini.example`):
+Authentication is required for `GET /stats`. Copy and adapt `/etc/slurm-quota/serve.ini` (from `conf/serve.ini.example` or `/usr/share/slurm-quota/conf/serve.ini.example`). In production, enable native HTTPS on the API so tokens and LDAP credentials are not sent in cleartext over the cluster network:
 
 ```ini
 [authentication]
@@ -294,9 +294,19 @@ group_base=ou=groups,dc=example,dc=org
 [authorization]
 admins=
   admin-user
+
+[tls]
+enabled=true
+cert=/etc/slurm-quota/tls/cert.pem
+key=/etc/slurm-quota/tls/key.pem
 ```
 
-With `method=ldap`, the service exposes `POST /login` and issues JWT tokens after LDAP bind. The JWT signing key is created automatically at `/var/lib/slurm-quota/jwt.key` on first start (override in `[jwt]` if needed). Additional LDAP options (`bind_dn`, `restricted_groups`, TLS, and so on) are documented in `/usr/share/slurm-quota/conf/serve.yml`.
+Install the server certificate and private key where the `slurm` user can read them (for example under `/etc/slurm-quota/tls/`). Restrict the key to group `slurm` with mode `0640`. If these paths are outside directories already listed in `ReadOnlyPaths=` in `slurm-quota.service`, extend that unit accordingly.
+
+> [!NOTE]
+> As an alternative to native TLS in `serve.ini`, you can terminate HTTPS at a reverse proxy (for example nginx, Apache, or stunnel) in front of `slurm-quota-serve` and leave the API on plain HTTP on a trusted local address (for example `http://127.0.0.1:9911/`). Clients and the web dashboard then use the proxy's `https://` URL in `SLURM_QUOTA_URL`.
+
+With `method=ldap`, the service exposes `POST /login` and issues JWT tokens after LDAP bind. The JWT signing key is created automatically at `/var/lib/slurm-quota/jwt.key` on first start (override in `[jwt]` if needed). Additional LDAP options (`bind_dn`, `restricted_groups`, TLS to the directory, and so on) are documented in `/usr/share/slurm-quota/conf/serve.yml`.
 
 List bootstrap admin usernames under `[authorization] admins`. These users can list all roles and grant or revoke manager access.
 
@@ -317,7 +327,14 @@ sudo dnf install slurm-quota
 2) Configure the controller API endpoint for all users in `/etc/profile.d/slurm-quota.sh`:
 
 ```bash
-export SLURM_QUOTA_URL=http://controller:9911/
+export SLURM_QUOTA_URL=https://controller:9911/
+```
+
+When the API certificate is signed by a private CA or an in-house CA that is not in the OS trust store, install that CA on every client node and point the CLI at it with `SLURM_QUOTA_CA_CERT`:
+
+```bash
+export SLURM_QUOTA_URL=https://controller:9911/
+export SLURM_QUOTA_CA_CERT=/etc/slurm-quota/tls/ca.pem
 ```
 
 3) Obtain an API token:
@@ -350,11 +367,11 @@ sudo chown apache:apache /etc/slurm-quota/web-session.key
 
 4) Configure the web dashboard environment:
 
-Create `/etc/default/slurm-quota-web` with `SLURM_QUOTA_URL`, `SLURM_QUOTA_WEB_SESSION_KEY_FILE`, and `SLURM_QUOTA_WEB_SECURE_COOKIES`:
+Create `/etc/default/slurm-quota-web` with `SLURM_QUOTA_URL`, `SLURM_QUOTA_WEB_SESSION_KEY_FILE`, and `SLURM_QUOTA_WEB_SECURE_COOKIES`. Use the same `https://` API URL as on compute and login nodes:
 
 ```bash
 sudo tee /etc/default/slurm-quota-web <<'EOF'
-SLURM_QUOTA_URL=http://controller:9911/
+SLURM_QUOTA_URL=https://controller:9911/
 SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key
 SLURM_QUOTA_WEB_SECURE_COOKIES=1
 EOF
@@ -362,6 +379,8 @@ sudo chmod 0644 /etc/default/slurm-quota-web
 ```
 
 > [!NOTE]
+> When the API certificate is signed by a private CA or an in-house CA that is not in the OS trust store, set `SLURM_QUOTA_CA_CERT` on the web server host so the dashboard can verify the backend certificate. Omit it when the API certificate is already trusted by the system CA bundle.
+>
 > `SLURM_QUOTA_WEB_SECURE_COOKIES=1` marks the dashboard session cookie with the `Secure` attribute so browsers send it only over HTTPS. Use this when the site is served behind TLS at Apache (recommended for LDAP login in production).
 >
 > A commented example with additional optional variables ships as `conf/slurm-quota-web.default` in the source tree, or `/usr/share/slurm-quota/conf/slurm-quota-web.default` after RPM install.
@@ -410,7 +429,7 @@ sudo systemctl reload httpd
 >
 > - Keep the backend API bound to cluster local networks when possible.
 > - Restrict dashboard access to trusted networks when possible.
-> - Terminate HTTPS/TLS at Apache.
+> - Serve the REST API over HTTPS (`[tls]` in `serve.ini`) and terminate HTTPS/TLS at Apache for the web dashboard.
 > - Enable `SLURM_QUOTA_WEB_SECURE_COOKIES=1` in `/etc/default/slurm-quota-web`.
 
 ## Usage
@@ -423,11 +442,21 @@ The CLI targets the REST API on the controller.
 
 #### REST API URL
 
-Set `SLURM_QUOTA_URL` to the API base URL (default `http://127.0.0.1:9911/`). On compute and login nodes, define it for all users (for example in `/etc/profile.d/slurm-quota.sh` as shown in [Installation](#compute-and-login-nodes)). For a one-off command:
+Set `SLURM_QUOTA_URL` to the API base URL. In production installations this is normally `https://controller:9911/` (see [Installation](#compute-and-login-nodes)). On compute and login nodes, define it for all users (for example in `/etc/profile.d/slurm-quota.sh`). For a one-off command:
 
 ```bash
-SLURM_QUOTA_URL=http://controller:9911/ slurm-quota stats
+SLURM_QUOTA_URL=https://controller:9911/ slurm-quota stats
 ```
+
+When the API certificate is signed by a private CA, set `SLURM_QUOTA_CA_CERT` on the client host to the CA certificate file:
+
+```bash
+export SLURM_QUOTA_URL=https://controller:9911/
+export SLURM_QUOTA_CA_CERT=/etc/slurm-quota/tls/ca.pem
+slurm-quota stats
+```
+
+The default URL when unset is `http://127.0.0.1:9911/` (plain HTTP on localhost, suitable for local testing on the controller).
 
 #### JWT token
 
@@ -641,6 +670,7 @@ This command is intended for local testing only; in production, run the web inte
 Environment variables:
 
 - `SLURM_QUOTA_URL`: base URL of the HTTP API (default `http://127.0.0.1:9911/`)
+- `SLURM_QUOTA_CA_CERT`: path to a CA certificate file used to verify the API TLS certificate when `SLURM_QUOTA_URL` uses `https://` and the certificate is not trusted by the system store
 - `SLURM_QUOTA_TOKEN`: service JWT for API calls; when set, the dashboard skips the browser login page; when not set, unauthenticated requests are redirected to the login form for LDAP authentication.
 - `SLURM_QUOTA_WEB_SESSION_KEY_FILE`: path to a file containing the session signing key (required for LDAP authentication).
 - `SLURM_QUOTA_WEB_SESSION_KEY`: session signing key passed directly (alternative to `SLURM_QUOTA_WEB_SESSION_KEY_FILE`)
