@@ -12,7 +12,7 @@ from tests.testing_utils import fake_http_error
 
 
 class TestLoginCommand(FunctionalCLIBase):
-    def _login_urlopen_side_effect(self, request):
+    def _login_urlopen_side_effect(self, request, **_kwargs):
         if request.full_url.endswith("/login"):
             return FakeJsonUrlopenResponse({"token": "jwt-token"})
         raise AssertionError(f"unexpected request: {request.full_url}")
@@ -73,7 +73,7 @@ class TestLoginCommand(FunctionalCLIBase):
         config_home = Path(self._tmp.name) / "xdg-config"
         self.env({"XDG_CONFIG_HOME": str(config_home)})
 
-        def _unauthorized(request):
+        def _unauthorized(request, **_kwargs):
             raise fake_http_error(401, url=request.full_url)
 
         with (
@@ -88,7 +88,7 @@ class TestLoginCommand(FunctionalCLIBase):
         config_home = Path(self._tmp.name) / "xdg-config"
         self.env({"XDG_CONFIG_HOME": str(config_home)})
 
-        def _not_found(request):
+        def _not_found(request, **_kwargs):
             raise fake_http_error(404, {"error": "not_found"}, url=request.full_url)
 
         with (

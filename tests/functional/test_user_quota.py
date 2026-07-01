@@ -15,7 +15,7 @@ from tests.testing_utils import fake_http_error
 
 
 class TestUserQuotaCommand(FunctionalAPICliBase):
-    def _quota_urlopen_side_effect(self, request):
+    def _quota_urlopen_side_effect(self, request, **_kwargs):
         url = request.full_url
         method = request.get_method()
         if method == "PUT" and "/quotas/users/" in url and url.endswith("/cpu"):
@@ -51,7 +51,7 @@ class TestUserQuotaCommand(FunctionalAPICliBase):
         self.assertIn("No API token available", log_cm.output[0])
 
     def test_user_quota_reports_access_denied_on_forbidden(self):
-        def _forbidden(request):
+        def _forbidden(request, **_kwargs):
             raise fake_http_error(403, url=request.full_url)
 
         with (

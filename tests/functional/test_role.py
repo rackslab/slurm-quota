@@ -32,7 +32,7 @@ class _RoleUrlopenResponse:
 
 
 class TestRoleCommand(FunctionalAPICliBase):
-    def _role_urlopen_side_effect(self, request):
+    def _role_urlopen_side_effect(self, request, **_kwargs):
         url = request.full_url
         method = request.get_method()
         if url.endswith("/me"):
@@ -92,7 +92,7 @@ class TestRoleCommand(FunctionalAPICliBase):
         )
 
     def test_role_list_prints_message_when_empty(self):
-        def _empty_roles(request):
+        def _empty_roles(request, **_kwargs):
             if request.full_url.endswith("/roles"):
                 return FakeJsonUrlopenResponse({"users": []})
             raise AssertionError(f"unexpected request: {request.full_url}")
@@ -144,7 +144,7 @@ class TestRoleCommand(FunctionalAPICliBase):
         self.assertIn("No API token available", log_cm.output[0])
 
     def test_role_show_reports_access_denied_on_forbidden(self):
-        def _forbidden(request):
+        def _forbidden(request, **_kwargs):
             raise fake_http_error(403, url=request.full_url)
 
         with (
@@ -155,7 +155,7 @@ class TestRoleCommand(FunctionalAPICliBase):
         self.assertEqual(log_cm.output, ["ERROR:slurm_quota:Access denied"])
 
     def test_role_list_reports_admin_required_on_forbidden(self):
-        def _forbidden(request):
+        def _forbidden(request, **_kwargs):
             raise fake_http_error(403, url=request.full_url)
 
         with (
@@ -169,7 +169,7 @@ class TestRoleCommand(FunctionalAPICliBase):
         )
 
     def test_role_grant_reports_admin_required_on_forbidden(self):
-        def _forbidden(request):
+        def _forbidden(request, **_kwargs):
             raise fake_http_error(403, url=request.full_url)
 
         with (
@@ -185,7 +185,7 @@ class TestRoleCommand(FunctionalAPICliBase):
         )
 
     def test_role_revoke_reports_admin_required_on_forbidden(self):
-        def _forbidden(request):
+        def _forbidden(request, **_kwargs):
             raise fake_http_error(403, url=request.full_url)
 
         with (

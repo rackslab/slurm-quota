@@ -20,9 +20,15 @@ from slurm_quota.serve.settings import (
     load_serve_settings,
     site_config_path,
     validate_auth_settings,
+    validate_tls_settings,
 )
 from tests.test_support import SlurmQuotaTestCase
-from tests.unit.serve.support import write_jwt_site_ini
+from tests.unit.serve.support import (
+    registered_app,
+    write_jwt_site_ini,
+    write_jwt_tls_site_ini,
+    write_test_tls_certs,
+)
 
 
 def _load_settings(defs_path: Path, site_path: Path):
@@ -112,6 +118,102 @@ class TestValidateAuthSettings(SlurmQuotaTestCase):
             settings = _load_settings(self.defs_path, site_ini)
             load_bind_password(settings)
         self.assertEqual(settings.ldap.bind_password, "s3cr3t")
+
+
+class TestValidateTlsSettings(SlurmQuotaTestCase):
+    def setUp(self):
+        super().setUp()
+        self.defs_path = conf_defs_path()
+
+    def test_raises_when_enabled_without_cert_and_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            site_ini = Path(tmp) / "serve.ini"
+            site_ini.write_text(
+                textwrap.dedent(
+                    """\
+                    [authentication]
+                    method=jwt
+
+                    [jwt]
+                    key=jwt.key
+                    create=yes
+
+                    [tls]
+                    enabled=yes
+                    """
+                ),
+                encoding="utf-8",
+            )
+            settings = _load_settings(self.defs_path, site_ini)
+        with self.assertRaises(ServeSetupError):
+            validate_tls_settings(settings)
+
+    def test_raises_when_cert_file_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            key = tmp_path / "key.pem"
+            key.write_text("not-a-real-key", encoding="utf-8")
+            site_ini = tmp_path / "serve.ini"
+            site_ini.write_text(
+                textwrap.dedent(
+                    f"""\
+                    [authentication]
+                    method=jwt
+
+                    [jwt]
+                    key=jwt.key
+                    create=yes
+
+                    [tls]
+                    enabled=yes
+                    cert={tmp_path / "missing.pem"}
+                    key={key}
+                    """
+                ),
+                encoding="utf-8",
+            )
+            settings = _load_settings(self.defs_path, site_ini)
+        with self.assertRaises(ServeSetupError):
+            validate_tls_settings(settings)
+
+    def test_accepts_valid_tls_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            cert, key = write_test_tls_certs(tmp_path)
+            site_ini = tmp_path / "serve.ini"
+            site_ini.write_text(
+                textwrap.dedent(
+                    f"""\
+                    [authentication]
+                    method=jwt
+
+                    [jwt]
+                    key=jwt.key
+                    create=yes
+
+                    [tls]
+                    enabled=yes
+                    cert={cert}
+                    key={key}
+                    """
+                ),
+                encoding="utf-8",
+            )
+            settings = _load_settings(self.defs_path, site_ini)
+            validate_tls_settings(settings)
+
+    def test_setup_builds_ssl_context_when_tls_enabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            cert, key = write_test_tls_certs(tmp_path)
+            site_ini = write_jwt_tls_site_ini(tmp_path, cert, key)
+            app = registered_app()
+            with (
+                patch("slurm_quota.serve.app.auth.require_slurm_user"),
+                patch("slurm_quota.serve.app.init_database"),
+            ):
+                app.setup(conf_defs_path(), site_ini)
+        self.assertIsNotNone(app.ssl_context)
 
 
 class TestAuthErrors(SlurmQuotaTestCase):

@@ -7,6 +7,7 @@ import http.client
 import json
 import os
 import socket
+import ssl
 import tempfile
 import threading
 import time
@@ -21,7 +22,9 @@ from tests.functional.functional_base import FunctionalCLIBase
 from tests.unit.serve.support import (
     issue_test_token,
     write_jwt_site_ini,
+    write_jwt_tls_site_ini,
     write_ldap_site_ini,
+    write_test_tls_certs,
 )
 
 
@@ -92,6 +95,40 @@ class TestServeCommand(FunctionalCLIBase):
                 )
                 return
             except OSError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.05)
+            finally:
+                try:
+                    if conn is not None:
+                        conn.close()
+                except Exception:
+                    pass
+
+    def _https_context(self, cert: Path) -> ssl.SSLContext:
+        context = ssl.create_default_context()
+        context.load_verify_locations(cafile=str(cert))
+        context.check_hostname = False
+        return context
+
+    def _wait_until_ready_https(self, host: str, port: int, cert: Path) -> None:
+        deadline = time.monotonic() + 2.0
+        context = self._https_context(cert)
+        while True:
+            conn = None
+            try:
+                conn = http.client.HTTPSConnection(
+                    host, port, timeout=1, context=context
+                )
+                conn.request("GET", "/health")
+                resp = conn.getresponse()
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(
+                    json.loads(resp.read().decode("utf-8")),
+                    {"status": "ok"},
+                )
+                return
+            except (OSError, ssl.SSLError):
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(0.05)
@@ -478,3 +515,42 @@ class TestServeCommand(FunctionalCLIBase):
                     conn.close()
 
                 self._join_after_idle(thread)
+
+    def test_serve_https_get_health_returns_ok(self):
+        init_database()
+        host = "127.0.0.1"
+        port = self._free_tcp_port()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            cert, key = write_test_tls_certs(tmp_path)
+            tls_ini = write_jwt_tls_site_ini(tmp_path, cert, key)
+            thread = self._start_serve_thread(
+                host,
+                port,
+                idle_timeout=0,
+                extra_args=["--config", str(tls_ini)],
+            )
+            self._wait_until_ready_https(host, port, cert)
+
+            context = self._https_context(cert)
+            conn = http.client.HTTPSConnection(host, port, timeout=2, context=context)
+            try:
+                conn.request("GET", "/health")
+                resp = conn.getresponse()
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(
+                    json.loads(resp.read().decode("utf-8")),
+                    {"status": "ok"},
+                )
+            finally:
+                conn.close()
+
+            plain_conn = http.client.HTTPConnection(host, port, timeout=2)
+            try:
+                with self.assertRaises((ssl.SSLError, ConnectionResetError, OSError)):
+                    plain_conn.request("GET", "/health")
+                    plain_conn.getresponse()
+            finally:
+                plain_conn.close()
+
+        thread.join(timeout=1)

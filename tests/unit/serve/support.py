@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import textwrap
 from pathlib import Path
 
@@ -35,6 +36,35 @@ def write_jwt_site_ini(directory: Path) -> Path:
             key={jwt_key}
             create=yes
             create_parent=yes
+            """
+        ),
+        encoding="utf-8",
+    )
+    return site_ini
+
+
+def write_jwt_tls_site_ini(directory: Path, cert: Path, key: Path) -> Path:
+    jwt_key = directory / "jwt.key"
+    site_ini = directory / "serve.ini"
+    site_ini.write_text(
+        textwrap.dedent(
+            f"""\
+            [authentication]
+            method=jwt
+
+            [authorization]
+            admins=
+              alice
+
+            [jwt]
+            key={jwt_key}
+            create=yes
+            create_parent=yes
+
+            [tls]
+            enabled=yes
+            cert={cert}
+            key={key}
             """
         ),
         encoding="utf-8",
@@ -82,3 +112,29 @@ def issue_test_token(site_ini: Path, username: str = "alice") -> str:
     )
     user = AuthenticatedUser(login=username, groups=[])
     return jwt.generate(user, settings.jwt.duration)
+
+
+def write_test_tls_certs(directory: Path) -> tuple[Path, Path]:
+    cert = directory / "cert.pem"
+    key = directory / "key.pem"
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(key),
+            "-out",
+            str(cert),
+            "-days",
+            "1",
+            "-subj",
+            "/CN=localhost",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return cert, key
