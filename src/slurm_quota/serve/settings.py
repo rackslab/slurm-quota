@@ -99,10 +99,37 @@ def validate_auth_settings(settings: RuntimeSettings) -> None:
     raise ServeSetupError(f"Unsupported authentication method: {method}")
 
 
+def _validate_tls_path(path: Path | None, setting_name: str) -> Path:
+    if path is None:
+        raise ServeSetupError(f"TLS is enabled but {setting_name} is not set")
+    if not path.is_file():
+        raise ServeSetupError(f"TLS {setting_name} {path} does not exist")
+    try:
+        path.read_bytes()
+    except OSError as exc:
+        raise ServeSetupError(
+            f"Unable to read TLS {setting_name} {path}: {exc}"
+        ) from exc
+    return path
+
+
+def validate_tls_settings(settings: RuntimeSettings) -> None:
+    if not settings.tls.enabled:
+        return
+    _validate_tls_path(settings.tls.cert, "[tls] cert")
+    _validate_tls_path(settings.tls.key, "[tls] key")
+
+
+def validate_settings(settings: RuntimeSettings) -> None:
+    """Validate authentication, JWT, and TLS configuration."""
+    validate_auth_settings(settings)
+    validate_tls_settings(settings)
+
+
 def load_serve_settings(conf_defs: Path, site_config: Path) -> RuntimeSettings:
     """Load and validate serve configuration."""
     settings = RuntimeSettings.yaml_definition(conf_defs)
     if site_config.exists():
         settings.override_ini(site_config)
-    validate_auth_settings(settings)
+    validate_settings(settings)
     return settings

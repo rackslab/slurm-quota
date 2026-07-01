@@ -11,6 +11,7 @@ import contextlib
 import logging
 import os
 import socket
+import ssl
 import sys
 import threading
 import time
@@ -46,14 +47,17 @@ def _run_server(
     port: int,
     idle_timeout: int,
     sd_sock: socket.socket | None = None,
+    ssl_context: ssl.SSLContext | None = None,
 ) -> None:
     idle_timeout = max(0, int(idle_timeout))
     app.touch_activity()
 
     if sd_sock is not None:
-        server = make_server("0.0.0.0", 0, app, fd=sd_sock.fileno())
+        server = make_server(
+            "0.0.0.0", 0, app, fd=sd_sock.fileno(), ssl_context=ssl_context
+        )
     else:
-        server = make_server(host, int(port), app)
+        server = make_server(host, int(port), app, ssl_context=ssl_context)
 
     if idle_timeout > 0:
         threading.Thread(
@@ -105,16 +109,23 @@ def run_serve_command(
 
     sd_sock = _systemd_listen_socket()
     if sd_sock is not None:
-        logger.info("Starting HTTP JSON service on systemd socket")
+        logger.info("Starting %s JSON service on systemd socket", app.scheme)
         try:
-            _run_server(app, host, port, idle_timeout, sd_sock=sd_sock)
+            _run_server(
+                app,
+                host,
+                port,
+                idle_timeout,
+                sd_sock=sd_sock,
+                ssl_context=app.ssl_context,
+            )
         finally:
             with contextlib.suppress(Exception):
                 sd_sock.close()
         return
 
-    logger.info("Starting HTTP JSON service on %s:%s", host, port)
-    _run_server(app, host, port, idle_timeout)
+    logger.info("Starting %s JSON service on %s:%s", app.scheme, host, port)
+    _run_server(app, host, port, idle_timeout, ssl_context=app.ssl_context)
 
 
 def main() -> None:

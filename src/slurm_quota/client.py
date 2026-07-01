@@ -9,10 +9,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import ssl
 from http import HTTPStatus
 from typing import Any, Literal
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urljoin
+from urllib.parse import urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 logger = logging.getLogger("slurm_quota")
@@ -67,6 +68,15 @@ def _default_base_url() -> str:
     return os.environ.get("SLURM_QUOTA_URL", "http://127.0.0.1:9911/")
 
 
+def _ssl_context(base_url: str) -> ssl.SSLContext | None:
+    ca_cert = os.environ.get("SLURM_QUOTA_CA_CERT")
+    if ca_cert:
+        return ssl.create_default_context(cafile=ca_cert)
+    if urlparse(base_url).scheme == "https":
+        return ssl.create_default_context()
+    return None
+
+
 class APIClient:
     """HTTP client for the slurm-quota REST API."""
 
@@ -105,7 +115,7 @@ class APIClient:
             headers["Content-Type"] = "application/json"
         request = Request(url, data=data, headers=headers, method=method)
         try:
-            with urlopen(request) as resp:
+            with urlopen(request, context=_ssl_context(self.base_url)) as resp:
                 status = resp.status
                 raw = resp.read()
                 payload: dict[str, Any] = {}
