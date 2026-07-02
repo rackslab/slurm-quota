@@ -3,9 +3,31 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import replace
 from unittest.mock import patch
 
-from slurm_quota import web
+from slurm_quota.web.app import SlurmQuotaWebApp
+from slurm_quota.web.settings import SlurmQuotaWebSettings
+from tests.test_support import web_assets_root
+
+_app: SlurmQuotaWebApp | None = None
+
+
+def registered_web_app() -> SlurmQuotaWebApp:
+    settings = replace(
+        SlurmQuotaWebSettings.from_os_environ(),
+        assets_dir=web_assets_root(),
+    )
+    app = SlurmQuotaWebApp(settings)
+    app.register()
+    return app
+
+
+def web_app() -> SlurmQuotaWebApp:
+    global _app
+    if _app is None:
+        _app = registered_web_app()
+    return _app
 
 
 def payload() -> dict:
@@ -67,7 +89,9 @@ def auth_enabled():
 
 
 def configure_web_app() -> None:
-    web.application.config["SECRET_KEY"] = "test-secret"
+    app = web_app()
+    app.config["SECRET_KEY"] = "test-secret"
+    app.secret_key = "test-secret"
 
 
 def extract_csrf(html: str) -> str:

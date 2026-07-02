@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from slurm_quota import web
 from tests.test_support import SlurmQuotaTestCase
-from tests.unit.web.support import configure_web_app
+from tests.unit.web.support import configure_web_app, web_app
 
 
 class TestSlurmQuotaWebApp(SlurmQuotaTestCase):
@@ -15,14 +14,14 @@ class TestSlurmQuotaWebApp(SlurmQuotaTestCase):
         configure_web_app()
 
     def test_dashboard_redirects_to_login_without_session(self):
-        client = web.application.test_client()
+        client = web_app().test_client()
         resp = client.get("/")
         self.assertEqual(resp.status_code, 302)
         self.assertIn("/login", resp.headers["Location"])
 
     def test_missing_session_key_shows_error_page(self):
-        web.application.secret_key = None
-        client = web.application.test_client()
+        web_app().secret_key = None
+        client = web_app().test_client()
         resp = client.get("/")
         self.assertEqual(resp.status_code, 503)
         body = resp.get_data(as_text=True)
@@ -35,6 +34,6 @@ class TestSlurmQuotaWebApp(SlurmQuotaTestCase):
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
             m_client.return_value.stats.return_value = ([], [])
-            client = web.application.test_client()
+            client = web_app().test_client()
             resp = client.get("/")
         self.assertEqual(resp.status_code, 200)

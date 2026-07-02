@@ -16,6 +16,11 @@ def serve_conf_defs() -> Path:
     return Path(__file__).resolve().parents[1] / "conf" / "serve.yml"
 
 
+def web_assets_root() -> Path:
+    """Path to web/ assets in the source tree for tests."""
+    return Path(__file__).resolve().parents[1] / "web"
+
+
 class SlurmQuotaTestCase(unittest.TestCase):
     """Use ``with self.db_connection() as conn:`` for any direct SQLite access in tests."""
 
