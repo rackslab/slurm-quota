@@ -9,8 +9,9 @@ from unittest.mock import patch
 
 from rfl.authentication.jwt import JWTManager
 
-from slurm_quota.serve.settings import conf_defs_path, load_serve_settings
+from slurm_quota.serve.settings import load_serve_settings
 from tests.functional.functional_base import FunctionalCLIBase
+from tests.test_support import serve_conf_defs
 from tests.unit.serve.support import write_jwt_site_ini
 
 
@@ -21,7 +22,7 @@ class TestTokenIssueCommand(FunctionalCLIBase):
             argv = [
                 "slurm-quota-token",
                 "--conf-defs",
-                str(conf_defs_path()),
+                str(serve_conf_defs()),
                 "--config",
                 str(site_ini),
                 "alice",
@@ -37,7 +38,7 @@ class TestTokenIssueCommand(FunctionalCLIBase):
             token = out.getvalue().strip()
             self.assertTrue(token)
 
-            settings = load_serve_settings(conf_defs_path(), site_ini)
+            settings = load_serve_settings(serve_conf_defs(), site_ini)
             jwt = JWTManager.key(
                 audience=settings.jwt.audience,
                 algorithm=settings.jwt.algorithm,
@@ -53,7 +54,7 @@ class TestTokenIssueCommand(FunctionalCLIBase):
             argv = [
                 "slurm-quota-token",
                 "--conf-defs",
-                str(conf_defs_path()),
+                str(serve_conf_defs()),
                 "--config",
                 str(site_ini),
                 "--duration",
@@ -69,7 +70,7 @@ class TestTokenIssueCommand(FunctionalCLIBase):
                 self.run_token_main(argv)
 
             token = out.getvalue().strip()
-            settings = load_serve_settings(conf_defs_path(), site_ini)
+            settings = load_serve_settings(serve_conf_defs(), site_ini)
             jwt = JWTManager.key(
                 audience=settings.jwt.audience,
                 algorithm=settings.jwt.algorithm,
@@ -84,7 +85,7 @@ class TestTokenIssueCommand(FunctionalCLIBase):
             argv = [
                 "slurm-quota-token",
                 "--conf-defs",
-                str(conf_defs_path()),
+                str(serve_conf_defs()),
                 "--config",
                 str(site_ini),
                 "alice",
@@ -122,7 +123,7 @@ class TestTokenIssueCommand(FunctionalCLIBase):
             argv = [
                 "slurm-quota-token",
                 "--conf-defs",
-                str(conf_defs_path()),
+                str(serve_conf_defs()),
                 "--config",
                 str(site_ini),
                 "alice",

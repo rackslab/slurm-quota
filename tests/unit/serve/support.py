@@ -10,7 +10,8 @@ from rfl.authentication.jwt import JWTManager
 from rfl.authentication.user import AuthenticatedUser
 
 from slurm_quota.serve.app import SlurmQuotaServeApp
-from slurm_quota.serve.settings import conf_defs_path, load_serve_settings
+from slurm_quota.serve.settings import load_serve_settings
+from tests.test_support import serve_conf_defs
 
 
 def registered_app() -> SlurmQuotaServeApp:
@@ -102,7 +103,7 @@ def write_ldap_site_ini(directory: Path) -> Path:
 
 
 def issue_test_token(site_ini: Path, username: str = "alice") -> str:
-    settings = load_serve_settings(conf_defs_path(), site_ini)
+    settings = load_serve_settings(serve_conf_defs(), site_ini)
     jwt = JWTManager.key(
         audience=settings.jwt.audience,
         algorithm=settings.jwt.algorithm,
