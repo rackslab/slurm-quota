@@ -7,13 +7,15 @@
 from __future__ import annotations
 
 from slurm_quota.web.app import SlurmQuotaWebApp
+from slurm_quota.web.settings import SlurmQuotaWebSettings
 
 
 def main() -> None:
-    app = SlurmQuotaWebApp()
+    settings = SlurmQuotaWebSettings.from_os_environ()
+    app = SlurmQuotaWebApp(settings)
     app.register()
     app.run(
-        host=app.settings.host,
-        port=app.settings.port,
-        debug=app.settings.debug,
+        host=settings.host,
+        port=settings.port,
+        debug=settings.debug,
     )

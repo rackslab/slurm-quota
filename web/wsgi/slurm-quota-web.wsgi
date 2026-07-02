@@ -5,7 +5,16 @@
 import os
 from pathlib import Path
 
-from slurm_quota.web.settings import DEFAULT_ENV_FILE, load_env_file
+from slurm_quota.web.app import SlurmQuotaWebApp
+from slurm_quota.web.settings import (
+    DEFAULT_ENV_FILE,
+    SlurmQuotaWebSettings,
+    load_env_file,
+)
 
 env_file = os.environ.get("SLURM_QUOTA_WEB_ENV_FILE", DEFAULT_ENV_FILE)
 load_env_file(Path(env_file))
+
+settings = SlurmQuotaWebSettings.from_os_environ()
+application = SlurmQuotaWebApp(settings)
+application.register()
