@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -34,8 +34,8 @@ web = [
   "jinja2>=2",
 ]
 dev = [
-  "pytest>=8",
-  "pytest-cov>=5",
+  "pytest",
+  "pytest-cov",
   "flask>=2",
   "jinja2>=2",
   "RFL.authentication[jwt,ldap]>=1.8.0",
