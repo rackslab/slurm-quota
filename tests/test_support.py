@@ -11,6 +11,11 @@ from unittest.mock import patch
 from slurm_quota.database import configure_connection
 
 
+def serve_conf_defs() -> Path:
+    """Path to serve.yml in the source tree for tests."""
+    return Path(__file__).resolve().parents[1] / "conf" / "serve.yml"
+
+
 class SlurmQuotaTestCase(unittest.TestCase):
     """Use ``with self.db_connection() as conn:`` for any direct SQLite access in tests."""
 

@@ -14,8 +14,8 @@ from rfl.settings.errors import SettingsDefinitionError
 
 from slurm_quota.database import init_database
 from slurm_quota.serve.app import SlurmQuotaServeApp
-from slurm_quota.serve.settings import ServeSetupError, conf_defs_path
-from tests.test_support import SlurmQuotaTestCase
+from slurm_quota.serve.settings import ServeSetupError
+from tests.test_support import SlurmQuotaTestCase, serve_conf_defs
 from tests.unit.serve.support import (
     write_jwt_site_ini,
     write_jwt_tls_site_ini,
@@ -26,7 +26,7 @@ from tests.unit.serve.support import (
 class TestLoadSettings(SlurmQuotaTestCase):
     def setUp(self):
         super().setUp()
-        self.defs_path = conf_defs_path()
+        self.defs_path = serve_conf_defs()
 
     def test_defaults_use_ldap_method(self):
         app = SlurmQuotaServeApp()
@@ -82,7 +82,7 @@ class TestLoadSettings(SlurmQuotaTestCase):
 class TestSetup(SlurmQuotaTestCase):
     def setUp(self):
         super().setUp()
-        self.defs_path = conf_defs_path()
+        self.defs_path = serve_conf_defs()
         self._patch_slurm = patch("slurm_quota.serve.app.auth.require_slurm_user")
         self._patch_slurm.start()
         self.addCleanup(self._patch_slurm.stop)
@@ -226,7 +226,7 @@ class TestSetup(SlurmQuotaTestCase):
 class TestScheme(SlurmQuotaTestCase):
     def setUp(self):
         super().setUp()
-        self.defs_path = conf_defs_path()
+        self.defs_path = serve_conf_defs()
         self._patch_slurm = patch("slurm_quota.serve.app.auth.require_slurm_user")
         self._patch_slurm.start()
         self.addCleanup(self._patch_slurm.stop)

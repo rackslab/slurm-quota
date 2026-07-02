@@ -22,7 +22,7 @@ from slurm_quota.serve.settings import (
     validate_auth_settings,
     validate_tls_settings,
 )
-from tests.test_support import SlurmQuotaTestCase
+from tests.test_support import SlurmQuotaTestCase, serve_conf_defs
 from tests.unit.serve.support import (
     registered_app,
     write_jwt_site_ini,
@@ -47,6 +47,12 @@ class TestConfDefsPath(SlurmQuotaTestCase):
             Path(sysconfig.get_path("data")) / "slurm-quota" / "conf" / "serve.yml"
         )
         self.assertIn(path, {repo_conf, data_conf, DEFAULT_CONF_DEFS})
+        if path != DEFAULT_CONF_DEFS:
+            self.assertTrue(path.is_file(), path)
+        self.assertEqual(path.name, "serve.yml")
+
+    def test_serve_conf_defs_in_source_tree(self):
+        path = serve_conf_defs()
         self.assertTrue(path.is_file(), path)
         self.assertEqual(path.name, "serve.yml")
 
@@ -74,7 +80,7 @@ class TestSiteConfigPath(SlurmQuotaTestCase):
 class TestValidateAuthSettings(SlurmQuotaTestCase):
     def setUp(self):
         super().setUp()
-        self.defs_path = conf_defs_path()
+        self.defs_path = serve_conf_defs()
 
     def test_raises_when_ldap_incomplete(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -123,7 +129,7 @@ class TestValidateAuthSettings(SlurmQuotaTestCase):
 class TestValidateTlsSettings(SlurmQuotaTestCase):
     def setUp(self):
         super().setUp()
-        self.defs_path = conf_defs_path()
+        self.defs_path = serve_conf_defs()
 
     def test_raises_when_enabled_without_cert_and_key(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -212,7 +218,7 @@ class TestValidateTlsSettings(SlurmQuotaTestCase):
                 patch("slurm_quota.serve.app.auth.require_slurm_user"),
                 patch("slurm_quota.serve.app.init_database"),
             ):
-                app.setup(conf_defs_path(), site_ini)
+                app.setup(serve_conf_defs(), site_ini)
         self.assertIsNotNone(app.ssl_context)
 
 

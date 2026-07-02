@@ -7,8 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from slurm_quota.database import init_database
-from slurm_quota.serve.settings import conf_defs_path
-from tests.test_support import SlurmQuotaTestCase
+from tests.test_support import SlurmQuotaTestCase, serve_conf_defs
 from tests.unit.serve.support import (
     issue_test_token,
     registered_app,
@@ -28,7 +27,7 @@ class ServeRoutesTestCase(SlurmQuotaTestCase):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmpdir.cleanup)
         self._site_ini = write_jwt_site_ini(Path(self._tmpdir.name))
-        app.setup(conf_defs_path(), self._site_ini)
+        app.setup(serve_conf_defs(), self._site_ini)
 
     def _headers(self, username: str = "alice") -> dict[str, str]:
         return {"Authorization": f"Bearer {issue_test_token(self._site_ini, username)}"}

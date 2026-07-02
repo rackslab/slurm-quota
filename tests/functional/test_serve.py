@@ -17,8 +17,8 @@ from unittest.mock import patch
 from rfl.authentication.user import AuthenticatedUser
 
 from slurm_quota.database import init_database
-from slurm_quota.serve.settings import conf_defs_path
 from tests.functional.functional_base import FunctionalCLIBase
+from tests.test_support import serve_conf_defs
 from tests.unit.serve.support import (
     issue_test_token,
     write_jwt_site_ini,
@@ -60,7 +60,7 @@ class TestServeCommand(FunctionalCLIBase):
             "--idle-timeout",
             str(idle_timeout),
             "--conf-defs",
-            str(conf_defs_path()),
+            str(serve_conf_defs()),
             "--config",
             str(self._site_ini),
         ]
@@ -376,7 +376,7 @@ class TestServeCommand(FunctionalCLIBase):
                     "--idle-timeout",
                     "0",
                     "--conf-defs",
-                    str(conf_defs_path()),
+                    str(serve_conf_defs()),
                     "--config",
                     str(self._site_ini),
                 ],

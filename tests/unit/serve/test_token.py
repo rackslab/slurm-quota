@@ -7,9 +7,9 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from slurm_quota.serve.settings import ServeSetupError, conf_defs_path
+from slurm_quota.serve.settings import ServeSetupError
 from slurm_quota.serve.token import issue_token, main
-from tests.test_support import SlurmQuotaTestCase
+from tests.test_support import SlurmQuotaTestCase, serve_conf_defs
 from tests.unit.serve.support import write_jwt_site_ini
 
 
@@ -20,7 +20,7 @@ class TestIssueToken(SlurmQuotaTestCase):
             token = issue_token(
                 "alice",
                 duration=None,
-                conf_defs=conf_defs_path(),
+                conf_defs=serve_conf_defs(),
                 site_config=site_ini,
             )
         self.assertIsInstance(token, str)
@@ -51,7 +51,7 @@ create_parent=yes
                 issue_token(
                     "alice",
                     duration=None,
-                    conf_defs=conf_defs_path(),
+                    conf_defs=serve_conf_defs(),
                     site_config=site_ini,
                 )
         self.assertIn("method=jwt", str(cm.exception))

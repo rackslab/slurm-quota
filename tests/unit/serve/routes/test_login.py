@@ -10,7 +10,7 @@ from unittest.mock import patch
 from rfl.authentication.errors import LDAPAuthenticationError
 from rfl.authentication.user import AuthenticatedUser
 
-from slurm_quota.serve.settings import conf_defs_path
+from tests.test_support import serve_conf_defs
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 from tests.unit.serve.support import write_ldap_site_ini
 
@@ -22,7 +22,7 @@ class TestLoginRoute(ServeRoutesTestCase):
             m_ldap_cls.return_value.login.return_value = AuthenticatedUser(
                 login="alice", groups=["users"]
             )
-            app.setup(conf_defs_path(), site_ini)
+            app.setup(serve_conf_defs(), site_ini)
         user = AuthenticatedUser(login="alice", groups=["users"])
         return app.jwt.generate(user, app.settings.jwt.duration)
 
@@ -46,7 +46,7 @@ class TestLoginRoute(ServeRoutesTestCase):
                 m_ldap_cls.return_value.login.side_effect = LDAPAuthenticationError(
                     "Invalid user or password"
                 )
-                app.setup(conf_defs_path(), site_ini)
+                app.setup(serve_conf_defs(), site_ini)
             client = app.test_client()
             resp = client.post(
                 "/login",
