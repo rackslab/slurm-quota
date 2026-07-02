@@ -23,9 +23,9 @@ logger = logging.getLogger("slurm_quota")
 
 
 class SlurmQuotaWebApp(Flask):
-    def __init__(self) -> None:
-        self.settings = SlurmQuotaWebSettings.from_os_environ()
-        web_root = self.settings.assets_root()
+    def __init__(self, settings: SlurmQuotaWebSettings) -> None:
+        self.settings = settings
+        web_root = settings.assets_root()
         super().__init__(
             "slurm-quota-web",
             template_folder=str(web_root / "templates"),
