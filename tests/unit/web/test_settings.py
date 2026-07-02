@@ -13,7 +13,7 @@ from slurm_quota.web.settings import (
     SlurmQuotaWebSettings,
     load_env_file,
 )
-from tests.test_support import SlurmQuotaTestCase
+from tests.test_support import SlurmQuotaTestCase, web_assets_root
 
 
 def _module_file(tmp: Path, *, under_user_site: Path | None = None) -> Path:
@@ -141,6 +141,10 @@ class TestLoadSessionKey(SlurmQuotaTestCase):
 
 
 class TestAssetsRoot(SlurmQuotaTestCase):
+    def test_web_assets_in_source_tree(self):
+        path = web_assets_root()
+        self.assertTrue((path / "templates" / "dashboard.html").is_file())
+
     def test_env_override(self):
         custom = Path(self._tmp.name) / "custom-assets"
         custom.mkdir()
