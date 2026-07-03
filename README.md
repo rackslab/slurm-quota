@@ -190,7 +190,7 @@ The `slurm-quota` CLI calls the REST API. It offers the following commands:
 | Command | Purpose | Role |
 |---|---|---|
 | `login` | Authenticate with LDAP and obtain a JWT | _all_ |
-| `token` | Save `SLURM_QUOTA_TOKEN` to the user config file for automatic use | _all_ |
+| `token` | Show current API token information; `--save` persists `SLURM_QUOTA_TOKEN` to the user config file | _all_ |
 | `stats` | Display consumption, preallocation, and quota statistics | **user** (own stats), **manager**, **operator**, **admin** |
 | `role` | Show or manage REST API user roles | show: any authenticated user; manage: **admin** |
 | `user-quota` | Set CPU quota for a user | **operator**, **admin** |
@@ -472,7 +472,7 @@ With **JWT** authentication, an administrator issues a token as root, then the u
 
 ```bash
 export SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice)
-slurm-quota token
+slurm-quota token --save
 ```
 
 #### Subcommands
@@ -485,7 +485,12 @@ slurm-quota token
   slurm-quota login --save       # save token for automatic use by stats
   ```
 
-- `token`: Saves the JWT from `SLURM_QUOTA_TOKEN` to the XDG config file (see JWT flow above).
+- `token`: Shows metadata about the current API token (source, username, expiration). Use `--save` to persist the JWT from `SLURM_QUOTA_TOKEN` to the XDG config file (see JWT flow above).
+
+  ```bash
+  slurm-quota token              # show current token information
+  slurm-quota token --save       # save SLURM_QUOTA_TOKEN for automatic use by stats
+  ```
 
 - `stats`: Displays consumed CPU times, preallocated CPU times (with the number of jobs considered), and quotas for users and accounts.
 
