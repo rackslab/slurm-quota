@@ -1,15 +1,16 @@
 # Migrate from manual installation to RPM packages
 
 > [!NOTE]
-> Use this procedure to switch an existing manual deployment to RPM-managed files. For RPM installation steps, see [Installation](../README.md#installation) in the main README.
+> Use this procedure to switch an existing manual deployment to RPM-managed files. For RPM installation steps, see
+> [Installation](../README.md#installation) in the main README.
 
-1) Back up the database on the controller:
+1. Back up the database on the controller:
 
 ```bash
 sudo sqlite3 /var/lib/state/slurm-quota/slurm-quota.db ".backup /var/lib/state/slurm-quota/slurm-quota-pre-rpm-$(date +%Y-%m-%d).db"
 ```
 
-2) Remove legacy manually installed files that conflict with RPM-managed paths:
+2. Remove legacy manually installed files that conflict with RPM-managed paths:
 
 On the controller node:
 
@@ -35,4 +36,4 @@ sudo rm -f /usr/share/man/man1/slurm-quota.1
 sudo rm -rf /usr/local/share/slurm-quota/web
 ```
 
-3) Apply the [Installation](../README.md#installation) procedure in the main README (controller + compute/login nodes).
+3. Apply the [Installation](../README.md#installation) procedure in the main README (controller + compute/login nodes).
