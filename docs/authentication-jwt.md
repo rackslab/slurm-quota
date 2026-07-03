@@ -48,7 +48,7 @@ To persist a token from the environment:
 
 ```bash
 export SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice)
-slurm-quota token              # persist env token for automatic use by stats
+slurm-quota token --save       # persist env token for automatic use by stats
 ```
 
 Set `SLURM_QUOTA_TOKEN` to override the saved token for a single command.
