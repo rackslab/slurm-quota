@@ -1,7 +1,8 @@
 # Database migrations
 
 > [!NOTE]
-> When using RPM packages, migration is automatically run during `slurm-quota-controller` installation/upgrade (only when the existing database file is present).
+> When using RPM packages, migration is automatically run during `slurm-quota-controller` installation/upgrade (only
+> when the existing database file is present).
 
 To force migration manually with RPM packages, run:
 
