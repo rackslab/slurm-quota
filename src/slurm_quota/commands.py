@@ -16,7 +16,7 @@ from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableEr
 from slurm_quota.database import (
     prune_resources,
 )
-from slurm_quota.token import load_service_token, save_service_token
+from slurm_quota.token import ClientToken
 
 logger = logging.getLogger("slurm_quota")
 
@@ -24,8 +24,8 @@ RELOGIN_GUIDANCE = "Run 'slurm-quota login --save' to obtain a new token."
 
 
 def _api_client_from_token() -> APIClient:
-    token = load_service_token()
-    if not token:
+    token = ClientToken.load_value()
+    if token is None:
         logger.error("No API token available.")
         logger.info(RELOGIN_GUIDANCE)
         sys.exit(1)
@@ -442,7 +442,7 @@ def login_command(username: Optional[str] = None, save: bool = False) -> None:
         payload = api.login(selected_username, password)
         token = payload["token"]
         if save:
-            token_path = save_service_token(token)
+            token_path = ClientToken(token, "").save()
             print(f"Authentication token saved to {token_path}")
         else:
             print(token)
@@ -467,18 +467,41 @@ def login_command(username: Optional[str] = None, save: bool = False) -> None:
         sys.exit(1)
 
 
-def token_save_command() -> None:
-    """Persist SLURM_QUOTA_TOKEN to the XDG config token file."""
-    env_token = os.environ.get("SLURM_QUOTA_TOKEN", "").strip()
-    if not env_token:
-        logger.error("SLURM_QUOTA_TOKEN is not set or is empty")
+def token_command(*, save: bool = False) -> None:
+    """Show current token metadata or persist SLURM_QUOTA_TOKEN to the config file."""
+    if save:
+        try:
+            token_path = ClientToken.load(env_only=True).save()
+            print(f"Authentication token saved to {token_path}")
+        except ValueError:
+            logger.error("SLURM_QUOTA_TOKEN is not set or is empty")
+            sys.exit(1)
+        except OSError as e:
+            logger.error(f"Failed to save authentication token: {e}")
+            sys.exit(1)
+        return
+
+    client_token = ClientToken.load()
+    if client_token is None:
+        logger.error("No API token available.")
+        logger.info(RELOGIN_GUIDANCE)
         sys.exit(1)
 
     try:
-        token_path = save_service_token(env_token)
-        print(f"Authentication token saved to {token_path}")
-    except OSError as e:
-        logger.error(f"Failed to save authentication token: {e}")
+        payload = client_token.decode()
+        print(f"Source: {client_token.source}")
+        print(f"Username: {payload.username()}")
+        print(f"Expires: {payload.expiry()}")
+    except ValueError as exc:
+        message = str(exc)
+        if message in ("invalid JWT format", "invalid JWT payload"):
+            logger.error("Invalid authentication token format")
+        elif message == "missing username claim":
+            logger.error("Invalid authentication token: missing username claim")
+        elif message == "missing expiration claim":
+            logger.error("Invalid authentication token: missing expiration claim")
+        else:
+            logger.error("Invalid authentication token format")
         sys.exit(1)
 
 
@@ -523,7 +546,7 @@ def show_user_stats(
         return min(longest_label, max_width)
 
     try:
-        api = APIClient(token=load_service_token())
+        api = APIClient(token=ClientToken.load_value())
         users_data, accounts_data = api.stats(selected_username, account, show_all)
 
         if not users_data and not accounts_data:
