@@ -1,6 +1,43 @@
 # slurm-quota
 
-## Objective
+<!-- mdformat-toc start --slug=github --maxlevel=6 --minlevel=2 -->
+
+- [Objective](#objective)
+- [Features](#features)
+- [Architecture](#architecture)
+  - [Overview](#overview)
+  - [Job submission plugin](#job-submission-plugin)
+  - [Job charging](#job-charging)
+  - [SQLite database](#sqlite-database)
+  - [REST API](#rest-api)
+    - [Authentication](#authentication)
+    - [Roles](#roles)
+    - [Routes](#routes)
+    - [CLI client](#cli-client)
+  - [Web application](#web-application)
+  - [GPU load factors](#gpu-load-factors)
+- [Installation](#installation)
+  - [Controller node](#controller-node)
+  - [Compute and login nodes](#compute-and-login-nodes)
+  - [Web dashboard](#web-dashboard)
+- [Usage](#usage)
+  - [`slurm-quota` Command](#slurm-quota-command)
+    - [REST API URL](#rest-api-url)
+    - [JWT token](#jwt-token)
+    - [Subcommands](#subcommands)
+  - [`slurm-quota-serve` Command](#slurm-quota-serve-command)
+  - [`slurm-quota-token` Command](#slurm-quota-token-command)
+  - [`slurm-quota-web` Command](#slurm-quota-web-command)
+  - [`slurm-quota-prune` Command](#slurm-quota-prune-command)
+- [Upgrade](#upgrade)
+- [Development](#development)
+  - [Tests](#tests)
+- [Acknowledgements](#acknowledgements)
+- [License](#license)
+
+<!-- mdformat-toc end -->
+
+## Objective<a name="objective"></a>
 
 The objective of this solution is to assign CPU and GPU minute quotas to users and accounts on Slurm clusters, and to
 block Slurm job submissions and modifications when these quotas are reached.
@@ -13,7 +50,7 @@ they are accounted for upon completion. By controlling the sum of "consumed + pr
 levels, we ensure that reserved but not yet used capacity is properly accounted for and that the system is not
 over-committed.
 
-## Features
+## Features<a name="features"></a>
 
 - CPU and GPU minute quotas per user and Slurm account
 - Submission blocking when consumed + preallocated exceeds quota
@@ -24,9 +61,9 @@ over-committed.
 - User CLI for statistics, quota management and role management
 - Web dashboard with inline quota/consumption editing
 
-## Architecture
+## Architecture<a name="architecture"></a>
 
-### Overview
+### Overview<a name="overview"></a>
 
 The solution is built around a SQLite database. This database is used by 2 programs:
 
@@ -84,7 +121,7 @@ preallocations in the database at submit/modify time, then `slurm-quota-charge` 
 The `slurm-quota` CLI (and optional `slurm-quota-web` dashboard) go through HTTP REST API served by `slurm-quota-serve`,
 which centralizes access control and keeps a single interface to the database for queries and administrative changes.
 
-### Job submission plugin
+### Job submission plugin<a name="job-submission-plugin"></a>
 
 When the Lua submission plugin is enabled in the Slurm configuration (`JobSubmitPlugins=lua`), the `job_submit.lua`
 script is automatically called during each job submission or modification (`sbatch`, `srun`, `scontrol`, etc.) to
@@ -111,7 +148,7 @@ the time of the `job_submit` callback (Slurm assigns a job ID later only if the 
 script). The generated UUID identifier is stored in the job's `admin_comment` field, so it can be retrieved by the
 solution to reassociate the preallocation with the job during other steps.
 
-### Job charging
+### Job charging<a name="job-charging"></a>
 
 When the job completion plugin is enabled in the Slurm configuration (`JobCompType=script`), Slurm executes a configured
 script on the controller every time a job completes or is cancelled. This hook allows external logic to run after jobs
@@ -138,7 +175,7 @@ both dimensions (CPU and GPU).
 Additionally, a logrotate configuration file is provided (`slurm-quota-charge.logrotate`) to prevent the log file fed by
 the `slurm-quota-charge-wrapper` wrapper from growing too large over time.
 
-### SQLite database
+### SQLite database<a name="sqlite-database"></a>
 
 The SQLite database contains these tables:
 
@@ -164,7 +201,7 @@ and `slurm-quota-serve` automatically create the database when it is missing (on
 start), setting the correct permissions on the file. SQLite WAL (Write-Ahead Logging) mode is enabled automatically to
 reduce lock contention between concurrent writers.
 
-### REST API
+### REST API<a name="rest-api"></a>
 
 The `slurm-quota-serve` command starts a HTTP/JSON server designed to work with systemd "socket activation". It must run
 as the `slurm` system user and creates the SQLite database on first start if it does not exist yet. A
@@ -172,7 +209,7 @@ as the `slurm` system user and creates the SQLite database on first start if it 
 the first connection. The server can automatically stops after a configurable period of inactivity (10 minutes by
 default).
 
-#### Authentication
+#### Authentication<a name="authentication"></a>
 
 Protected REST API routes require a Bearer JWT in the `Authorization` header provided by the client. Slurm-quota can
 issue JWT tokens to clients with two authentication methods:
@@ -186,7 +223,7 @@ Authentication method is configured in `/etc/slurm-quota/serve.ini`. In `[authen
 In both cases, issued JWT tokens are signed with a key that is created automatically at `/var/lib/slurm-quota/jwt.key`
 on first API start (override in `[jwt]` if needed).
 
-#### Roles
+#### Roles<a name="roles"></a>
 
 REST API routes are protected by an authorization policy based on four roles:
 
@@ -206,7 +243,7 @@ view.
 The **admin** users are listed in `[authorization] admins` in `serve.ini` at install time, they are not stored in the
 database.
 
-#### Routes
+#### Routes<a name="routes"></a>
 
 Following routes are served by REST API:
 
@@ -250,7 +287,7 @@ defaults apply only to newly auto-created users and accounts. Consumption routes
 `{"delta_minutes": <signed int>}` and return `{"total_consumed_minutes": <int>}`. GPU factor routes return
 `{"default_factor": <float>, "factors": {<gpu_type>: <float>, ...}}` or accept `{"factor": <positive float>}`.
 
-#### CLI client
+#### CLI client<a name="cli-client"></a>
 
 The `slurm-quota` CLI calls the REST API. It offers the following commands:
 
@@ -274,7 +311,7 @@ The `slurm-quota` CLI calls the REST API. It offers the following commands:
 > See the [`slurm-quota` command](#slurm-quota-command) section under [Usage](#usage) for authentication, examples, and
 > options.
 
-### Web application
+### Web application<a name="web-application"></a>
 
 The optional `slurm-quota-web` application is a web dashboard that retrieves statistics from the HTTP API (`GET /stats`)
 and renders them as HTML tables and quota usage bars.
@@ -292,7 +329,7 @@ It can run standalone with Flask's built-in HTTP server for local testing, or be
 server (for example Apache with mod_wsgi) as a WSGI application. See [Installation](#web-dashboard) for deployment
 steps.
 
-### GPU load factors
+### GPU load factors<a name="gpu-load-factors"></a>
 
 GPU load factors are multiplicative coefficients applied when converting GPU usage into billed GPU minutes. They let
 administrators weight consumption by hardware type, reflecting different capacity or cost across GPU models. Factors are
@@ -303,7 +340,7 @@ For example, assigning a factor of `0.5` to H100 GPUs counts 10 minutes of usage
 factor is `1.0` when no specific factor is configured for a GPU type. Operators and admins can view and update factors
 with the `gpu-factors` and `set-gpu-factor` CLI commands.
 
-## Installation
+## Installation<a name="installation"></a>
 
 RPM packages are published for **Enterprise Linux 9** (RHEL 9, Rocky Linux 9, AlmaLinux 9, CentOS Stream 9, and similar)
 in the [Rackslab packages](https://pkgs.rackslab.io/rpm/) repository. This guide uses LDAP authentication on the REST
@@ -336,7 +373,7 @@ The following packages are available:
   script)
 - `slurm-quota-web`: optional web application with HTML dashboard
 
-### Controller node
+### Controller node<a name="controller-node"></a>
 
 1. Install controller and common packages:
 
@@ -413,7 +450,7 @@ Restart the API service after changing `serve.ini`:
 sudo systemctl restart slurm-quota.socket
 ```
 
-### Compute and login nodes
+### Compute and login nodes<a name="compute-and-login-nodes"></a>
 
 1. Install the common package:
 
@@ -441,7 +478,7 @@ export SLURM_QUOTA_CA_CERT=/etc/slurm-quota/tls/ca.pem
 slurm-quota login --save
 ```
 
-### Web dashboard
+### Web dashboard<a name="web-dashboard"></a>
 
 1. Install the web dashboard package on the node running Apache:
 
@@ -532,16 +569,16 @@ sudo systemctl reload httpd
 > - Serve the REST API over HTTPS (`[tls]` in `serve.ini`) and terminate HTTPS/TLS at Apache for the web dashboard.
 > - Enable `SLURM_QUOTA_WEB_SECURE_COOKIES=1` in `/etc/default/slurm-quota-web`.
 
-## Usage
+## Usage<a name="usage"></a>
 
 This section summarizes common use of the Slurm-quota executables. Man pages are available for each command after
 install (for example `man slurm-quota`, `man slurm-quota-serve`).
 
-### `slurm-quota` Command
+### `slurm-quota` Command<a name="slurm-quota-command"></a>
 
 The CLI targets the REST API on the controller.
 
-#### REST API URL
+#### REST API URL<a name="rest-api-url"></a>
 
 Set `SLURM_QUOTA_URL` to the API base URL. In production installations this is normally `https://controller:9911/` (see
 [Installation](#compute-and-login-nodes)). On compute and login nodes, define it for all users (for example in
@@ -563,7 +600,7 @@ slurm-quota stats
 The default URL when unset is `http://127.0.0.1:9911/` (plain HTTP on localhost, suitable for local testing on the
 controller).
 
-#### JWT token
+#### JWT token<a name="jwt-token"></a>
 
 Most subcommands call the REST API with a Bearer JWT read from `$XDG_CONFIG_HOME/slurm-quota/token` (default
 `~/.config/slurm-quota/token`). Set `SLURM_QUOTA_TOKEN` in the environment to override the saved token for a single
@@ -582,7 +619,7 @@ export SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice)
 slurm-quota token --save
 ```
 
-#### Subcommands
+#### Subcommands<a name="subcommands"></a>
 
 - `login`: Obtains a JWT token with LDAP authentication.
 
@@ -728,7 +765,7 @@ slurm-quota set-gpu-factor h200 0.8    # Factor 0.8 for h200 GPUs
 slurm-quota set-gpu-factor default 1.0  # Default factor (used if type is not specified)
 ```
 
-### `slurm-quota-serve` Command
+### `slurm-quota-serve` Command<a name="slurm-quota-serve-command"></a>
 
 Launches an HTTP REST API JSON server with `GET /health`, `GET /stats` (JWT required), and `POST /login` when
 `authentication.method=ldap`. Designed to work with systemd socket activation.
@@ -772,14 +809,14 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9911/stats
 > [!NOTE]
 > For JWT-only authentication examples, see [docs/authentication-jwt.md](docs/authentication-jwt.md).
 
-### `slurm-quota-token` Command
+### `slurm-quota-token` Command<a name="slurm-quota-token-command"></a>
 
 Issues JWT tokens for `authentication.method=jwt` (root only).
 
 > [!NOTE]
 > See [docs/authentication-jwt.md](docs/authentication-jwt.md) for configuration and usage examples.
 
-### `slurm-quota-web` Command
+### `slurm-quota-web` Command<a name="slurm-quota-web-command"></a>
 
 Launches the web dashboard with built-in HTTP server.
 
@@ -814,7 +851,7 @@ SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 SLURM_QUOTA_URL=http://co
 > [!NOTE]
 > For service-token mode (`SLURM_QUOTA_TOKEN`), see [docs/authentication-jwt.md](docs/authentication-jwt.md).
 
-### `slurm-quota-prune` Command
+### `slurm-quota-prune` Command<a name="slurm-quota-prune-command"></a>
 
 Cleans orphaned or unused data from the database (root only). Dedicated selectors:
 
@@ -843,7 +880,7 @@ sudo slurm-quota-prune --dry-run        # preview removals without applying them
 > of the call to the `slurm-quota-charge` command by Slurm. Its execution is nevertheless safe, it can be executed if in
 > doubt about the preallocated durations assigned to users.
 
-## Upgrade
+## Upgrade<a name="upgrade"></a>
 
 The following guides cover upgrades beyond routine RPM package updates:
 
@@ -851,9 +888,9 @@ The following guides cover upgrades beyond routine RPM package updates:
 - [Database migrations](docs/database-migrations.md)
 - [Upgrade from version 2 to 3](docs/upgrade-v2-to-v3.md)
 
-## Development
+## Development<a name="development"></a>
 
-### Tests
+### Tests<a name="tests"></a>
 
 The repository includes unit tests under `tests/unit/` (one module per source module under `src/slurm_quota/`, with one
 `TestCase` class per function) and functional CLI tests under `tests/functional/` (one module per command). They are
@@ -876,7 +913,7 @@ Run the full suite (quiet mode, coverage for the loaded `slurm-quota` module, te
 python -m pytest
 ```
 
-## Acknowledgements
+## Acknowledgements<a name="acknowledgements"></a>
 
 The development of this project was funded by [**ISDM-Meso**](https://isdm.umontpellier.fr/), part of the
 [University of Montpellier](https://www.umontpellier.fr/en/).
@@ -895,7 +932,7 @@ a shared mid-scale research computing facility providing HPC and data services t
 institutional resources and national/international supercomputing centers. This tool was developed in that operational
 context to support the administration of Slurm-based clusters.
 
-## License
+## License<a name="license"></a>
 
 This project is licensed under the GNU General Public License v2.0 or later (GPL-2.0-or-later). See [LICENSE](LICENSE)
 for the full text.
