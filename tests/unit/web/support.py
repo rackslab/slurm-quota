@@ -77,7 +77,7 @@ def roles_users() -> list[dict]:
 @contextmanager
 def auth_disabled():
     with (
-        patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+        patch("slurm_quota.web.app.ClientToken.load_value", return_value="test-token"),
         patch("slurm_quota.web.routes.current_role", return_value="admin"),
     ):
         yield

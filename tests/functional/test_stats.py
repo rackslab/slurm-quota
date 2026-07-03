@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from slurm_quota.commands import RELOGIN_GUIDANCE
-from slurm_quota.token import save_service_token, service_token_path
+from slurm_quota.token import ClientToken
 from tests.functional import functional_base
 from tests.functional.functional_base import FunctionalCLIBase
 from tests.testing_utils import dedent_lines, fake_http_error
@@ -329,7 +329,7 @@ class TestStatsCommand(FunctionalCLIBase):
     def test_stats_sends_bearer_when_token_file_exists(self):
         config_home = Path(self._tmp.name) / "xdg-config"
         self.env({"NO_COLOR": "1", "XDG_CONFIG_HOME": str(config_home)})
-        token_path = service_token_path()
+        token_path = ClientToken.path()
         token_path.parent.mkdir(parents=True, exist_ok=True)
         token_path.write_text("saved-jwt", encoding="utf-8")
         with (
@@ -355,7 +355,7 @@ class TestStatsCommand(FunctionalCLIBase):
     def test_stats_expired_token_via_http_error(self):
         config_home = Path(self._tmp.name) / "xdg-config"
         self.env({"NO_COLOR": "1", "XDG_CONFIG_HOME": str(config_home)})
-        save_service_token("saved-jwt")
+        ClientToken("saved-jwt", "").save()
 
         def _expired(_request, **_kwargs):
             raise fake_http_error(

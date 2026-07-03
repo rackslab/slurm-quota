@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from slurm_quota.token import service_token_path
+from slurm_quota.token import ClientToken
 from tests.functional.functional_base import FakeJsonUrlopenResponse, FunctionalCLIBase
 from tests.testing_utils import fake_http_error
 
@@ -31,7 +31,7 @@ class TestLoginCommand(FunctionalCLIBase):
         ):
             self.run_cli_main(["slurm-quota", "login"])
         self.assertEqual(out.getvalue(), "jwt-token\n")
-        self.assertFalse(service_token_path().exists())
+        self.assertFalse(ClientToken.path().exists())
 
     def test_login_save_writes_token_and_prints_confirmation(self):
         config_home = Path(self._tmp.name) / "xdg-config"
@@ -46,7 +46,7 @@ class TestLoginCommand(FunctionalCLIBase):
             self.capture_stdout() as out,
         ):
             self.run_cli_main(["slurm-quota", "login", "--save"])
-        token_path = service_token_path()
+        token_path = ClientToken.path()
         self.assertEqual(token_path.read_text(encoding="utf-8"), "jwt-token")
         self.assertEqual(
             out.getvalue(),
@@ -82,7 +82,7 @@ class TestLoginCommand(FunctionalCLIBase):
             patch("slurm_quota.auth.get_current_user", return_value="alice"),
         ):
             self.run_cli_main_exit(["slurm-quota", "login"], 1)
-        self.assertFalse(service_token_path().exists())
+        self.assertFalse(ClientToken.path().exists())
 
     def test_login_reports_auth_disabled(self):
         config_home = Path(self._tmp.name) / "xdg-config"
@@ -97,4 +97,4 @@ class TestLoginCommand(FunctionalCLIBase):
             patch("slurm_quota.auth.get_current_user", return_value="alice"),
         ):
             self.run_cli_main_exit(["slurm-quota", "login"], 1)
-        self.assertFalse(service_token_path().exists())
+        self.assertFalse(ClientToken.path().exists())

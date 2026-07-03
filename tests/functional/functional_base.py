@@ -16,7 +16,7 @@ from slurm_quota.cli import main as cli_main
 from slurm_quota.serve.cli import main as serve_main
 from slurm_quota.serve.prune import main as prune_main
 from slurm_quota.serve.token import main as token_main
-from slurm_quota.token import save_service_token
+from slurm_quota.token import ClientToken
 from tests.test_support import SlurmQuotaTestCase
 
 
@@ -128,7 +128,7 @@ class FunctionalAPICliBase(FunctionalCLIBase):
         super().setUp()
         config_home = Path(self._tmp.name) / "xdg-config"
         self.env({"XDG_CONFIG_HOME": str(config_home)})
-        save_service_token("saved-jwt")
+        ClientToken("saved-jwt", "").save()
 
 
 def _stats_user_row(

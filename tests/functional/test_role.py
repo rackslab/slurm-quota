@@ -6,7 +6,7 @@ import json
 from unittest.mock import patch
 from urllib.error import URLError
 
-from slurm_quota.token import service_token_path
+from slurm_quota.token import ClientToken
 from tests.functional.functional_base import (
     FakeJsonUrlopenResponse,
     FunctionalAPICliBase,
@@ -138,7 +138,7 @@ class TestRoleCommand(FunctionalAPICliBase):
         self.run_cli_main_exit(["slurm-quota", "role"], 1)
 
     def test_role_commands_require_token(self):
-        service_token_path().unlink()
+        ClientToken.path().unlink()
         with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
             self.run_cli_main_exit(["slurm-quota", "role", "show"], 1)
         self.assertIn("No API token available", log_cm.output[0])
