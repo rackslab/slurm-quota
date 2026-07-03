@@ -280,7 +280,9 @@ The `AccountingStorageTRES` parameter enables recording of complementary resourc
 
 4) Configure REST API authentication and HTTPS
 
-Authentication is required for `GET /stats`. Copy and adapt `/etc/slurm-quota/serve.ini` (from `conf/serve.ini.example` or `/usr/share/slurm-quota/conf/serve.ini.example`). In production, enable native HTTPS on the API so tokens and LDAP credentials are not sent in cleartext over the cluster network:
+Authentication is required for `GET /stats`. Edit `/etc/slurm-quota/serve.ini`.
+In production, enable native HTTPS on the API so tokens and LDAP credentials
+are not sent in cleartext over the cluster network:
 
 ```ini
 [authentication]
@@ -367,23 +369,22 @@ sudo chown apache:apache /etc/slurm-quota/web-session.key
 
 4) Configure the web dashboard environment:
 
-Create `/etc/default/slurm-quota-web` with `SLURM_QUOTA_URL`, `SLURM_QUOTA_WEB_SESSION_KEY_FILE`, and `SLURM_QUOTA_WEB_SECURE_COOKIES`. Use the same `https://` API URL as on compute and login nodes:
+Edit `/etc/default/slurm-quota-web`. Uncomment and set at least:
 
 ```bash
-sudo tee /etc/default/slurm-quota-web <<'EOF'
 SLURM_QUOTA_URL=https://controller:9911/
 SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key
 SLURM_QUOTA_WEB_SECURE_COOKIES=1
-EOF
-sudo chmod 0644 /etc/default/slurm-quota-web
 ```
+
+Use the same `https://` API URL as on compute and login nodes.
 
 > [!NOTE]
 > When the API certificate is signed by a private CA or an in-house CA that is not in the OS trust store, set `SLURM_QUOTA_CA_CERT` on the web server host so the dashboard can verify the backend certificate. Omit it when the API certificate is already trusted by the system CA bundle.
 >
 > `SLURM_QUOTA_WEB_SECURE_COOKIES=1` marks the dashboard session cookie with the `Secure` attribute so browsers send it only over HTTPS. Use this when the site is served behind TLS at Apache (recommended for LDAP login in production).
 >
-> A commented example with additional optional variables ships as `conf/slurm-quota-web.default` in the source tree, or `/usr/share/slurm-quota/conf/slurm-quota-web.default` after RPM install.
+> Additional optional variables are documented as comments in `/etc/default/slurm-quota-web`.
 
 5) Configure Apache virtual host with mod_wsgi:
 

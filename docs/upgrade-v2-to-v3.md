@@ -39,6 +39,8 @@ guide instead.
   Flask's built-in HTTP server.
 - Production Apache/mod_wsgi deployments must use the bundled WSGI script:
   `/usr/share/slurm-quota/web/wsgi/slurm-quota-web.wsgi`.
+- RPM packages ship site configuration at `/etc/slurm-quota/serve.ini` and
+  `/etc/default/slurm-quota-web`.
 
 ## 1. Backup the database
 
@@ -85,8 +87,8 @@ restarting services.
 ## 3. Configure the REST API
 
 Version 3 requires REST API authentication for protected routes such as
-`GET /stats`. Create or update `/etc/slurm-quota/serve.ini` on the controller
-node.
+`GET /stats`. The `slurm-quota-controller` package installs
+`/etc/slurm-quota/serve.ini`. Edit this file on the controller node.
 
 For LDAP authentication, enable native HTTPS in production so tokens and LDAP
 credentials are not sent in cleartext over the cluster network. Use at least:
@@ -190,16 +192,14 @@ sudo chmod 0400 /etc/slurm-quota/web-session.key
 sudo chown apache:apache /etc/slurm-quota/web-session.key
 ```
 
-Create `/etc/default/slurm-quota-web`:
+Edit `/etc/default/slurm-quota-web` installed by the `slurm-quota-web` package.
+Uncomment and set at least:
 
 ```bash
-sudo tee /etc/default/slurm-quota-web <<'EOF'
 SLURM_QUOTA_URL=https://controller:9911/
 SLURM_QUOTA_CA_CERT=/etc/slurm-quota/tls/ca.pem
 SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key
 SLURM_QUOTA_WEB_SECURE_COOKIES=1
-EOF
-sudo chmod 0644 /etc/default/slurm-quota-web
 ```
 
 Omit `SLURM_QUOTA_CA_CERT` when the API certificate is already trusted by the

@@ -1,6 +1,5 @@
 # Slurm quota web dashboard — environment defaults
 #
-# Copy to /etc/default/slurm-quota-web and adapt.
 #
 # This file is designed to configure environment of web dashboard when
 # loaded by the WSGI script (Apache) or systemd EnvironmentFile. This
