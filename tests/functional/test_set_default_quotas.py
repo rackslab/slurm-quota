@@ -6,7 +6,7 @@ import json
 from unittest.mock import patch
 from urllib.error import URLError
 
-from slurm_quota.token import service_token_path
+from slurm_quota.token import ClientToken
 from tests.functional.functional_base import (
     FakeNoContentUrlopenResponse,
     FunctionalAPICliBase,
@@ -86,7 +86,7 @@ class TestSetDefaultQuotasCommand(FunctionalAPICliBase):
         self.assertEqual(self._last_put_body, {"user_cpu_minutes": 999})
 
     def test_set_default_quotas_requires_token(self):
-        service_token_path().unlink()
+        ClientToken.path().unlink()
         with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
             self.run_cli_main_exit(
                 ["slurm-quota", "set-default-quotas", "--user-cpu", "1"],

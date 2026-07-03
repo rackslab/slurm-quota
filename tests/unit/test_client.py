@@ -10,7 +10,7 @@ from unittest.mock import patch
 from urllib.error import URLError
 
 from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableError
-from slurm_quota.token import save_service_token
+from slurm_quota.token import ClientToken
 from tests.test_support import SlurmQuotaTestCase
 from tests.testing_utils import fake_http_error
 from tests.unit.serve.support import write_test_tls_certs
@@ -292,14 +292,12 @@ class TestAPIClientLogin(SlurmQuotaTestCase):
     def test_cli_pattern_loads_token_from_file(self):
         config_home = self._tmp.name + "/xdg-config"
         self.env({"XDG_CONFIG_HOME": config_home})
-        save_service_token("file-jwt")
+        ClientToken("file-jwt", "").save()
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            from slurm_quota.token import load_service_token
-
-            APIClient(token=load_service_token()).stats(None, None, True)
+            APIClient(token=ClientToken.load_value()).stats(None, None, True)
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.get_header("Authorization"), "Bearer file-jwt")
 

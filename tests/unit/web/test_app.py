@@ -30,7 +30,7 @@ class TestSlurmQuotaWebApp(SlurmQuotaTestCase):
 
     def test_env_token_bypasses_login(self):
         with (
-            patch("slurm_quota.web.app.load_service_token", return_value="env-jwt"),
+            patch("slurm_quota.web.app.ClientToken.load_value", return_value="env-jwt"),
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
             m_client.return_value.stats.return_value = ([], [])

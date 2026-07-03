@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
 from slurm_quota.client import ServiceHTTPError, ServiceUnreachableError
@@ -19,9 +20,11 @@ from slurm_quota.commands import (
     role_revoke_command,
     role_show_command,
     show_user_stats,
+    token_command,
 )
+from slurm_quota.token import ClientToken, TokenPayload
 from tests.test_support import SlurmQuotaTestCase
-from tests.testing_utils import dedent_lines
+from tests.testing_utils import craft_jwt, dedent_lines
 
 
 class TestFormatTimestampWithTimezone(SlurmQuotaTestCase):
@@ -311,7 +314,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
     def test_role_show_prints_username_and_role(self):
         buf = io.StringIO()
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             redirect_stdout(buf),
         ):
@@ -326,7 +329,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_show_expired_token_reports_relogin_guidance(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="INFO") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -341,7 +344,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_show_invalid_token_reports_auth_failure(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="INFO") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -356,7 +359,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_show_generic_http_error(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -372,7 +375,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
     def test_role_list_prints_table(self):
         buf = io.StringIO()
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             redirect_stdout(buf),
         ):
@@ -389,7 +392,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
     def test_role_grant_prints_confirmation(self):
         buf = io.StringIO()
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             redirect_stdout(buf),
         ):
@@ -399,7 +402,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_grant_reports_forbidden(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -414,7 +417,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_grant_reports_unreachable_service(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -430,7 +433,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
     def test_role_revoke_prints_confirmation(self):
         buf = io.StringIO()
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             redirect_stdout(buf),
         ):
@@ -440,7 +443,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_revoke_reports_forbidden(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -455,7 +458,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_revoke_reports_unreachable_service(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -471,7 +474,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
     def test_role_managers_list_prints_accounts(self):
         buf = io.StringIO()
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             redirect_stdout(buf),
         ):
@@ -483,7 +486,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
     def test_role_managers_list_prints_empty_message(self):
         buf = io.StringIO()
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             redirect_stdout(buf),
         ):
@@ -493,7 +496,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_managers_list_reports_forbidden(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -512,7 +515,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_managers_list_reports_unreachable_service(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -528,7 +531,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
     def test_role_managers_add_prints_confirmation(self):
         buf = io.StringIO()
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             redirect_stdout(buf),
         ):
@@ -538,7 +541,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_managers_add_reports_forbidden(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -557,7 +560,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_managers_add_reports_unreachable_service(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -573,7 +576,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
     def test_role_managers_remove_prints_confirmation(self):
         buf = io.StringIO()
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             redirect_stdout(buf),
         ):
@@ -585,7 +588,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_managers_remove_reports_forbidden(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -604,7 +607,7 @@ class TestRoleCommands(SlurmQuotaTestCase):
 
     def test_role_managers_remove_reports_unreachable_service(self):
         with (
-            patch("slurm_quota.commands.load_service_token", return_value="token"),
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
             patch("slurm_quota.commands.APIClient") as m_client,
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
             self.assertRaises(SystemExit) as cm,
@@ -616,3 +619,71 @@ class TestRoleCommands(SlurmQuotaTestCase):
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
         self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+
+
+class TestTokenCommand(SlurmQuotaTestCase):
+    def test_token_show_prints_metadata_from_saved_file(self):
+        config_home = Path(self._tmp.name) / "xdg-config"
+        self.env({"XDG_CONFIG_HOME": str(config_home)})
+        token = craft_jwt(login="alice", exp=4_102_444_800)
+
+        ClientToken(token, "").save()
+        buf = io.StringIO()
+        with (
+            patch.object(
+                TokenPayload,
+                "expiry",
+                return_value="2099-12-31 23:59:59 UTC",
+            ),
+            redirect_stdout(buf),
+        ):
+            token_command()
+        self.assertEqual(
+            buf.getvalue(),
+            dedent_lines(
+                f"Source: {ClientToken.path()}",
+                "Username: alice",
+                "Expires: 2099-12-31 23:59:59 UTC",
+            ),
+        )
+
+    def test_token_show_exits_when_no_token(self):
+        config_home = Path(self._tmp.name) / "empty-config"
+        self.env({"XDG_CONFIG_HOME": str(config_home)})
+        with (
+            self.assertLogs("slurm_quota", level="INFO") as log_cm,
+            self.assertRaises(SystemExit) as cm,
+        ):
+            token_command()
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("No API token available", log_cm.output[0])
+        self.assertIn(RELOGIN_GUIDANCE, log_cm.output[1])
+
+    def test_token_save_writes_env_token(self):
+        config_home = Path(self._tmp.name) / "xdg-config"
+        self.env(
+            {
+                "XDG_CONFIG_HOME": str(config_home),
+                "SLURM_QUOTA_TOKEN": craft_jwt(),
+            }
+        )
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            token_command(save=True)
+        token_path = ClientToken.path()
+        self.assertTrue(token_path.is_file())
+        self.assertEqual(
+            buf.getvalue(),
+            f"Authentication token saved to {token_path}\n",
+        )
+
+    def test_token_save_requires_env_token(self):
+        config_home = Path(self._tmp.name) / "xdg-config"
+        self.env({"XDG_CONFIG_HOME": str(config_home)})
+        with (
+            patch.dict("os.environ", {"SLURM_QUOTA_TOKEN": ""}, clear=False),
+            self.assertRaises(SystemExit) as cm,
+        ):
+            token_command(save=True)
+        self.assertEqual(cm.exception.code, 1)

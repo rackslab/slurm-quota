@@ -6,7 +6,7 @@ from textwrap import dedent
 from unittest.mock import patch
 from urllib.error import URLError
 
-from slurm_quota.token import service_token_path
+from slurm_quota.token import ClientToken
 from tests.functional.functional_base import (
     FakeJsonUrlopenResponse,
     FunctionalAPICliBase,
@@ -50,7 +50,7 @@ class TestGpuFactorsCommand(FunctionalAPICliBase):
         self.assertEqual(req.get_header("Authorization"), "Bearer saved-jwt")
 
     def test_gpu_factors_requires_token(self):
-        service_token_path().unlink()
+        ClientToken.path().unlink()
         with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
             self.run_cli_main_exit(["slurm-quota", "gpu-factors"], 1)
         self.assertIn("No API token available", log_cm.output[0])

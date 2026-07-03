@@ -265,7 +265,9 @@ class TestRolesRoutes(SlurmQuotaTestCase):
 
     def test_roles_redirects_non_admin_to_dashboard(self):
         with (
-            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
             patch("slurm_quota.web.routes.current_role", return_value="user"),
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
@@ -359,7 +361,9 @@ class TestRolesRoutes(SlurmQuotaTestCase):
 
     def test_roles_post_redirects_non_admin_to_dashboard(self):
         with (
-            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
             patch("slurm_quota.web.routes.current_role", return_value="user"),
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
@@ -453,7 +457,9 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
 
     def test_dashboard_hides_quota_edit_for_user(self):
         with (
-            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
             patch("slurm_quota.web.routes.current_role", return_value="user"),
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
@@ -466,7 +472,9 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
 
     def test_quotas_post_calls_api_for_operator(self):
         with (
-            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
             patch("slurm_quota.web.routes.current_role", return_value="operator"),
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
@@ -530,7 +538,9 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
 
     def test_quotas_post_redirects_user_to_dashboard(self):
         with (
-            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
             patch("slurm_quota.web.routes.current_role", return_value="user"),
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
@@ -608,7 +618,9 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
 
     def test_dashboard_hides_consumption_edit_for_user(self):
         with (
-            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
             patch("slurm_quota.web.routes.current_role", return_value="user"),
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
@@ -621,7 +633,9 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
 
     def test_consumption_post_calls_api_for_operator(self):
         with (
-            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
             patch("slurm_quota.web.routes.current_role", return_value="operator"),
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
@@ -647,7 +661,9 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
 
     def test_consumption_post_redirects_user_to_dashboard(self):
         with (
-            patch("slurm_quota.web.app.load_service_token", return_value="test-token"),
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
             patch("slurm_quota.web.routes.current_role", return_value="user"),
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
