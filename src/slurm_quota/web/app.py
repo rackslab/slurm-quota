@@ -14,7 +14,7 @@ from typing import Any
 from flask import Flask, abort, redirect, render_template, request
 from werkzeug.exceptions import HTTPException
 
-from slurm_quota.token import load_service_token
+from slurm_quota.token import ClientToken
 from slurm_quota.web import routes
 from slurm_quota.web.auth import login_url, session_token
 from slurm_quota.web.settings import SlurmQuotaWebSettings
@@ -78,7 +78,7 @@ class SlurmQuotaWebApp(Flask):
         if request.endpoint in {"static", "login", "login_post", "logout"}:
             return None
 
-        if load_service_token() is not None:
+        if ClientToken.load_value() is not None:
             return None
 
         self.ensure_session_key()

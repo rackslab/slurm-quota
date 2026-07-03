@@ -12,7 +12,7 @@ from urllib.parse import quote
 from flask import request, session, url_for
 
 from slurm_quota.client import APIClient
-from slurm_quota.token import load_service_token
+from slurm_quota.token import ClientToken
 
 
 def session_token() -> str | None:
@@ -23,7 +23,7 @@ def session_token() -> str | None:
 
 
 def api_client() -> APIClient:
-    return APIClient(token=session_token() or load_service_token())
+    return APIClient(token=session_token() or ClientToken.load_value())
 
 
 def current_role() -> str | None:

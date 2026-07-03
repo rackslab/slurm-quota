@@ -28,10 +28,10 @@ from slurm_quota.commands import (
     show_default_quotas_command,
     show_gpu_factors_command,
     show_user_stats,
-    token_save_command,
+    token_command,
 )
 from slurm_quota.log import setup_logging
-from slurm_quota.token import service_token_path
+from slurm_quota.token import ClientToken
 
 
 def parse_signed_int(value: str) -> int:
@@ -99,16 +99,18 @@ def main():
     login_parser.add_argument(
         "--save",
         action="store_true",
-        help=f"Save token to {service_token_path()}",
+        help=f"Save token to {ClientToken.path()}",
     )
 
     # Token command
-    subparsers.add_parser(
+    token_parser = subparsers.add_parser(
         "token",
-        help=(
-            f"Save SLURM_QUOTA_TOKEN to {service_token_path()} "
-            "for automatic use by stats"
-        ),
+        help="Show current API token information",
+    )
+    token_parser.add_argument(
+        "--save",
+        action="store_true",
+        help=f"Save SLURM_QUOTA_TOKEN to {ClientToken.path()}",
     )
 
     # Stats command
@@ -332,7 +334,7 @@ def main():
     if args.command == "login":
         login_command(args.username, args.save)
     elif args.command == "token":
-        token_save_command()
+        token_command(save=args.save)
     elif args.command == "stats":
         if args.username and args.user:
             parser.error("stats: positional username and --user are mutually exclusive")
