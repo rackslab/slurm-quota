@@ -62,16 +62,24 @@ slurm-quota login --save
 
 === token
 
-*slurm-quota token*
+*slurm-quota token* [*--save*]
 
-Save the JWT from the *SLURM_QUOTA_TOKEN* environment variable to
-`$XDG_CONFIG_HOME/slurm-quota/token` for automatic use by `stats`.
+Show metadata about the current API authentication token (source, username,
+expiration). The effective token is read from *SLURM_QUOTA_TOKEN* when set,
+otherwise from `$XDG_CONFIG_HOME/slurm-quota/token`.
 
-Example:
+Options:
+
+*--save*::
+  Save the JWT from the *SLURM_QUOTA_TOKEN* environment variable to
+  `$XDG_CONFIG_HOME/slurm-quota/token` for automatic use by other subcommands.
+
+Examples:
 
 ....
-export SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice)
 slurm-quota token
+export SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice)
+slurm-quota token --save
 ....
 
 === stats
@@ -301,7 +309,7 @@ slurm-quota set-default-quotas --user-cpu 50000 --account-cpu 200000
 
 *SLURM_QUOTA_TOKEN*::
   JWT for HTTP API authentication. When set, takes precedence over the token
-  file saved by `login` or `token`.
+  file saved by `login --save` or `token --save`.
 
 *XDG_CONFIG_HOME*::
   Base directory for user-specific configuration. The token saved by `login` is
@@ -314,7 +322,7 @@ slurm-quota set-default-quotas --user-cpu 50000 --account-cpu 200000
 == Files
 
 `$XDG_CONFIG_HOME/slurm-quota/token`::
-  JWT saved by `login --save` or `token` for HTTP API authentication
+  JWT saved by `login --save` or `token --save` for HTTP API authentication
   (default: `~/.config/slurm-quota/token`).
 
 == Exit Status
