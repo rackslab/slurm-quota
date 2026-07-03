@@ -43,7 +43,13 @@ sudo chmod 0644 /etc/bash_completion.d/slurm-quota
 
 4) Configure REST API authentication and HTTPS
 
-Authentication is required for `GET /stats`. Copy and adapt `/etc/slurm-quota/serve.ini` (from `conf/serve.ini.example` in the source tree). See the [Controller node](../README.md#controller-node) section in the main README for the full recommended setup. In production, enable native HTTPS on the API so tokens and LDAP credentials are not sent in cleartext over the cluster network:
+Authentication is required for `GET /stats`. Copy `conf/serve.ini.example` to
+`/etc/slurm-quota/serve.ini` and adapt it to your site. See the
+[Controller node](../README.md#controller-node) section in the main README for
+the full recommended setup. RPM packages install this file directly at
+`/etc/slurm-quota/serve.ini`; see the main [Installation](../README.md#installation)
+guide. In production, enable native HTTPS on the API so tokens and LDAP
+credentials are not sent in cleartext over the cluster network:
 
 ```ini
 [authentication]

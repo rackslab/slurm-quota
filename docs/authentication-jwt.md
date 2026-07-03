@@ -12,7 +12,9 @@ By default, slurm-quota is documented with [LDAP authentication](../README.md#co
 
 ## Server configuration
 
-Copy and adapt `/etc/slurm-quota/serve.ini` (from `conf/serve.ini.example` or `/usr/share/slurm-quota/conf/serve.ini.example`):
+Edit `/etc/slurm-quota/serve.ini` installed by the `slurm-quota-controller`
+package. For manual installs, copy `conf/serve.ini.example` to
+`/etc/slurm-quota/serve.ini` instead.
 
 ```ini
 [authentication]
@@ -67,14 +69,13 @@ curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:9911/stats?account=hpc"
 > [!NOTE]
 > With JWT authentication on the API, skip the session signing key file used for LDAP browser login.
 
-Set `SLURM_QUOTA_TOKEN` in `/etc/default/slurm-quota-web` for service-account access without a login page:
+Set `SLURM_QUOTA_TOKEN` in `/etc/default/slurm-quota-web` (installed by the
+`slurm-quota-web` RPM package) for service-account access without a login page.
+Uncomment and set at least:
 
 ```bash
-sudo tee /etc/default/slurm-quota-web <<'EOF'
-SLURM_QUOTA_URL=http://controller:9911/
+SLURM_QUOTA_URL=https://controller:9911/
 SLURM_QUOTA_TOKEN=<token-from-slurm-quota-token>
-EOF
-sudo chmod 0644 /etc/default/slurm-quota-web
 ```
 
 For standalone testing:
