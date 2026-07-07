@@ -202,8 +202,9 @@ def login() -> Any:
 
     try:
         user = serve_app.authentifier.login(username, password)
-    except LDAPAuthenticationError:
-        abort(401, description="Invalid user or password")
+    except LDAPAuthenticationError as exc:
+        logger.error("LDAP authentication failed: %s", exc)
+        abort(401, description="Authentication failed")
 
     token = serve_app.jwt.generate(user, serve_app.settings.jwt.duration)
     return jsonify(
