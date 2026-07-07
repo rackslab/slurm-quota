@@ -34,6 +34,12 @@ body {
   max-width: 100%;
 }
 
+.page-top-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+
 .user-session {
   display: flex;
   flex-wrap: wrap;
@@ -64,6 +70,14 @@ body {
 .login-panel {
   max-width: 28rem;
   margin: 2rem auto 0;
+}
+
+.login-panel .page-title {
+  margin-bottom: 0.75rem;
+}
+
+.login-panel .subtitle {
+  margin-top: 0;
 }
 
 .login-form {
@@ -190,10 +204,31 @@ body {
   flex-wrap: wrap;
   gap: 0.75rem;
   align-items: flex-end;
+  width: 100%;
+  flex-basis: 100%;
+  box-sizing: border-box;
   background: #e2e8f0;
   border-radius: 0.5rem;
   padding: 0.75rem;
   margin-bottom: 1rem;
+}
+
+.dashboard-stats {
+  display: block;
+  width: 100%;
+  clear: both;
+}
+
+.stats-section {
+  width: 100%;
+}
+
+.stats-section h2 {
+  margin: 0 0 0.5rem;
+}
+
+.stats-section + .stats-section {
+  margin-top: 1rem;
 }
 
 .filters label {
@@ -356,51 +391,148 @@ th {
   margin: 0;
 }
 
-.quota-edit-form {
-  flex-wrap: nowrap;
-  gap: 0.35rem;
+.stat-with-edit {
+  display: inline-flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 0.35rem;
 }
 
-.quota-edit-form .quota-input {
-  width: 4.5rem;
-  padding: 0.2rem 0.35rem;
-  font-size: 0.85rem;
+.stat-edit-btn {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: #1d4ed8;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.stat-edit-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.edit-dialog {
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15);
+  box-sizing: border-box;
+  width: min(18rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  overflow-x: hidden;
+}
+
+.edit-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.edit-dialog-title {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.edit-dialog-context {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: #475569;
+  overflow-wrap: anywhere;
+}
+
+.edit-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+  min-width: 0;
+}
+
+.edit-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.quota-edit-form,
+.consumption-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  margin: 0;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.quota-edit-form .quota-input,
+.consumption-edit-form .consumption-delta-input {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
 }
 
 .quota-edit-form .quota-unlimited {
   display: inline-flex;
   align-items: center;
-  gap: 0.15rem;
-  font-size: 0.85rem;
-  white-space: nowrap;
-}
-
-.quota-edit-form button {
-  padding: 0.2rem 0.45rem;
-  font-size: 0.8rem;
-}
-
-.consumption-edit-form {
-  flex-wrap: nowrap;
   gap: 0.35rem;
-  justify-content: flex-end;
-  margin-top: 0.25rem;
+  font-size: 0.9rem;
 }
 
-.consumption-value {
-  display: block;
-}
-
-.consumption-edit-form .consumption-delta-input {
-  width: 4.5rem;
-  padding: 0.2rem 0.35rem;
+.quota-edit-form button,
+.consumption-edit-form button {
+  padding: 0.35rem 0.75rem;
   font-size: 0.85rem;
 }
 
-.consumption-edit-form button {
-  padding: 0.2rem 0.45rem;
-  font-size: 0.8rem;
+.edit-dialog-actions button[type="button"] {
+  color: #334155;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+}
+
+.edit-dialog-actions button[type="submit"] {
+  color: #fff;
+  background: #1d4ed8;
+  border: 1px solid #1d4ed8;
+}
+
+.role-with-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.role-name {
+  font-weight: 500;
+}
+
+.roles-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.manager-accounts-list {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+}
+
+.manager-accounts-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .admin-nav a {

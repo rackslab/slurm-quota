@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}User roles — slurm-quota{% endblock %}
+{% block title %}Manager roles — slurm-quota{% endblock %}
 
 {% block body %}
 <div class="page-header">
-  <h1 class="page-title">User roles</h1>
+  <h1 class="page-title">Manager roles</h1>
   <div class="page-header-actions">
     <a href="{{ url_for('dashboard') }}">Back to dashboard</a>
   </div>
@@ -14,26 +14,6 @@
 <div class="error">{{ error }}</div>
 {% endif %}
 
-<form method="post" action="{{ url_for('roles_post') }}" class="roles-grant-form">
-  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-  <input type="hidden" name="action" value="grant">
-  <input type="hidden" name="role" value="operator">
-  <label>Grant operator to username
-    <input type="text" name="username" placeholder="bob" required>
-  </label>
-  <button type="submit">Grant operator</button>
-</form>
-
-<form method="post" action="{{ url_for('roles_post') }}" class="roles-grant-form">
-  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-  <input type="hidden" name="action" value="grant">
-  <input type="hidden" name="role" value="manager">
-  <label>Grant manager to username
-    <input type="text" name="username" placeholder="bob" required>
-  </label>
-  <button type="submit">Grant manager</button>
-</form>
-
 {% if users %}
 <table class="stats-table roles-table">
   <thead>
@@ -41,14 +21,51 @@
       <th>Username</th>
       <th>Role</th>
       <th>Accounts</th>
-      <th>Actions</th>
     </tr>
   </thead>
   <tbody>
     {% for entry in users %}
     <tr>
       <td>{{ entry.username }}</td>
-      <td>{{ entry.role }}</td>
+      <td>
+        <div class="role-with-actions">
+          <span class="role-name">{{ entry.role }}</span>
+          <div class="roles-actions">
+          {% if entry.role == "operator" %}
+          <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="revoke">
+            <input type="hidden" name="role" value="operator">
+            <input type="hidden" name="username" value="{{ entry.username }}">
+            <button type="submit">Revoke operator</button>
+          </form>
+          {% elif entry.role == "manager" %}
+          <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="revoke">
+            <input type="hidden" name="role" value="manager">
+            <input type="hidden" name="username" value="{{ entry.username }}">
+            <button type="submit">Revoke manager</button>
+          </form>
+          {% elif entry.role == "user" %}
+          <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="grant">
+            <input type="hidden" name="role" value="operator">
+            <input type="hidden" name="username" value="{{ entry.username }}">
+            <button type="submit">Grant operator</button>
+          </form>
+          <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="grant">
+            <input type="hidden" name="role" value="manager">
+            <input type="hidden" name="username" value="{{ entry.username }}">
+            <button type="submit">Grant manager</button>
+          </form>
+          {% endif %}
+          </div>
+        </div>
+      </td>
       <td>
         {% if entry.role == "manager" %}
           {% if entry.accounts %}
@@ -78,42 +95,6 @@
           </form>
         {% else %}
           <span class="muted">—</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if entry.role == "operator" %}
-        <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <input type="hidden" name="action" value="revoke">
-          <input type="hidden" name="role" value="operator">
-          <input type="hidden" name="username" value="{{ entry.username }}">
-          <button type="submit">Revoke operator</button>
-        </form>
-        {% elif entry.role == "manager" %}
-        <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <input type="hidden" name="action" value="revoke">
-          <input type="hidden" name="role" value="manager">
-          <input type="hidden" name="username" value="{{ entry.username }}">
-          <button type="submit">Revoke manager</button>
-        </form>
-        {% elif entry.role == "user" %}
-        <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <input type="hidden" name="action" value="grant">
-  <input type="hidden" name="role" value="operator">
-          <input type="hidden" name="username" value="{{ entry.username }}">
-          <button type="submit">Grant operator</button>
-        </form>
-        <form method="post" action="{{ url_for('roles_post') }}" class="inline-form">
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <input type="hidden" name="action" value="grant">
-  <input type="hidden" name="role" value="manager">
-          <input type="hidden" name="username" value="{{ entry.username }}">
-          <button type="submit">Grant manager</button>
-        </form>
-        {% else %}
-        <span class="muted">—</span>
         {% endif %}
       </td>
     </tr>
