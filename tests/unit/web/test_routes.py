@@ -325,7 +325,7 @@ class TestRolesRoutes(SlurmQuotaTestCase):
             resp = client.get("/roles")
         self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
-        self.assertIn("User roles", body)
+        self.assertIn("Manager roles", body)
         self.assertIn("bob", body)
         self.assertIn("carol", body)
         m_client.return_value.users_roles.assert_called_once()
@@ -485,6 +485,7 @@ class TestRolesRoutes(SlurmQuotaTestCase):
 
     def test_roles_post_forbidden_clears_session_and_redirects_to_login(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.users_roles.return_value = roles_users()
             m_client.return_value.grant_role.side_effect = ServiceHTTPError(403)
             client = web_app().test_client()
             roles_page = client.get("/roles")
@@ -519,6 +520,7 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
             resp = client.get("/")
         self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
+        self.assertIn('data-edit="quota"', body)
         self.assertIn('action="/quotas"', body)
         self.assertIn('name="quota_minutes"', body)
 
@@ -680,6 +682,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
             resp = client.get("/")
         self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
+        self.assertIn('data-edit="consumption"', body)
         self.assertIn('action="/consumption"', body)
         self.assertIn('name="delta_minutes"', body)
 
