@@ -5,6 +5,17 @@
 {% block title %}slurm-quota{% endblock %}
 
 {% block body %}
+{% if auth_required and logged_in_username %}
+<div class="page-top-bar">
+  <div class="user-session">
+    <span class="user-label">Signed in as <strong>{{ logged_in_username }}</strong></span>
+    <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <button type="submit" class="logout-button">Sign out</button>
+    </form>
+  </div>
+</div>
+{% endif %}
 <div class="page-header">
   <h1 class="page-title">slurm-quota</h1>
   <div class="page-header-actions">
@@ -12,15 +23,6 @@
     <nav class="admin-nav">
       <a href="{{ url_for('roles') }}">Manage roles</a>
     </nav>
-    {% endif %}
-    {% if auth_required and logged_in_username %}
-    <div class="user-session">
-      <span class="user-label">Signed in as <strong>{{ logged_in_username }}</strong></span>
-      <form method="post" action="{{ url_for('logout') }}" class="logout-form">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <button type="submit" class="logout-button">Sign out</button>
-      </form>
-    </div>
     {% endif %}
     <div class="refresh-standalone">
     <label class="refresh-enable">
@@ -38,9 +40,11 @@
         </select>
       </label>
     </div>
+    </div>
   </div>
 </div>
 
+<div class="dashboard-stats">
 <form id="filters-form" method="get" class="filters">
   {% if user_role != "user" %}
   <label>Username
@@ -79,6 +83,7 @@
 {% endif %}
 
 {% if users %}
+<section class="stats-section">
 <h2>Users</h2>
 <table class="stats-table">
   <thead>
@@ -122,9 +127,11 @@
     {% endfor %}
   </tbody>
 </table>
+</section>
 {% endif %}
 
 {% if accounts %}
+<section class="stats-section">
 <h2>Accounts</h2>
 <table class="stats-table">
   <thead>
@@ -168,11 +175,70 @@
     {% endfor %}
   </tbody>
 </table>
+</section>
 {% endif %}
 
 {% if not users and not accounts and not error %}
 <p>No stats returned by service.</p>
 {% endif %}
+</div>
+
+{% if user_role in ("admin", "operator") %}
+<dialog id="quota-edit-dialog" class="edit-dialog">
+  <form method="post" action="{{ url_for('quotas_post') }}" class="quota-edit-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="target" value="">
+    <input type="hidden" name="name" value="">
+    <input type="hidden" name="resource" value="">
+    <h3 id="quota-dialog-title" class="edit-dialog-title">Set quota</h3>
+    <label class="quota-unlimited">
+      <input type="checkbox" name="unlimited">
+      Unlimited (∞)
+    </label>
+    <label class="edit-dialog-field">
+      Quota (minutes)
+      <input
+        type="number"
+        name="quota_minutes"
+        class="quota-input"
+        placeholder="minutes"
+        min="-1"
+      >
+    </label>
+    <div class="edit-dialog-actions">
+      <button type="button" data-dialog-close>Cancel</button>
+      <button type="submit">Set</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="consumption-edit-dialog" class="edit-dialog">
+  <form method="post" action="{{ url_for('consumption_post') }}" class="consumption-edit-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="target" value="">
+    <input type="hidden" name="name" value="">
+    <input type="hidden" name="resource" value="">
+    <h3 id="consumption-dialog-title" class="edit-dialog-title">Adjust consumption</h3>
+    <p id="consumption-dialog-current" class="edit-dialog-context"></p>
+    <label class="edit-dialog-field">
+      Delta (minutes)
+      <input
+        type="number"
+        name="delta_minutes"
+        class="consumption-delta-input"
+        placeholder="e.g. 30 or -10"
+        title="Signed delta in minutes"
+        required
+      >
+    </label>
+    <div class="edit-dialog-actions">
+      <button type="button" data-dialog-close>Cancel</button>
+      <button type="submit">Adjust</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+
 <script>
   (function () {
     var LS_ENABLED = "slurm-quota-web.autoRefresh.enabled";
@@ -260,6 +326,96 @@
       persist();
       scheduleTimer();
     });
+  })();
+
+  (function () {
+    var quotaDialog = document.getElementById("quota-edit-dialog");
+    var consumptionDialog = document.getElementById("consumption-edit-dialog");
+    if (!quotaDialog && !consumptionDialog) {
+      return;
+    }
+
+    var closeDialog = function (dialog) {
+      if (dialog && dialog.open) {
+        dialog.close();
+      }
+    };
+
+    document.querySelectorAll("[data-dialog-close]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        closeDialog(btn.closest("dialog"));
+      });
+    });
+
+    if (quotaDialog) {
+      var quotaForm = quotaDialog.querySelector(".quota-edit-form");
+      var quotaTitle = document.getElementById("quota-dialog-title");
+      var quotaToggle = quotaForm.querySelector('input[name="unlimited"]');
+      var quotaInput = quotaForm.querySelector(".quota-input");
+
+      var syncQuotaInput = function () {
+        quotaInput.disabled = quotaToggle.checked;
+        if (!quotaToggle.checked) {
+          quotaInput.focus();
+        }
+      };
+
+      quotaToggle.addEventListener("change", syncQuotaInput);
+
+      document.querySelectorAll('.stat-edit-btn[data-edit="quota"]').forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var target = btn.getAttribute("data-target");
+          var name = btn.getAttribute("data-name");
+          var resource = btn.getAttribute("data-resource");
+          var quotaMinutes = parseInt(btn.getAttribute("data-quota-minutes"), 10);
+
+          quotaForm.querySelector('input[name="target"]').value = target;
+          quotaForm.querySelector('input[name="name"]').value = name;
+          quotaForm.querySelector('input[name="resource"]').value = resource;
+
+          var resourceLabel = resource.toUpperCase();
+          var targetLabel = target === "user" ? "user" : "account";
+          quotaTitle.textContent =
+            "Set " + resourceLabel + " quota for " + targetLabel + " " + name;
+
+          var unlimited = quotaMinutes < 0;
+          quotaToggle.checked = unlimited;
+          quotaInput.value = unlimited ? "" : String(quotaMinutes);
+          syncQuotaInput();
+          quotaDialog.showModal();
+        });
+      });
+    }
+
+    if (consumptionDialog) {
+      var consumptionForm = consumptionDialog.querySelector(".consumption-edit-form");
+      var consumptionTitle = document.getElementById("consumption-dialog-title");
+      var consumptionCurrent = document.getElementById("consumption-dialog-current");
+      var deltaInput = consumptionForm.querySelector(".consumption-delta-input");
+
+      document.querySelectorAll('.stat-edit-btn[data-edit="consumption"]').forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var target = btn.getAttribute("data-target");
+          var name = btn.getAttribute("data-name");
+          var resource = btn.getAttribute("data-resource");
+          var consumed = btn.getAttribute("data-consumed");
+
+          consumptionForm.querySelector('input[name="target"]').value = target;
+          consumptionForm.querySelector('input[name="name"]').value = name;
+          consumptionForm.querySelector('input[name="resource"]').value = resource;
+
+          var resourceLabel = resource.toUpperCase();
+          var targetLabel = target === "user" ? "user" : "account";
+          consumptionTitle.textContent =
+            "Adjust " + resourceLabel + " consumption for " + targetLabel + " " + name;
+          consumptionCurrent.textContent = "Current consumed: " + consumed;
+
+          deltaInput.value = "";
+          consumptionDialog.showModal();
+          deltaInput.focus();
+        });
+      });
+    }
   })();
 </script>
 {% endblock %}

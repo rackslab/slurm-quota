@@ -1,25 +1,18 @@
 {% macro quota_cell(target, name, resource, usage) %}
 {% if user_role in ("admin", "operator") %}
-<form method="post" action="{{ url_for('quotas_post') }}" class="quota-edit-form inline-form">
-  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-  <input type="hidden" name="target" value="{{ target }}">
-  <input type="hidden" name="name" value="{{ name }}">
-  <input type="hidden" name="resource" value="{{ resource }}">
-  <label class="quota-unlimited">
-    <input type="checkbox" name="unlimited" {% if usage.quota_minutes < 0 %}checked{% endif %}>
-    ∞
-  </label>
-  <input
-    type="number"
-    name="quota_minutes"
-    class="quota-input"
-    value="{% if usage.quota_minutes >= 0 %}{{ usage.quota_minutes }}{% endif %}"
-    placeholder="min"
-    min="-1"
-    {% if usage.quota_minutes < 0 %}disabled{% endif %}
-  >
-  <button type="submit" title="Set quota">Set</button>
-</form>
+<span class="stat-with-edit">
+  {% if usage.quota == "∞" %}<span class="stat-muted">∞</span>{% else %}{{ usage.quota }}{% endif %}
+  <button
+    type="button"
+    class="stat-edit-btn"
+    data-edit="quota"
+    data-target="{{ target }}"
+    data-name="{{ name }}"
+    data-resource="{{ resource }}"
+    data-quota-minutes="{{ usage.quota_minutes }}"
+    aria-label="Edit {{ resource }} quota for {{ name }}"
+  >Edit</button>
+</span>
 {% else %}
 {% if usage.quota == "∞" %}<span class="stat-muted">∞</span>{% else %}{{ usage.quota }}{% endif %}
 {% endif %}
