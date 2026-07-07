@@ -28,6 +28,7 @@ from slurm_quota.web.auth import (
     csrf_token,
     current_role,
     login_url,
+    resolve_next_url,
     session_token,
     validate_csrf,
 )
@@ -95,7 +96,7 @@ def _resolve_dashboard_filters() -> tuple[str | None, str | None, bool]:
 
 def login() -> Response | str:
     if session_token() is not None:
-        return redirect(request.args.get("next") or url_for("dashboard"))
+        return redirect(resolve_next_url(request.args.get("next")))
 
     _web_app().ensure_session_key()
     message_key = request.args.get("message")
@@ -107,14 +108,14 @@ def login() -> Response | str:
         error=None,
         info_message=info_message,
         csrf_token=csrf_token(),
-        next_url=request.args.get("next") or url_for("dashboard"),
+        next_url=resolve_next_url(request.args.get("next")),
         auth_required=True,
     )
 
 
 def login_post() -> Any:
     _web_app().ensure_session_key()
-    next_url = request.form.get("next") or url_for("dashboard")
+    next_url = resolve_next_url(request.form.get("next"))
 
     if not validate_csrf():
         return (

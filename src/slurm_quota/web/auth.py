@@ -49,10 +49,29 @@ def validate_csrf() -> bool:
     return secrets.compare_digest(submitted, expected)
 
 
+def external_app_path(path: str) -> str:
+    """Return a browser path including the WSGI mount prefix (SCRIPT_NAME)."""
+    if path.startswith(("http://", "https://", "//")):
+        return path
+    root = request.script_root or ""
+    if root and (path == root or path.startswith(f"{root}/")):
+        return path
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return f"{root}{path}"
+
+
+def resolve_next_url(raw: str | None = None) -> str:
+    if raw:
+        return external_app_path(raw)
+    return url_for("dashboard")
+
+
 def login_url(*, message: str | None = None) -> str:
     next_url = request.full_path if request.method == "GET" else request.path
     if next_url in ("/login", "/login?"):
         next_url = "/"
+    next_url = external_app_path(next_url)
     query = f"next={quote(next_url, safe='')}"
     if message:
         query = f"{query}&message={quote(message, safe='')}"
