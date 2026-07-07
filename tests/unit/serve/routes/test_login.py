@@ -42,17 +42,26 @@ class TestLoginRoute(ServeRoutesTestCase):
     def test_auth_login_invalid_credentials(self):
         with tempfile.TemporaryDirectory() as tmp:
             site_ini = write_ldap_site_ini(Path(tmp))
-            with patch("slurm_quota.serve.app.LDAPAuthentifier") as m_ldap_cls:
-                m_ldap_cls.return_value.login.side_effect = LDAPAuthenticationError(
-                    "Invalid user or password"
-                )
+            ldap_error = LDAPAuthenticationError("LDAP server unavailable")
+            with (
+                patch("slurm_quota.serve.app.LDAPAuthentifier") as m_ldap_cls,
+                self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            ):
+                m_ldap_cls.return_value.login.side_effect = ldap_error
                 app.setup(serve_conf_defs(), site_ini)
-            client = app.test_client()
-            resp = client.post(
-                "/login",
-                json={"username": "alice", "password": "wrong"},
-            )
+                client = app.test_client()
+                resp = client.post(
+                    "/login",
+                    json={"username": "alice", "password": "wrong"},
+                )
         self.assertEqual(resp.status_code, 401)
+        body = json.loads(resp.data)
+        self.assertEqual(body["error"], "unauthorized")
+        self.assertEqual(body["message"], "Authentication failed")
+        self.assertEqual(
+            log_cm.output,
+            ["ERROR:slurm_quota:LDAP authentication failed: LDAP server unavailable"],
+        )
 
     def test_auth_login_not_found_for_jwt_method(self):
         client = app.test_client()
