@@ -11,6 +11,7 @@ from tests.unit.web.support import (
     auth_enabled,
     configure_web_app,
     extract_csrf,
+    redirect_path,
     roles_users,
     stats_rows,
     web_app,
@@ -244,6 +245,72 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             resp = client.get("/", follow_redirects=False)
         self.assertEqual(resp.status_code, 302)
         self.assertIn("session_expired", resp.headers["Location"])
+
+    def test_login_redirects_to_mount_prefix_after_success(self):
+        mock_api = self._mock_login_client()
+        base_url = "http://localhost/quota"
+        with (
+            auth_enabled(),
+            patch("slurm_quota.web.routes.APIClient", return_value=mock_api),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+            patch("slurm_quota.web.routes.current_role", return_value="admin"),
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            login_redirect = client.get("/", base_url=base_url, follow_redirects=False)
+            self.assertEqual(login_redirect.status_code, 302)
+            self.assertIn("/quota/login", login_redirect.headers["Location"])
+            self.assertIn("next=%2Fquota%2F", login_redirect.headers["Location"])
+
+            login_page = client.get(
+                "/login",
+                base_url=base_url,
+                query_string={"next": "/quota/"},
+            )
+            csrf = extract_csrf(login_page.get_data(as_text=True))
+            resp = client.post(
+                "/login",
+                base_url=base_url,
+                data={
+                    "_csrf": csrf,
+                    "username": "alice",
+                    "password": "secret",
+                    "next": "/quota/",
+                },
+                follow_redirects=False,
+            )
+            self.assertEqual(resp.status_code, 302)
+            # Compare path only: Werkzeug <2.1 autocorrects Location to absolute URLs.
+            self.assertEqual(redirect_path(resp.headers["Location"]), "/quota/")
+
+            dashboard = client.get("/", base_url=base_url)
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn("Signed in as", dashboard.get_data(as_text=True))
+
+    def test_login_post_with_unprefixed_next_under_mount(self):
+        mock_api = self._mock_login_client()
+        base_url = "http://localhost/quota"
+        with (
+            auth_enabled(),
+            patch("slurm_quota.web.routes.APIClient", return_value=mock_api),
+        ):
+            client = web_app().test_client()
+            login_page = client.get("/login", base_url=base_url)
+            csrf = extract_csrf(login_page.get_data(as_text=True))
+            resp = client.post(
+                "/login",
+                base_url=base_url,
+                data={
+                    "_csrf": csrf,
+                    "username": "alice",
+                    "password": "secret",
+                    "next": "/",
+                },
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        # Compare path only: Werkzeug <2.1 autocorrects Location to absolute URLs.
+        self.assertEqual(redirect_path(resp.headers["Location"]), "/quota/")
 
 
 class TestRolesRoutes(SlurmQuotaTestCase):

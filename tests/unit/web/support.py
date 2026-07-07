@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import replace
 from unittest.mock import patch
+from urllib.parse import urlparse
 
 from slurm_quota.web.app import SlurmQuotaWebApp
 from slurm_quota.web.settings import SlurmQuotaWebSettings
@@ -99,3 +100,17 @@ def extract_csrf(html: str) -> str:
     start = html.index(marker) + len(marker)
     end = html.index('"', start)
     return html[start:end]
+
+
+def redirect_path(location: str) -> str:
+    """Return the path from a redirect Location header.
+
+    Werkzeug's Response.autocorrect_location_header rewrites relative
+    Location values to absolute URLs (scheme + host + path). That flag
+    defaulted to True before Werkzeug 2.1 and False since 2.1 (see pallets/
+    werkzeug#2352). Old dev stacks may therefore see http://localhost/quota/
+    while newer dev stacks see /quota/ for the same redirect.
+
+    For this reason, we compare path only, not the full URL.
+    """
+    return urlparse(location).path
