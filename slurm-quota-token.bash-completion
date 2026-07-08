@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+# Bash completion for slurm-quota-token
+
+_slurm_quota_token_complete_users() {
+    compgen -u -- "$1"
+}
+
+_slurm_quota_token_has_username() {
+    local i word
+    for (( i=1; i<COMP_CWORD; i++ )); do
+        word="${COMP_WORDS[i]}"
+        case "$word" in
+            slurm-quota-token|*/slurm-quota-token)
+                continue
+                ;;
+            --debug|-q|--quiet|--version|-h|--help)
+                continue
+                ;;
+            --conf-defs|--config|--duration)
+                ((i++))
+                continue
+                ;;
+            -*)
+                continue
+                ;;
+            *)
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+_slurm_quota_token() {
+    local cur prev
+
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev=""
+    if (( COMP_CWORD > 0 )); then
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+    fi
+
+    case "$prev" in
+        --conf-defs|--config)
+            COMPREPLY=($(compgen -f -- "$cur"))
+            return 0
+            ;;
+        --duration)
+            return 0
+            ;;
+    esac
+
+    local base_opts="-h --help --version --debug -q --quiet --conf-defs --config --duration"
+    COMPREPLY=($(compgen -W "$base_opts" -- "$cur"))
+
+    if ! _slurm_quota_token_has_username && [[ "$cur" != -* ]]; then
+        COMPREPLY+=($(_slurm_quota_token_complete_users "$cur"))
+    fi
+
+    return 0
+}
+
+complete -F _slurm_quota_token slurm-quota-token
