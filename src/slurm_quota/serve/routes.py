@@ -53,6 +53,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("slurm_quota")
 
 _USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+_MAX_REASON_LENGTH = 500
 
 
 def _validate_username(username: str) -> None:
@@ -69,6 +70,25 @@ def _validate_account(account: str) -> None:
             400,
             description="Invalid account",
         )
+
+
+def _parse_optional_reason(payload: dict[str, Any]) -> str | None:
+    reason = payload.get("reason")
+    if reason is None:
+        return None
+    if not isinstance(reason, str):
+        abort(400, description="reason must be a string")
+    reason = reason.strip()
+    if not reason:
+        abort(400, description="reason must not be empty")
+    if "\n" in reason or "\r" in reason:
+        abort(400, description="reason must be a single line")
+    if len(reason) > _MAX_REASON_LENGTH:
+        abort(
+            400,
+            description=f"reason must be at most {_MAX_REASON_LENGTH} characters",
+        )
+    return reason
 
 
 def fetch_stats(
@@ -430,6 +450,7 @@ def set_quota(entity: str, name: str, resource: str) -> Any:
     quota_minutes = payload.get("quota_minutes")
     if not isinstance(quota_minutes, int) or quota_minutes < -1:
         abort(400, description="quota_minutes must be an integer >= -1")
+    reason = _parse_optional_reason(payload)
     try:
         if entity == "users":
             _validate_username(name)
@@ -451,12 +472,13 @@ def set_quota(entity: str, name: str, resource: str) -> Any:
         logger.error("set %s %s quota failed: %s", entity_label, resource, exc)
         return jsonify({"error": "db_error"}), 500
     logger.info(
-        "quota %s %s: manager=%s name=%s value=%s",
+        "quota %s %s: manager=%s name=%s value=%s reason=%s",
         entity_label,
         resource,
         cast(str, request.user.login),
         name,
         quota_minutes,
+        "n/a" if reason is None else repr(reason),
     )
     return "", 204
 
@@ -477,6 +499,7 @@ def adjust_consumption(entity: str, name: str, resource: str) -> Any:
     delta_minutes = payload.get("delta_minutes")
     if not isinstance(delta_minutes, int):
         abort(400, description="delta_minutes must be an integer")
+    reason = _parse_optional_reason(payload)
     try:
         total = db_adjust_consumed_minutes(entity, name, resource, delta_minutes)
     except ValueError as exc:
@@ -485,13 +508,14 @@ def adjust_consumption(entity: str, name: str, resource: str) -> Any:
         logger.error("adjust %s %s consumption failed: %s", entity, resource, exc)
         return jsonify({"error": "db_error"}), 500
     logger.info(
-        "consumption %s %s: manager=%s name=%s delta=%+d total=%d",
+        "consumption %s %s: manager=%s name=%s delta=%+d total=%d reason=%s",
         entity,
         resource,
         cast(str, request.user.login),
         name,
         delta_minutes,
         total,
+        "n/a" if reason is None else repr(reason),
     )
     return jsonify({"total_consumed_minutes": total})
 
