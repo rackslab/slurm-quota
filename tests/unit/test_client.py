@@ -501,6 +501,18 @@ class TestAPIClientQuotas(SlurmQuotaTestCase):
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"quota_minutes": 500})
 
+    def test_set_user_cpu_quota_sends_reason_when_provided(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").set_user_cpu_quota(
+                "bob", 500, reason="project extension"
+            )
+        req = m_urlopen.call_args[0][0]
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body, {"quota_minutes": 500, "reason": "project extension"})
+
     def test_set_account_gpu_quota_sends_put(self):
         with patch(
             "slurm_quota.client.urlopen",
@@ -659,6 +671,18 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
         self.assertIn("/consumption/user/bob/cpu", req.full_url)
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"delta_minutes": 30})
+
+    def test_adjust_consumption_sends_reason_when_provided(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"total_consumed_minutes": 130}),
+        ) as m_urlopen:
+            APIClient(token="jwt").adjust_consumption(
+                "user", "bob", "cpu", 30, reason="correct billing error"
+            )
+        req = m_urlopen.call_args[0][0]
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body, {"delta_minutes": 30, "reason": "correct billing error"})
 
     def test_adjust_consumption_sends_patch_for_account_gpu(self):
         with patch(
