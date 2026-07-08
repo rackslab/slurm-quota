@@ -78,10 +78,6 @@
   <button type="submit">Apply</button>
 </form>
 
-{% if error %}
-<div class="error">{{ error }}</div>
-{% endif %}
-
 {% if users %}
 <section class="stats-section">
 <h2>Users</h2>
@@ -178,7 +174,7 @@
 </section>
 {% endif %}
 
-{% if not users and not accounts and not error %}
+{% if not users and not accounts %}
 <p>No stats returned by service.</p>
 {% endif %}
 </div>
