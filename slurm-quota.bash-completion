@@ -90,7 +90,7 @@ _slurm_quota() {
             COMPREPLY=($(_slurm_quota_complete_accounts "$cur"))
             return 0
             ;;
-        --minutes|--hours|--user-cpu|--user-gpu|--account-cpu|--account-gpu)
+        --minutes|--hours|--user-cpu|--user-gpu|--account-cpu|--account-gpu|--reason)
             return 0
             ;;
     esac
@@ -115,20 +115,28 @@ _slurm_quota() {
             COMPREPLY+=($(_slurm_quota_complete_users "$cur"))
             ;;
         adjust)
-            COMPREPLY=($(compgen -W "$base_opts --user --account --cpu --gpu --minutes --hours" -- "$cur"))
+            COMPREPLY=($(compgen -W "$base_opts --user --account --cpu --gpu --minutes --hours --reason" -- "$cur"))
             ;;
         user-quota|user-gpu-quota)
-            if (( cword == subcmd_idx + 1 )); then
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "$base_opts --reason" -- "$cur"))
+            elif (( cword == subcmd_idx + 1 )); then
                 COMPREPLY=($(_slurm_quota_complete_users "$cur"))
             elif (( cword == subcmd_idx + 2 )); then
                 COMPREPLY=($(compgen -W "-1" -- "$cur"))
+            else
+                COMPREPLY=($(compgen -W "$base_opts --reason" -- "$cur"))
             fi
             ;;
         account-quota|account-gpu-quota)
-            if (( cword == subcmd_idx + 1 )); then
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=($(compgen -W "$base_opts --reason" -- "$cur"))
+            elif (( cword == subcmd_idx + 1 )); then
                 COMPREPLY=($(_slurm_quota_complete_accounts "$cur"))
             elif (( cword == subcmd_idx + 2 )); then
                 COMPREPLY=($(compgen -W "-1" -- "$cur"))
+            else
+                COMPREPLY=($(compgen -W "$base_opts --reason" -- "$cur"))
             fi
             ;;
         set-gpu-factor)
