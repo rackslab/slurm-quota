@@ -328,6 +328,11 @@ def roles_manager_accounts_post() -> Any:
     return redirect(url_for("roles"))
 
 
+def _optional_form_reason() -> str | None:
+    reason = (request.form.get("reason") or "").strip()
+    return reason or None
+
+
 def quotas_post() -> Any:
     role = current_role()
     if role not in ("admin", "operator"):
@@ -360,14 +365,15 @@ def quotas_post() -> Any:
 
     try:
         api = api_client()
+        reason = _optional_form_reason()
         if target == "user" and resource == "cpu":
-            api.set_user_cpu_quota(name, quota_minutes)
+            api.set_user_cpu_quota(name, quota_minutes, reason=reason)
         elif target == "user" and resource == "gpu":
-            api.set_user_gpu_quota(name, quota_minutes)
+            api.set_user_gpu_quota(name, quota_minutes, reason=reason)
         elif target == "account" and resource == "cpu":
-            api.set_account_cpu_quota(name, quota_minutes)
+            api.set_account_cpu_quota(name, quota_minutes, reason=reason)
         elif target == "account" and resource == "gpu":
-            api.set_account_gpu_quota(name, quota_minutes)
+            api.set_account_gpu_quota(name, quota_minutes, reason=reason)
         flash(f"Quota updated for {name}.", "success")
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
@@ -405,7 +411,8 @@ def consumption_post() -> Any:
 
     try:
         api = api_client()
-        api.adjust_consumption(target, name, resource, delta_minutes)
+        reason = _optional_form_reason()
+        api.adjust_consumption(target, name, resource, delta_minutes, reason=reason)
         flash(f"Consumption adjusted for {name}.", "success")
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
