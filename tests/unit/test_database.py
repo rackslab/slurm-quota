@@ -417,6 +417,39 @@ class TestUpdateUserAndAccountResources(SlurmQuotaTestCase):
         self.assertEqual(u, (5000, 600))
         self.assertEqual(a, (80000, 9000))
 
+    def test_update_user_and_account_resources_does_not_open_nested_db_connection(self):
+        init_database()
+        open_connections = 0
+        real_connect_database = connect_database
+
+        def tracking_connect_database():
+            conn = real_connect_database()
+
+            class TrackingConnection:
+                def __enter__(self):
+                    nonlocal open_connections
+                    open_connections += 1
+                    conn.__enter__()
+                    return conn
+
+                def __exit__(self, exc_type, exc, tb):
+                    nonlocal open_connections
+                    open_connections -= 1
+                    return conn.__exit__(exc_type, exc, tb)
+
+                def __getattr__(self, name):
+                    return getattr(conn, name)
+
+            return TrackingConnection()
+
+        with patch(
+            "slurm_quota.database.connect_database",
+            side_effect=tracking_connect_database,
+        ):
+            update_user_and_account_resources("u1", "a1", 10, None, 0)
+
+        self.assertEqual(open_connections, 0)
+
     def test_update_user_and_account_resources(self):
         init_database()
         status = update_user_and_account_resources("u1", "a1", 10, None, 2)
