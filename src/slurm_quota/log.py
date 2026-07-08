@@ -19,18 +19,9 @@ def setup_logging(debug: bool = False, quiet: bool = False) -> None:
         debug: If True, set logging level to DEBUG
         quiet: If True, set logging level to WARNING
     """
-    root = logging.getLogger()
-    # RFL setup_logger only adds a handler; clear first so repeated calls
-    # (e.g. in tests) do not duplicate log lines, like basicConfig(force=True).
-    root.handlers.clear()
-
     setup_logger(
         debug=debug,
+        level="WARNING" if quiet else None,
         log_flags=["slurm_quota"],
         debug_flags=["slurm_quota"] if debug else [],
     )
-
-    if quiet:
-        root.setLevel(logging.WARNING)
-        for handler in root.handlers:
-            handler.setLevel(logging.WARNING)

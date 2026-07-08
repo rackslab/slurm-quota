@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "GPL-2.0-or-later" }
 dependencies = [
-  "RFL.log>=1.8.0",
+  "RFL.log>=1.9.0",
 ]
 
 [project.scripts]
