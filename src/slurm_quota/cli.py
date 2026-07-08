@@ -233,6 +233,10 @@ def main():
         type=parse_signed_int,
         help="Signed delta in hours (must include + or - sign)",
     )
+    adjust_parser.add_argument(
+        "--reason",
+        help="Optional reason for the adjustment (recorded in audit logs)",
+    )
 
     # User-quota command
     user_quota_parser = subparsers.add_parser(
@@ -242,6 +246,10 @@ def main():
     user_quota_parser.add_argument("username", help="Username to set quota for")
     user_quota_parser.add_argument(
         "quota", type=int, help="Quota in CPU minutes (-1 for unlimited)"
+    )
+    user_quota_parser.add_argument(
+        "--reason",
+        help="Optional reason for the change (recorded in audit logs)",
     )
 
     # Account-quota command
@@ -253,6 +261,10 @@ def main():
     account_quota_parser.add_argument(
         "quota", type=int, help="Quota in CPU minutes (-1 for unlimited)"
     )
+    account_quota_parser.add_argument(
+        "--reason",
+        help="Optional reason for the change (recorded in audit logs)",
+    )
 
     # User-gpu-quota command
     user_gpu_quota_parser = subparsers.add_parser(
@@ -262,6 +274,10 @@ def main():
     user_gpu_quota_parser.add_argument("username", help="Username to set GPU quota for")
     user_gpu_quota_parser.add_argument(
         "quota", type=int, help="Quota in GPU minutes (-1 for unlimited)"
+    )
+    user_gpu_quota_parser.add_argument(
+        "--reason",
+        help="Optional reason for the change (recorded in audit logs)",
     )
 
     # Account-gpu-quota command
@@ -274,6 +290,10 @@ def main():
     )
     account_gpu_quota_parser.add_argument(
         "quota", type=int, help="Quota in GPU minutes (-1 for unlimited)"
+    )
+    account_gpu_quota_parser.add_argument(
+        "--reason",
+        help="Optional reason for the change (recorded in audit logs)",
     )
 
     # GPU factors command (show)
@@ -369,15 +389,16 @@ def main():
             args.gpu,
             args.minutes,
             args.hours,
+            args.reason,
         )
     elif args.command == "user-quota":
-        set_user_quota_command(args.username, args.quota)
+        set_user_quota_command(args.username, args.quota, args.reason)
     elif args.command == "account-quota":
-        set_account_quota_command(args.account, args.quota)
+        set_account_quota_command(args.account, args.quota, args.reason)
     elif args.command == "user-gpu-quota":
-        set_user_gpu_quota_command(args.username, args.quota)
+        set_user_gpu_quota_command(args.username, args.quota, args.reason)
     elif args.command == "account-gpu-quota":
-        set_account_gpu_quota_command(args.account, args.quota)
+        set_account_gpu_quota_command(args.account, args.quota, args.reason)
     elif args.command == "gpu-factors":
         show_gpu_factors_command()
     elif args.command == "set-gpu-factor":

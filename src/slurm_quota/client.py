@@ -251,38 +251,58 @@ class APIClient:
             success_status=HTTPStatus.NO_CONTENT,
         )
 
-    def set_user_cpu_quota(self, username: str, quota_minutes: int) -> None:
+    def set_user_cpu_quota(
+        self, username: str, quota_minutes: int, *, reason: str | None = None
+    ) -> None:
+        body: dict[str, Any] = {"quota_minutes": quota_minutes}
+        if reason is not None:
+            body["reason"] = reason
         self._api_request(
             "PUT",
             f"quotas/users/{username}/cpu",
-            body={"quota_minutes": quota_minutes},
+            body=body,
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
         )
 
-    def set_user_gpu_quota(self, username: str, quota_minutes: int) -> None:
+    def set_user_gpu_quota(
+        self, username: str, quota_minutes: int, *, reason: str | None = None
+    ) -> None:
+        body: dict[str, Any] = {"quota_minutes": quota_minutes}
+        if reason is not None:
+            body["reason"] = reason
         self._api_request(
             "PUT",
             f"quotas/users/{username}/gpu",
-            body={"quota_minutes": quota_minutes},
+            body=body,
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
         )
 
-    def set_account_cpu_quota(self, account: str, quota_minutes: int) -> None:
+    def set_account_cpu_quota(
+        self, account: str, quota_minutes: int, *, reason: str | None = None
+    ) -> None:
+        body: dict[str, Any] = {"quota_minutes": quota_minutes}
+        if reason is not None:
+            body["reason"] = reason
         self._api_request(
             "PUT",
             f"quotas/accounts/{account}/cpu",
-            body={"quota_minutes": quota_minutes},
+            body=body,
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
         )
 
-    def set_account_gpu_quota(self, account: str, quota_minutes: int) -> None:
+    def set_account_gpu_quota(
+        self, account: str, quota_minutes: int, *, reason: str | None = None
+    ) -> None:
+        body: dict[str, Any] = {"quota_minutes": quota_minutes}
+        if reason is not None:
+            body["reason"] = reason
         self._api_request(
             "PUT",
             f"quotas/accounts/{account}/gpu",
-            body={"quota_minutes": quota_minutes},
+            body=body,
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
         )
@@ -333,12 +353,17 @@ class APIClient:
         name: str,
         resource: Literal["cpu", "gpu"],
         delta_minutes: int,
+        *,
+        reason: str | None = None,
     ) -> int:
         path = f"consumption/{target}/{name}/{resource}"
+        body: dict[str, Any] = {"delta_minutes": delta_minutes}
+        if reason is not None:
+            body["reason"] = reason
         payload = self._api_request(
             "PATCH",
             path,
-            body={"delta_minutes": delta_minutes},
+            body=body,
             require_token=True,
         )
         total = payload.get("total_consumed_minutes")
