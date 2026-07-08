@@ -281,10 +281,11 @@ responses: `username` limits users and accounts to that user's Slurm association
 > [!NOTE]
 > The `username` and `account` query parameters are mutually exclusive.
 
-Quota routes accept `{"quota_minutes": <int>}` (`-1` means unlimited). Default quota routes accept a partial object with
-any of `user_cpu_minutes`, `user_gpu_minutes`, `account_cpu_minutes`, `account_gpu_minutes` (`-1` means unlimited);
-defaults apply only to newly auto-created users and accounts. Consumption routes accept
-`{"delta_minutes": <signed int>}` and return `{"total_consumed_minutes": <int>}`. GPU factor routes return
+Quota routes accept `{"quota_minutes": <int>}` (`-1` means unlimited), with an optional single-line
+`{"reason": "<string>"}`. Default quota routes accept a partial object with any of `user_cpu_minutes`,
+`user_gpu_minutes`, `account_cpu_minutes`, `account_gpu_minutes` (`-1` means unlimited); defaults apply only to newly
+auto-created users and accounts. Consumption routes accept `{"delta_minutes": <signed int>}` and return
+`{"total_consumed_minutes": <int>}`, with an optional single-line `{"reason": "<string>"}`. GPU factor routes return
 `{"default_factor": <float>, "factors": {<gpu_type>: <float>, ...}}` or accept `{"factor": <positive float>}`.
 
 #### CLI client<a name="cli-client"></a>
