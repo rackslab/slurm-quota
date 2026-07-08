@@ -146,6 +146,15 @@ body {
   margin: 0.5rem 0 1rem;
 }
 
+.success {
+  background: #dcfce7;
+  color: #14532d;
+  border: 1px solid #bbf7d0;
+  border-radius: 0.35rem;
+  padding: 0.6rem 0.75rem;
+  margin: 0.5rem 0 1rem;
+}
+
 .page-title {
   margin: 0;
   font-size: 1.75rem;

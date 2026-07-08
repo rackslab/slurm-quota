@@ -14,6 +14,7 @@ from flask import (
     Response,
     abort,
     current_app,
+    flash,
     redirect,
     render_template,
     request,
@@ -105,7 +106,6 @@ def login() -> Response | str:
         info_message = "Your session has expired. Please sign in again."
     return render_template(
         "login.html",
-        error=None,
         info_message=info_message,
         csrf_token=csrf_token(),
         next_url=resolve_next_url(request.args.get("next")),
@@ -118,10 +118,10 @@ def login_post() -> Any:
     next_url = resolve_next_url(request.form.get("next"))
 
     if not validate_csrf():
+        flash("Invalid or missing CSRF token.", "error")
         return (
             render_template(
                 "login.html",
-                error="Invalid or missing CSRF token.",
                 csrf_token=csrf_token(),
                 next_url=next_url,
                 auth_required=True,
@@ -132,9 +132,9 @@ def login_post() -> Any:
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
     if not username or not password:
+        flash("Username and password are required.", "error")
         return render_template(
             "login.html",
-            error="Username and password are required.",
             csrf_token=csrf_token(),
             next_url=next_url,
             auth_required=True,
@@ -147,24 +147,24 @@ def login_post() -> Any:
         role = payload["role"]
     except ServiceHTTPError as exc:
         if exc.status == 401:
+            flash("Invalid username or password.", "error")
             return render_template(
                 "login.html",
-                error="Invalid username or password.",
                 csrf_token=csrf_token(),
                 next_url=next_url,
                 auth_required=True,
             )
+        flash(f"Login failed: HTTP {exc.status}", "error")
         return render_template(
             "login.html",
-            error=f"Login failed: HTTP {exc.status}",
             csrf_token=csrf_token(),
             next_url=next_url,
             auth_required=True,
         )
     except (ServiceUnreachableError, ValueError) as exc:
+        flash(f"Login failed: {exc}", "error")
         return render_template(
             "login.html",
-            error=f"Login failed: {exc}",
             csrf_token=csrf_token(),
             next_url=next_url,
             auth_required=True,
@@ -190,7 +190,6 @@ def dashboard() -> Response | str:
     role = current_role()
     username, account, display_hours = _resolve_dashboard_filters()
 
-    error: str | None = None
     users: list[dict[str, Any]] = []
     accounts: list[dict[str, Any]] = []
 
@@ -201,7 +200,7 @@ def dashboard() -> Response | str:
         logged_in_username = None
 
     if username and account:
-        error = "username and account filters are mutually exclusive."
+        flash("username and account filters are mutually exclusive.", "error")
     else:
         try:
             users_raw, accounts_raw = api_client().stats(
@@ -217,13 +216,12 @@ def dashboard() -> Response | str:
             if exc.status == 401:
                 session.clear()
                 return redirect(login_url(message="session_expired"))
-            error = f"Failed to retrieve stats from service: {exc}"
+            flash(f"Failed to retrieve stats from service: {exc}", "error")
         except ServiceUnreachableError as exc:
-            error = f"Failed to retrieve stats from service: {exc}"
+            flash(f"Failed to retrieve stats from service: {exc}", "error")
 
     return render_template(
         "dashboard.html",
-        error=error,
         users=users,
         accounts=accounts,
         selected_username=username or "",
@@ -242,7 +240,6 @@ def roles() -> Response | str:
     if role != "admin":
         return redirect(url_for("dashboard"))
 
-    error: str | None = None
     users: list[dict[str, Any]] = []
     try:
         users = api_client().users_roles()
@@ -250,13 +247,12 @@ def roles() -> Response | str:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-        error = f"Failed to retrieve roles from service: HTTP {exc.status}"
+        flash(f"Failed to retrieve roles from service: HTTP {exc.status}", "error")
     except ServiceUnreachableError as exc:
-        error = f"Failed to retrieve roles from service: {exc}"
+        flash(f"Failed to retrieve roles from service: {exc}", "error")
 
     return render_template(
         "roles.html",
-        error=error,
         users=users,
         csrf_token=csrf_token(),
     )
@@ -280,14 +276,19 @@ def roles_post() -> Any:
         api = api_client()
         if action == "grant" and target_role in ("operator", "manager"):
             api.grant_role(cast(Literal["operator", "manager"], target_role), username)
+            flash(f"Role updated for {username}.", "success")
         elif action == "revoke" and target_role in ("operator", "manager"):
             api.revoke_role(cast(Literal["operator", "manager"], target_role), username)
+            flash(f"Role updated for {username}.", "success")
+        else:
+            flash("Unknown or invalid role action.", "error")
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-    except ServiceUnreachableError:
-        pass
+        flash(f"Failed to update role: HTTP {exc.status}", "error")
+    except ServiceUnreachableError as exc:
+        flash(f"Failed to update role: {exc}", "error")
 
     return redirect(url_for("roles"))
 
@@ -310,14 +311,19 @@ def roles_manager_accounts_post() -> Any:
         api = api_client()
         if action == "add":
             api.add_manager_account(username, account)
+            flash("Manager account updated.", "success")
         elif action == "remove":
             api.remove_manager_account(username, account)
+            flash("Manager account updated.", "success")
+        else:
+            flash("Unknown or invalid manager account action.", "error")
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-    except ServiceUnreachableError:
-        pass
+        flash(f"Failed to update manager account: HTTP {exc.status}", "error")
+    except ServiceUnreachableError as exc:
+        flash(f"Failed to update manager account: {exc}", "error")
 
     return redirect(url_for("roles"))
 
@@ -337,6 +343,7 @@ def quotas_post() -> Any:
     quota_raw = (request.form.get("quota_minutes") or "").strip()
 
     if not name or target not in ("user", "account") or resource not in ("cpu", "gpu"):
+        flash("Invalid quota target or resource.", "error")
         return redirect(url_for("dashboard"))
 
     if unlimited:
@@ -345,8 +352,10 @@ def quotas_post() -> Any:
         try:
             quota_minutes = int(quota_raw)
         except ValueError:
+            flash("Invalid quota value.", "error")
             return redirect(url_for("dashboard"))
         if quota_minutes < -1:
+            flash("Quota value must be -1 or greater.", "error")
             return redirect(url_for("dashboard"))
 
     try:
@@ -359,12 +368,14 @@ def quotas_post() -> Any:
             api.set_account_cpu_quota(name, quota_minutes)
         elif target == "account" and resource == "gpu":
             api.set_account_gpu_quota(name, quota_minutes)
+        flash(f"Quota updated for {name}.", "success")
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-    except ServiceUnreachableError:
-        pass
+        flash(f"Failed to update quota: HTTP {exc.status}", "error")
+    except ServiceUnreachableError as exc:
+        flash(f"Failed to update quota: {exc}", "error")
 
     return redirect(url_for("dashboard"))
 
@@ -383,21 +394,25 @@ def consumption_post() -> Any:
     delta_raw = (request.form.get("delta_minutes") or "").strip()
 
     if not name or target not in ("user", "account") or resource not in ("cpu", "gpu"):
+        flash("Invalid consumption target or resource.", "error")
         return redirect(url_for("dashboard"))
 
     try:
         delta_minutes = int(delta_raw)
     except ValueError:
+        flash("Invalid consumption adjustment value.", "error")
         return redirect(url_for("dashboard"))
 
     try:
         api = api_client()
         api.adjust_consumption(target, name, resource, delta_minutes)
+        flash(f"Consumption adjusted for {name}.", "success")
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-    except ServiceUnreachableError:
-        pass
+        flash(f"Failed to adjust consumption: HTTP {exc.status}", "error")
+    except ServiceUnreachableError as exc:
+        flash(f"Failed to adjust consumption: {exc}", "error")
 
     return redirect(url_for("dashboard"))
