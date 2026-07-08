@@ -79,6 +79,11 @@ class TestShowUserStats(SlurmQuotaTestCase):
         return buf.getvalue()
 
     def _mock_stats(self, return_value=None, side_effect=None):
+        load_patcher = patch(
+            "slurm_quota.commands.ClientToken.load_value", return_value="token"
+        )
+        load_patcher.start()
+        self.addCleanup(load_patcher.stop)
         patcher = patch("slurm_quota.commands.APIClient")
         m_api = patcher.start()
         self.addCleanup(patcher.stop)
@@ -279,6 +284,21 @@ class TestShowUserStats(SlurmQuotaTestCase):
         ):
             show_user_stats(show_all=False)
         self.assertEqual(cm.exception.code, 1)
+
+    def test_show_user_stats_exits_when_no_token(self):
+        config_home = Path(self._tmp.name) / "empty-config"
+        self.env({"XDG_CONFIG_HOME": str(config_home), "SLURM_QUOTA_TOKEN": ""})
+        with (
+            patch("slurm_quota.commands.ClientToken.load_value", return_value=None),
+            patch("slurm_quota.commands.APIClient") as m_api,
+            self.assertLogs("slurm_quota", level="INFO") as log_cm,
+            self.assertRaises(SystemExit) as cm,
+        ):
+            show_user_stats(username="alice", show_all=False)
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("No API token available", log_cm.output[0])
+        self.assertIn(RELOGIN_GUIDANCE, log_cm.output[1])
+        m_api.assert_not_called()
 
     def test_stats_expired_token_reports_relogin_guidance(self):
         self._mock_stats(side_effect=ServiceHTTPError(401, message="Token is expired"))

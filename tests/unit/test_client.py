@@ -68,7 +68,7 @@ class TestAPIClientStats(SlurmQuotaTestCase):
         with patch(
             "slurm_quota.client.urlopen", return_value=_FakeUrlopenResponse(payload)
         ):
-            users, accounts = APIClient().stats("alice", None, False)
+            users, accounts = APIClient(token="jwt").stats("alice", None, False)
         self.assertEqual(len(users), 1)
         self.assertEqual(users[0]["username"], "alice")
         self.assertEqual(len(accounts), 1)
@@ -76,7 +76,7 @@ class TestAPIClientStats(SlurmQuotaTestCase):
 
     def test_empty_payload_lists_when_keys_missing(self):
         with patch("slurm_quota.client.urlopen", return_value=_FakeUrlopenResponse({})):
-            users, accounts = APIClient().stats(None, None, True)
+            users, accounts = APIClient(token="jwt").stats(None, None, True)
         self.assertEqual(users, [])
         self.assertEqual(accounts, [])
 
@@ -85,7 +85,7 @@ class TestAPIClientStats(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            APIClient().stats("alice", None, False)
+            APIClient(token="jwt").stats("alice", None, False)
         req = m_urlopen.call_args[0][0]
         self.assertIn("username=alice", req.full_url)
 
@@ -94,7 +94,7 @@ class TestAPIClientStats(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            APIClient().stats("alice", None, True)
+            APIClient(token="jwt").stats("alice", None, True)
         req = m_urlopen.call_args[0][0]
         self.assertNotIn("username=", req.full_url)
 
@@ -103,7 +103,7 @@ class TestAPIClientStats(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            APIClient().stats(None, "projX", False)
+            APIClient(token="jwt").stats(None, "projX", False)
         req = m_urlopen.call_args[0][0]
         self.assertIn("account=projX", req.full_url)
 
@@ -112,7 +112,7 @@ class TestAPIClientStats(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            APIClient(base_url="http://custom.example:9999/api/").stats(
+            APIClient(token="jwt", base_url="http://custom.example:9999/api/").stats(
                 None, None, True
             )
         req = m_urlopen.call_args[0][0]
@@ -130,7 +130,7 @@ class TestAPIClientStats(SlurmQuotaTestCase):
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
-            APIClient().stats(None, None, True)
+            APIClient(token="jwt").stats(None, None, True)
         self.assertEqual(cm.exception.status, 500)
 
     def test_urlerror_is_wrapped(self):
@@ -138,7 +138,7 @@ class TestAPIClientStats(SlurmQuotaTestCase):
             patch("slurm_quota.client.urlopen", side_effect=URLError("boom")),
             self.assertRaises(ServiceUnreachableError) as cm,
         ):
-            APIClient().stats(None, None, True)
+            APIClient(token="jwt").stats(None, None, True)
         self.assertEqual(str(cm.exception), "boom")
 
     def test_adds_authorization_header_when_token_set(self):
@@ -150,15 +150,9 @@ class TestAPIClientStats(SlurmQuotaTestCase):
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.get_header("Authorization"), "Bearer session-jwt")
 
-    def test_omits_authorization_header_when_token_is_none(self):
-        self.env({"SLURM_QUOTA_TOKEN": "env-jwt"})
-        with patch(
-            "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse(_sample_payload()),
-        ) as m_urlopen:
+    def test_stats_raises_value_error_when_token_missing(self):
+        with self.assertRaises(ValueError):
             APIClient(token=None).stats(None, None, True)
-        req = m_urlopen.call_args[0][0]
-        self.assertIsNone(req.get_header("Authorization"))
 
 
 class TestAPIClientHTTPError(SlurmQuotaTestCase):
@@ -712,7 +706,7 @@ class TestAPIClientTls(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            APIClient().stats(None, None, True)
+            APIClient(token="jwt").stats(None, None, True)
         self.assertIsNone(m_urlopen.call_args.kwargs.get("context"))
 
     def test_https_url_passes_ssl_context(self):
@@ -720,7 +714,9 @@ class TestAPIClientTls(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse(_sample_payload()),
         ) as m_urlopen:
-            APIClient(base_url="https://controller:9911/").stats(None, None, True)
+            APIClient(token="jwt", base_url="https://controller:9911/").stats(
+                None, None, True
+            )
         context = m_urlopen.call_args.kwargs.get("context")
         self.assertIsInstance(context, ssl.SSLContext)
 
@@ -734,6 +730,6 @@ class TestAPIClientTls(SlurmQuotaTestCase):
                     return_value=_FakeUrlopenResponse(_sample_payload()),
                 ) as m_urlopen,
             ):
-                APIClient().stats(None, None, True)
+                APIClient(token="jwt").stats(None, None, True)
         context = m_urlopen.call_args.kwargs.get("context")
         self.assertIsInstance(context, ssl.SSLContext)

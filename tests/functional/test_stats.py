@@ -10,11 +10,11 @@ from unittest.mock import patch
 from slurm_quota.commands import RELOGIN_GUIDANCE
 from slurm_quota.token import ClientToken
 from tests.functional import functional_base
-from tests.functional.functional_base import FunctionalCLIBase
+from tests.functional.functional_base import FunctionalAPICliBase, FunctionalCLIBase
 from tests.testing_utils import dedent_lines, fake_http_error
 
 
-class TestStatsCommand(FunctionalCLIBase):
+class TestStatsCommand(FunctionalAPICliBase):
     def _run_stats(
         self,
         argv: list[str],
@@ -373,3 +373,10 @@ class TestStatsCommand(FunctionalCLIBase):
             self.run_cli_main_exit(["slurm-quota", "stats", "alice"], 1)
         self.assertIn("expired", log_cm.output[0].lower())
         self.assertIn(RELOGIN_GUIDANCE, log_cm.output[1])
+
+    def test_stats_requires_token(self):
+        self.env({"SLURM_QUOTA_TOKEN": ""})
+        ClientToken.path().unlink()
+        with self.assertLogs("slurm_quota", level="ERROR") as log_cm:
+            self.run_cli_main_exit(["slurm-quota", "stats"], 1)
+        self.assertIn("No API token available", log_cm.output[0])
