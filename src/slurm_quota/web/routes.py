@@ -251,10 +251,18 @@ def roles() -> Response | str:
     except ServiceUnreachableError as exc:
         flash(f"Failed to retrieve roles from service: {exc}", "error")
 
+    logged_in_username = session.get("username")
+    if isinstance(logged_in_username, str):
+        logged_in_username = logged_in_username or None
+    else:
+        logged_in_username = None
+
     return render_template(
         "roles.html",
         users=users,
         csrf_token=csrf_token(),
+        auth_required=True,
+        logged_in_username=logged_in_username,
     )
 
 
