@@ -331,9 +331,14 @@ class TestRolesRoutes(SlurmQuotaTestCase):
             resp = client.get("/roles")
         self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
-        self.assertIn("Manager roles", body)
+        self.assertIn("slurm-quota", body)
+        self.assertIn("Back to dashboard", body)
         self.assertIn("bob", body)
         self.assertIn("carol", body)
+        self.assertIn('id="role-change-dialog"', body)
+        self.assertIn('id="manager-account-add-dialog"', body)
+        self.assertIn('data-action="role-change"', body)
+        self.assertNotIn('<button type="submit">Grant operator</button>', body)
         m_client.return_value.users_roles.assert_called_once()
 
     def test_roles_redirects_non_admin_to_dashboard(self):
