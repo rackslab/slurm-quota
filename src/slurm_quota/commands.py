@@ -117,10 +117,12 @@ def create_status_bar(used: int, total: int, width: int = 20) -> str:
     return f"[{colored_bar}] {percentage:6.1%}"
 
 
-def set_user_quota_command(username: str, quota: int) -> None:
+def set_user_quota_command(
+    username: str, quota: int, reason: Optional[str] = None
+) -> None:
     """Set user CPU quota via the REST API (operator or admin role required)."""
     try:
-        _api_client_from_token().set_user_cpu_quota(username, quota)
+        _api_client_from_token().set_user_cpu_quota(username, quota, reason=reason)
         print(f"Successfully set quota for user {username}: {quota} CPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
@@ -133,10 +135,12 @@ def set_user_quota_command(username: str, quota: int) -> None:
         _handle_unreachable_error(exc)
 
 
-def set_account_quota_command(account: str, quota: int) -> None:
+def set_account_quota_command(
+    account: str, quota: int, reason: Optional[str] = None
+) -> None:
     """Set account CPU quota via the REST API (operator or admin role required)."""
     try:
-        _api_client_from_token().set_account_cpu_quota(account, quota)
+        _api_client_from_token().set_account_cpu_quota(account, quota, reason=reason)
         print(f"Successfully set quota for account {account}: {quota} CPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
@@ -149,10 +153,12 @@ def set_account_quota_command(account: str, quota: int) -> None:
         _handle_unreachable_error(exc)
 
 
-def set_user_gpu_quota_command(username: str, quota: int) -> None:
+def set_user_gpu_quota_command(
+    username: str, quota: int, reason: Optional[str] = None
+) -> None:
     """Set user GPU quota via the REST API (operator or admin role required)."""
     try:
-        _api_client_from_token().set_user_gpu_quota(username, quota)
+        _api_client_from_token().set_user_gpu_quota(username, quota, reason=reason)
         print(f"Successfully set GPU quota for user {username}: {quota} GPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
@@ -165,10 +171,12 @@ def set_user_gpu_quota_command(username: str, quota: int) -> None:
         _handle_unreachable_error(exc)
 
 
-def set_account_gpu_quota_command(account: str, quota: int) -> None:
+def set_account_gpu_quota_command(
+    account: str, quota: int, reason: Optional[str] = None
+) -> None:
     """Set account GPU quota via the REST API (operator or admin role required)."""
     try:
-        _api_client_from_token().set_account_gpu_quota(account, quota)
+        _api_client_from_token().set_account_gpu_quota(account, quota, reason=reason)
         print(f"Successfully set GPU quota for account {account}: {quota} GPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
@@ -188,6 +196,7 @@ def adjust_command(
     gpu: bool,
     minutes: Optional[int],
     hours: Optional[int],
+    reason: Optional[str] = None,
 ) -> None:
     """Adjust consumed CPU/GPU time via the REST API.
 
@@ -213,7 +222,7 @@ def adjust_command(
 
         api = _api_client_from_token()
         new_total = api.adjust_consumption(
-            target_type, target_name, resource, delta_minutes
+            target_type, target_name, resource, delta_minutes, reason=reason
         )
 
         delta_source = minutes if minutes is not None else hours
