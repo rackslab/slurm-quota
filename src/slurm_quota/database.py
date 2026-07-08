@@ -63,35 +63,32 @@ def enable_wal_mode(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def get_default_quota_settings() -> dict[str, int]:
+def get_default_quota_settings(conn: sqlite3.Connection) -> dict[str, int]:
     """
     Return configured default quotas used for new users/accounts.
 
-    Missing or invalid values fall back to -1 (unlimited) for robustness.
+    Settings are read through conn. Missing or invalid values fall back to -1
+    (unlimited) for robustness.
     """
     defaults = dict(DEFAULT_QUOTA_SETTINGS)
 
-    if not os.path.exists(slurm_quota.DB_PATH):
-        return defaults
-
     try:
-        with connect_database() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?)",
-                tuple(DEFAULT_QUOTA_SETTINGS.keys()),
-            )
-            for key, value in cursor.fetchall():
-                if key in defaults:
-                    try:
-                        defaults[key] = int(value)
-                    except (TypeError, ValueError):
-                        logger.warning(
-                            "Invalid default quota setting for %s=%r; using %d",
-                            key,
-                            value,
-                            DEFAULT_QUOTA_SETTINGS[key],
-                        )
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?)",
+            tuple(DEFAULT_QUOTA_SETTINGS.keys()),
+        )
+        for key, value in cursor.fetchall():
+            if key in defaults:
+                try:
+                    defaults[key] = int(value)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Invalid default quota setting for %s=%r; using %d",
+                        key,
+                        value,
+                        DEFAULT_QUOTA_SETTINGS[key],
+                    )
     except sqlite3.Error as e:
         logger.warning("Failed to load default quota settings from database: %s", e)
 
@@ -137,15 +134,15 @@ def load_gpu_factors() -> dict[str, float]:
     """
     Load GPU type charging factors from the SQLite database.
 
-    The factors are stored in the ``gpu_factors`` table with:
+    The factors are stored in the gpu_factors table with:
       - gpu_type TEXT PRIMARY KEY
       - factor   REAL NOT NULL
 
-    A special gpu_type value of ``default`` controls the default factor used
+    A special gpu_type value of default controls the default factor used
     when no explicit entry exists for a given GPU type.
 
     Returns:
-        Dictionary mapping GPU type to factor. The key ``"__default__"`` holds
+        Dictionary mapping GPU type to factor. The key __default__ holds
         the default factor (1.0 when not configured).
     """
     factors: dict[str, float] = {}
@@ -522,7 +519,7 @@ def update_user_and_account_resources(
     try:
         with connect_database() as conn:
             cursor = conn.cursor()
-            dq = get_default_quota_settings()
+            dq = get_default_quota_settings(conn)
             default_user_cpu = dq["default_user_quota_cpu_minutes"]
             default_user_gpu = dq["default_user_quota_gpu_minutes"]
             default_account_cpu = dq["default_account_quota_cpu_minutes"]
@@ -645,7 +642,7 @@ def set_user_quota(username: str, quota_cpu_minutes: int) -> None:
     try:
         with connect_database() as conn:
             cursor = conn.cursor()
-            dq = get_default_quota_settings()
+            dq = get_default_quota_settings(conn)
             default_gpu = dq["default_user_quota_gpu_minutes"]
 
             # Insert or update user with quota
@@ -679,7 +676,7 @@ def set_account_quota(account: str, quota_cpu_minutes: int) -> None:
     try:
         with connect_database() as conn:
             cursor = conn.cursor()
-            dq = get_default_quota_settings()
+            dq = get_default_quota_settings(conn)
             default_gpu = dq["default_account_quota_gpu_minutes"]
 
             cursor.execute(
@@ -712,7 +709,7 @@ def set_user_gpu_quota(username: str, quota_gpu_minutes: int) -> None:
     try:
         with connect_database() as conn:
             cursor = conn.cursor()
-            dq = get_default_quota_settings()
+            dq = get_default_quota_settings(conn)
             default_cpu = dq["default_user_quota_cpu_minutes"]
 
             # Insert or update user with GPU quota
@@ -746,7 +743,7 @@ def set_account_gpu_quota(account: str, quota_gpu_minutes: int) -> None:
     try:
         with connect_database() as conn:
             cursor = conn.cursor()
-            dq = get_default_quota_settings()
+            dq = get_default_quota_settings(conn)
             default_cpu = dq["default_account_quota_cpu_minutes"]
 
             cursor.execute(

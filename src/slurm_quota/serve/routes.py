@@ -357,7 +357,8 @@ def revoke_manager_account_route(username: str, account: str) -> Any:
 @require_role("admin", "operator")
 def get_default_quotas() -> Any:
     try:
-        settings = get_default_quota_settings()
+        with connect_database() as conn:
+            settings = get_default_quota_settings(conn)
     except sqlite3.Error as exc:
         logger.error("get default quotas failed: %s", exc)
         return jsonify({"error": "db_error"}), 500
