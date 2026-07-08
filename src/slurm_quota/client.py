@@ -193,7 +193,6 @@ class APIClient:
             "GET",
             "stats",
             params=stats_params or None,
-            require_token=False,
             include_auth=True,
         )
 

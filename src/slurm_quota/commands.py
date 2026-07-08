@@ -546,7 +546,7 @@ def show_user_stats(
         return min(longest_label, max_width)
 
     try:
-        api = APIClient(token=ClientToken.load_value())
+        api = _api_client_from_token()
         users_data, accounts_data = api.stats(selected_username, account, show_all)
 
         if not users_data and not accounts_data:
