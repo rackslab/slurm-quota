@@ -35,11 +35,15 @@ On the controller, include the `serve` extra for the HTTP JSON API (`slurm-quota
 sudo python3 -m pip install ".[serve]"
 ```
 
-Optional: install Bash completion for `slurm-quota`:
+Optional: install Bash completion for `slurm-quota`, `slurm-quota-token`, and `slurm-quota-prune`:
 
 ```bash
 sudo cp slurm-quota.bash-completion /etc/bash_completion.d/slurm-quota
 sudo chmod 0644 /etc/bash_completion.d/slurm-quota
+sudo cp slurm-quota-token.bash-completion /etc/bash_completion.d/slurm-quota-token
+sudo chmod 0644 /etc/bash_completion.d/slurm-quota-token
+sudo cp slurm-quota-prune.bash-completion /etc/bash_completion.d/slurm-quota-prune
+sudo chmod 0644 /etc/bash_completion.d/slurm-quota-prune
 ```
 
 4. Configure REST API authentication and HTTPS
