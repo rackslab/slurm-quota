@@ -146,8 +146,11 @@ def _resolve_manager_stats_scope(
 ) -> tuple[set[str] | None, set[str] | None]:
     """Build username and account filters for a manager viewing stats.
 
-    Managers may only see users and accounts within their assigned scope.
-    Query parameters narrow that scope; requests outside it raise HTTP 403.
+    Managers inherit regular user visibility (their own stats and Slurm accounts
+    they belong to) plus read access to assigned managed accounts and their
+    members. Query parameters narrow that scope; requests outside it raise HTTP
+    403. The users filter is a deduplicated set so members of multiple managed
+    accounts appear once.
 
     Args:
         login: Username of the authenticated manager.
@@ -156,26 +159,35 @@ def _resolve_manager_stats_scope(
 
     Returns:
         A pair of usernames_filter and accounts_filter suitable for fetch_stats.
-        With no assigned accounts, both filters are empty sets. With an account
-        parameter, only that account is returned when it is assigned. With a
-        username parameter, only that user is returned when they belong to an
-        assigned account; account stats are limited to the overlap between the
-        user's Slurm accounts and the assigned set. With neither parameter, users
-        are all members of assigned accounts and accounts are the full assigned
-        set.
+        With no assigned accounts, managers behave like regular users. With an
+        account parameter, the account must be assigned or a personal Slurm
+        account. With a username parameter, the manager may always query
+        themselves; other users are returned only when they belong to an
+        assigned account. Account stats for another user's query are limited to
+        the overlap between that user's Slurm accounts and the assigned set.
+        With neither parameter, users are the manager plus all members of
+        assigned accounts (deduplicated) and accounts are assigned accounts plus
+        personal Slurm accounts.
     """
     with connect_database() as conn:
         assigned = set(list_manager_accounts(conn, login))
 
-    if not assigned:
-        return set(), assigned
+    try:
+        personal = slurm_integration.get_user_accounts(login)
+    except Exception:
+        personal = set()
+    allowed_accounts = assigned | personal
 
     if account_param:
-        if account_param not in assigned:
+        if account_param not in allowed_accounts:
             abort(403, description="Not allowed to view stats for this account")
         return set(), {account_param}
 
     if username_param:
+        if username_param == login:
+            if assigned:
+                return {login}, allowed_accounts
+            return {login}, None
         try:
             user_accounts = slurm_integration.get_user_accounts(username_param)
         except Exception:
@@ -184,10 +196,12 @@ def _resolve_manager_stats_scope(
             abort(403, description="Not allowed to view stats for other users")
         return {username_param}, assigned.intersection(user_accounts)
 
-    members: set[str] = set()
+    members: set[str] = {login}
     for account in assigned:
         members.update(slurm_integration.get_account_users(account))
-    return members, assigned
+    if assigned:
+        return members, allowed_accounts
+    return members, None
 
 
 def health() -> Any:
@@ -288,9 +302,13 @@ def stats() -> Any:
 
 @check_jwt
 def me() -> Any:
-    return jsonify(
-        {"username": request.user.login, "role": login_role(request.user.login)}
-    )
+    login = cast(str, request.user.login)
+    role = login_role(login)
+    payload: dict[str, Any] = {"username": login, "role": role}
+    if role == "manager":
+        with connect_database() as conn:
+            payload["accounts"] = list_manager_accounts(conn, login)
+    return jsonify(payload)
 
 
 @require_role("admin")
