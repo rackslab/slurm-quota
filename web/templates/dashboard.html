@@ -5,8 +5,9 @@
 {% block title %}slurm-quota{% endblock %}
 
 {% block body %}
-{% if auth_required and logged_in_username %}
-<div class="page-top-bar">
+<div class="page-header">
+  <h1 class="page-title">slurm-quota</h1>
+  {% if auth_required and logged_in_username %}
   <div class="user-session">
     <span class="user-label">Signed in as <strong>{{ logged_in_username }}</strong></span>
     <form method="post" action="{{ url_for('logout') }}" class="logout-form">
@@ -14,10 +15,7 @@
       <button type="submit" class="logout-button">Sign out</button>
     </form>
   </div>
-</div>
-{% endif %}
-<div class="page-header">
-  <h1 class="page-title">slurm-quota</h1>
+  {% endif %}
   <div class="page-header-actions">
     {% if user_role == "admin" %}
     <nav class="admin-nav">
