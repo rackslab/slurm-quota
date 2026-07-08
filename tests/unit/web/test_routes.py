@@ -246,6 +246,12 @@ class TestAuthRoutes(SlurmQuotaTestCase):
         self.assertEqual(resp.status_code, 302)
         self.assertIn("session_expired", resp.headers["Location"])
 
+    def test_session_expired_message_on_login_page(self):
+        client = web_app().test_client()
+        resp = client.get("/login?message=session_expired")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("session has expired", resp.get_data(as_text=True))
+
     def test_login_redirects_to_mount_prefix_after_success(self):
         mock_api = self._mock_login_client()
         base_url = "http://localhost/quota"
@@ -383,6 +389,43 @@ class TestRolesRoutes(SlurmQuotaTestCase):
         self.assertEqual(resp.status_code, 302)
         self.assertIn("/roles", resp.headers["Location"])
         m_client.return_value.grant_role.assert_called_once_with("operator", "bob")
+
+    def test_roles_post_grant_shows_success_message(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.users_roles.return_value = roles_users()
+            client = web_app().test_client()
+            roles_page = client.get("/roles")
+            csrf = extract_csrf(roles_page.get_data(as_text=True))
+            resp = client.post(
+                "/roles",
+                data={
+                    "_csrf": csrf,
+                    "action": "grant",
+                    "role": "operator",
+                    "username": "bob",
+                },
+                follow_redirects=True,
+            )
+        self.assertIn("Role updated for bob.", resp.get_data(as_text=True))
+
+    def test_roles_post_grant_failure_shows_error(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.users_roles.return_value = roles_users()
+            m_client.return_value.grant_role.side_effect = ServiceHTTPError(409)
+            client = web_app().test_client()
+            roles_page = client.get("/roles")
+            csrf = extract_csrf(roles_page.get_data(as_text=True))
+            resp = client.post(
+                "/roles",
+                data={
+                    "_csrf": csrf,
+                    "action": "grant",
+                    "role": "operator",
+                    "username": "bob",
+                },
+                follow_redirects=True,
+            )
+        self.assertIn("Failed to update role: HTTP 409", resp.get_data(as_text=True))
 
     def test_roles_post_revoke_manager_calls_api(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
@@ -565,6 +608,50 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
         self.assertEqual(resp.status_code, 302)
         m_client.return_value.set_user_cpu_quota.assert_called_once_with("alice", 900)
 
+    def test_quotas_post_shows_success_message(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value="operator"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            resp = client.post(
+                "/quotas",
+                data={
+                    "_csrf": csrf,
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "quota_minutes": "900",
+                },
+                follow_redirects=True,
+            )
+        self.assertIn("Quota updated for alice.", resp.get_data(as_text=True))
+
+    def test_quotas_post_invalid_quota_shows_error(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            resp = client.post(
+                "/quotas",
+                data={
+                    "_csrf": csrf,
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "quota_minutes": "not-a-number",
+                },
+                follow_redirects=True,
+            )
+        self.assertIn("Invalid quota value.", resp.get_data(as_text=True))
+
     def test_quotas_post_preserves_filters_from_session(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
             m_client.return_value.stats.return_value = stats_rows()
@@ -727,6 +814,59 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
         self.assertEqual(resp.status_code, 302)
         m_client.return_value.adjust_consumption.assert_called_once_with(
             "user", "alice", "cpu", -15
+        )
+
+    def test_consumption_post_shows_success_message(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value="operator"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            resp = client.post(
+                "/consumption",
+                data={
+                    "_csrf": csrf,
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "delta_minutes": "-15",
+                },
+                follow_redirects=True,
+            )
+        self.assertIn("Consumption adjusted for alice.", resp.get_data(as_text=True))
+
+    def test_consumption_post_failure_shows_error(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value="operator"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            m_client.return_value.adjust_consumption.side_effect = ServiceHTTPError(500)
+            client = web_app().test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            resp = client.post(
+                "/consumption",
+                data={
+                    "_csrf": csrf,
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "delta_minutes": "-15",
+                },
+                follow_redirects=True,
+            )
+        self.assertIn(
+            "Failed to adjust consumption: HTTP 500", resp.get_data(as_text=True)
         )
 
     def test_consumption_post_redirects_user_to_dashboard(self):
