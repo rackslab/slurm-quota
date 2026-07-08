@@ -31,6 +31,7 @@ sudo rm -f /usr/local/bin/slurm-quota-serve
 sudo rm -f /usr/local/bin/slurm-quota-web
 sudo rm -f /etc/bash_completion.d/slurm-quota
 sudo rm -f /etc/bash_completion.d/slurm-quota-prune
+sudo rm -f /etc/bash_completion.d/slurm-quota-token
 sudo rm -f /usr/local/share/man/man1/slurm-quota.1
 sudo rm -f /usr/share/man/man1/slurm-quota.1
 sudo rm -rf /usr/local/share/slurm-quota/web
