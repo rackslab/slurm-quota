@@ -259,6 +259,10 @@ class TestStatsRoute(ServeRoutesTestCase):
         with self.db_connection() as conn:
             conn.execute(
                 "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("carol", 10),
+            )
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
                 ("bob", 30),
             )
             conn.execute(
@@ -288,5 +292,189 @@ class TestStatsRoute(ServeRoutesTestCase):
         body = json.loads(resp.data)
         usernames = {entry["username"] for entry in body["users"]}
         accounts = {entry["account"] for entry in body["accounts"]}
-        self.assertEqual(usernames, {"bob"})
+        self.assertEqual(usernames, {"bob", "carol"})
         self.assertEqual(accounts, {"hpc"})
+
+    def test_manager_unfiltered_includes_self_when_not_account_member(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("carol", 10),
+            )
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 30),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("hpc", 100),
+            )
+            grant_manager(conn, "carol")
+            grant_manager_account(conn, "carol", "hpc")
+            conn.commit()
+
+        with patch("slurm_quota.slurm.get_account_users", return_value={"bob"}):
+            client = app.test_client()
+            resp = client.get("/stats", headers=self._headers("carol"))
+
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.data)
+        usernames = [entry["username"] for entry in body["users"]]
+        self.assertEqual(sorted(usernames), ["bob", "carol"])
+
+    def test_manager_can_query_own_stats(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("carol", 10),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("hpc", 100),
+            )
+            grant_manager(conn, "carol")
+            grant_manager_account(conn, "carol", "hpc")
+            conn.commit()
+
+        with patch("slurm_quota.slurm.get_user_accounts", return_value=set()):
+            client = app.test_client()
+            resp = client.get("/stats?username=carol", headers=self._headers("carol"))
+
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.data)
+        self.assertEqual(len(body["users"]), 1)
+        self.assertEqual(body["users"][0]["username"], "carol")
+        self.assertEqual(len(body["accounts"]), 1)
+        self.assertEqual(body["accounts"][0]["account"], "hpc")
+
+    def test_manager_with_no_assignments_sees_own_stats(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("carol", 10),
+            )
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 30),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("personal", 5),
+            )
+            grant_manager(conn, "carol")
+            conn.commit()
+
+        with patch("slurm_quota.slurm.get_user_accounts", return_value={"personal"}):
+            client = app.test_client()
+            for path in ("/stats", "/stats?username=carol"):
+                with self.subTest(path=path):
+                    resp = client.get(path, headers=self._headers("carol"))
+                    self.assertEqual(resp.status_code, 200)
+                    body = json.loads(resp.data)
+                    self.assertEqual(len(body["users"]), 1)
+                    self.assertEqual(body["users"][0]["username"], "carol")
+                    self.assertEqual(len(body["accounts"]), 1)
+                    self.assertEqual(body["accounts"][0]["account"], "personal")
+
+    def test_manager_can_query_personal_slurm_account(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("hpc", 100),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("personal", 5),
+            )
+            grant_manager(conn, "carol")
+            grant_manager_account(conn, "carol", "hpc")
+            conn.commit()
+
+        with patch("slurm_quota.slurm.get_user_accounts", return_value={"personal"}):
+            client = app.test_client()
+            resp = client.get("/stats?account=personal", headers=self._headers("carol"))
+
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.data)
+        self.assertEqual(len(body["accounts"]), 1)
+        self.assertEqual(body["accounts"][0]["account"], "personal")
+
+    def test_manager_unfiltered_includes_personal_slurm_accounts(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("carol", 10),
+            )
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 30),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("hpc", 100),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("personal", 5),
+            )
+            grant_manager(conn, "carol")
+            grant_manager_account(conn, "carol", "hpc")
+            conn.commit()
+
+        with (
+            patch(
+                "slurm_quota.slurm.get_account_users",
+                side_effect=lambda account: {"bob"} if account == "hpc" else set(),
+            ),
+            patch(
+                "slurm_quota.slurm.get_user_accounts",
+                return_value={"personal"},
+            ),
+        ):
+            client = app.test_client()
+            resp = client.get("/stats", headers=self._headers("carol"))
+
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.data)
+        accounts = {entry["account"] for entry in body["accounts"]}
+        self.assertEqual(accounts, {"hpc", "personal"})
+
+    def test_manager_user_in_multiple_assigned_accounts_appears_once(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("carol", 10),
+            )
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 30),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("hpc", 100),
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("dev", 40),
+            )
+            grant_manager(conn, "carol")
+            grant_manager_account(conn, "carol", "hpc")
+            grant_manager_account(conn, "carol", "dev")
+            conn.commit()
+
+        with patch("slurm_quota.slurm.get_account_users", return_value={"bob"}):
+            client = app.test_client()
+            resp = client.get("/stats", headers=self._headers("carol"))
+
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.data)
+        bob_entries = [entry for entry in body["users"] if entry["username"] == "bob"]
+        self.assertEqual(len(bob_entries), 1)
+        usernames = [entry["username"] for entry in body["users"]]
+        self.assertEqual(len(usernames), len(set(usernames)))
