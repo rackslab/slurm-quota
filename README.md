@@ -228,7 +228,9 @@ on first API start (override in `[jwt]` if needed).
 REST API routes are protected by an authorization policy based on four roles:
 
 - **user** — Can view only their own consumption stats (including Slurm accounts they belong to).
-- **manager** — Can view statistics only for assigned Slurm accounts and users who belong to those accounts.
+- **manager** — Has all **user** visibility (own consumption stats and Slurm accounts they belong to), plus statistics
+  for assigned Slurm accounts and users who belong to those accounts. Each user appears once in stats even when they
+  belong to multiple managed accounts.
 - **operator** — Can view all statistics and manage quotas, consumption, default quotas, and GPU factors.
 - **admin** — Can view all statistics, manage quotas, consumption, default quotas, and GPU factors. Can grant or revoke
   operator and manager roles and assign accounts to managers (via `slurm-quota role` CLI or the web dashboard **Manage
@@ -247,32 +249,32 @@ database.
 
 Following routes are served by REST API:
 
-| Route                                                  | Purpose                                                          | Role                                                                           |
-| ------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `GET /health`                                          | Service health check                                             | none                                                                           |
-| `POST /login`                                          | Authenticate with LDAP and obtain a JWT                          | none                                                                           |
-| `GET /me`                                              | Return the current username and role                             | any authenticated user                                                         |
-| `GET /stats`                                           | Return consumption, preallocation, and quota statistics          | **user** (own stats), **manager** (assigned accounts), **operator**, **admin** |
-| `GET /roles`                                           | List all users with their roles                                  | **admin**                                                                      |
-| `PUT /roles/operators/<username>`                      | Grant operator role                                              | **admin**                                                                      |
-| `DELETE /roles/operators/<username>`                   | Revoke operator role                                             | **admin**                                                                      |
-| `PUT /roles/managers/<username>`                       | Grant manager role                                               | **admin**                                                                      |
-| `DELETE /roles/managers/<username>`                    | Revoke manager role                                              | **admin**                                                                      |
-| `GET /roles/managers/<username>/accounts`              | List accounts assigned to a manager                              | **admin**                                                                      |
-| `PUT /roles/managers/<username>/accounts/<account>`    | Assign an account to a manager                                   | **admin**                                                                      |
-| `DELETE /roles/managers/<username>/accounts/<account>` | Remove an account from a manager                                 | **admin**                                                                      |
-| `GET /quotas/defaults`                                 | Read default quotas applied to newly auto-created users/accounts | **operator**, **admin**                                                        |
-| `PUT /quotas/defaults`                                 | Update default quotas for newly auto-created users/accounts      | **operator**, **admin**                                                        |
-| `PUT /quotas/users/<username>/cpu`                     | Set CPU quota for a user                                         | **operator**, **admin**                                                        |
-| `PUT /quotas/users/<username>/gpu`                     | Set GPU quota for a user                                         | **operator**, **admin**                                                        |
-| `PUT /quotas/accounts/<account>/cpu`                   | Set CPU quota for an account                                     | **operator**, **admin**                                                        |
-| `PUT /quotas/accounts/<account>/gpu`                   | Set GPU quota for an account                                     | **operator**, **admin**                                                        |
-| `PATCH /consumption/user/<username>/cpu`               | Adjust consumed CPU minutes for a user                           | **operator**, **admin**                                                        |
-| `PATCH /consumption/user/<username>/gpu`               | Adjust consumed GPU minutes for a user                           | **operator**, **admin**                                                        |
-| `PATCH /consumption/account/<account>/cpu`             | Adjust consumed CPU minutes for an account                       | **operator**, **admin**                                                        |
-| `PATCH /consumption/account/<account>/gpu`             | Adjust consumed GPU minutes for an account                       | **operator**, **admin**                                                        |
-| `GET /factors/gpu`                                     | List GPU load factors                                            | **operator**, **admin**                                                        |
-| `PUT /factors/gpu/<gpu_type>`                          | Set load factor for a GPU type                                   | **operator**, **admin**                                                        |
+| Route                                                  | Purpose                                                                           | Role                                                                                        |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `GET /health`                                          | Service health check                                                              | none                                                                                        |
+| `POST /login`                                          | Authenticate with LDAP and obtain a JWT                                           | none                                                                                        |
+| `GET /me`                                              | Return the current username and role (includes assigned accounts for **manager**) | any authenticated user                                                                      |
+| `GET /stats`                                           | Return consumption, preallocation, and quota statistics                           | **user** (own stats), **manager** (user stats + assigned accounts), **operator**, **admin** |
+| `GET /roles`                                           | List all users with their roles                                                   | **admin**                                                                                   |
+| `PUT /roles/operators/<username>`                      | Grant operator role                                                               | **admin**                                                                                   |
+| `DELETE /roles/operators/<username>`                   | Revoke operator role                                                              | **admin**                                                                                   |
+| `PUT /roles/managers/<username>`                       | Grant manager role                                                                | **admin**                                                                                   |
+| `DELETE /roles/managers/<username>`                    | Revoke manager role                                                               | **admin**                                                                                   |
+| `GET /roles/managers/<username>/accounts`              | List accounts assigned to a manager                                               | **admin**                                                                                   |
+| `PUT /roles/managers/<username>/accounts/<account>`    | Assign an account to a manager                                                    | **admin**                                                                                   |
+| `DELETE /roles/managers/<username>/accounts/<account>` | Remove an account from a manager                                                  | **admin**                                                                                   |
+| `GET /quotas/defaults`                                 | Read default quotas applied to newly auto-created users/accounts                  | **operator**, **admin**                                                                     |
+| `PUT /quotas/defaults`                                 | Update default quotas for newly auto-created users/accounts                       | **operator**, **admin**                                                                     |
+| `PUT /quotas/users/<username>/cpu`                     | Set CPU quota for a user                                                          | **operator**, **admin**                                                                     |
+| `PUT /quotas/users/<username>/gpu`                     | Set GPU quota for a user                                                          | **operator**, **admin**                                                                     |
+| `PUT /quotas/accounts/<account>/cpu`                   | Set CPU quota for an account                                                      | **operator**, **admin**                                                                     |
+| `PUT /quotas/accounts/<account>/gpu`                   | Set GPU quota for an account                                                      | **operator**, **admin**                                                                     |
+| `PATCH /consumption/user/<username>/cpu`               | Adjust consumed CPU minutes for a user                                            | **operator**, **admin**                                                                     |
+| `PATCH /consumption/user/<username>/gpu`               | Adjust consumed GPU minutes for a user                                            | **operator**, **admin**                                                                     |
+| `PATCH /consumption/account/<account>/cpu`             | Adjust consumed CPU minutes for an account                                        | **operator**, **admin**                                                                     |
+| `PATCH /consumption/account/<account>/gpu`             | Adjust consumed GPU minutes for an account                                        | **operator**, **admin**                                                                     |
+| `GET /factors/gpu`                                     | List GPU load factors                                                             | **operator**, **admin**                                                                     |
+| `PUT /factors/gpu/<gpu_type>`                          | Set load factor for a GPU type                                                    | **operator**, **admin**                                                                     |
 
 `GET /stats` returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters filter
 responses: `username` limits users and accounts to that user's Slurm associations (e.g. `/stats?username=alice`), while
@@ -321,10 +323,10 @@ When `authentication.method=ldap`, the dashboard presents a login page and store
 HttpOnly session cookie. Alternatively, set `SLURM_QUOTA_TOKEN` in the web server environment to authenticate API calls
 with a service token (no per-user login).
 
-Users with the **user** role see only their own stats; managers see stats for their assigned accounts; operators and
-admins see all data. Operators and admins can edit quotas and adjust consumption inline on the dashboard. Admins can
-open **Manage roles** to list all users with their role, grant or revoke operator and manager access, and assign
-accounts to managers.
+Users with the **user** role see only their own stats; managers have the same personal visibility plus stats for their
+assigned accounts; operators and admins see all data. Operators and admins can edit quotas and adjust consumption inline
+on the dashboard. Admins can open **Manage roles** to list all users with their role, grant or revoke operator and
+manager access, and assign accounts to managers.
 
 It can run standalone with Flask's built-in HTTP server for local testing, or be launched by a production-ready HTTP
 server (for example Apache with mod_wsgi) as a WSGI application. See [Installation](#web-dashboard) for deployment
