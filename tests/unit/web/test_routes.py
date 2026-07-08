@@ -606,7 +606,37 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
                 follow_redirects=False,
             )
         self.assertEqual(resp.status_code, 302)
-        m_client.return_value.set_user_cpu_quota.assert_called_once_with("alice", 900)
+        m_client.return_value.set_user_cpu_quota.assert_called_once_with(
+            "alice", 900, reason=None
+        )
+
+    def test_quotas_post_forwards_reason_when_provided(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value="operator"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            client.post(
+                "/quotas",
+                data={
+                    "_csrf": csrf,
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "quota_minutes": "900",
+                    "reason": "project extension approved",
+                },
+                follow_redirects=False,
+            )
+        m_client.return_value.set_user_cpu_quota.assert_called_once_with(
+            "alice", 900, reason="project extension approved"
+        )
 
     def test_quotas_post_shows_success_message(self):
         with (
@@ -690,7 +720,9 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
                 },
                 follow_redirects=False,
             )
-        m_client.return_value.set_account_gpu_quota.assert_called_once_with("hpc", -1)
+        m_client.return_value.set_account_gpu_quota.assert_called_once_with(
+            "hpc", -1, reason=None
+        )
 
     def test_quotas_post_redirects_user_to_dashboard(self):
         with (
@@ -813,7 +845,35 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
             )
         self.assertEqual(resp.status_code, 302)
         m_client.return_value.adjust_consumption.assert_called_once_with(
-            "user", "alice", "cpu", -15
+            "user", "alice", "cpu", -15, reason=None
+        )
+
+    def test_consumption_post_forwards_reason_when_provided(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value="operator"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            client.post(
+                "/consumption",
+                data={
+                    "_csrf": csrf,
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "delta_minutes": "-15",
+                    "reason": "correct billing error",
+                },
+                follow_redirects=False,
+            )
+        m_client.return_value.adjust_consumption.assert_called_once_with(
+            "user", "alice", "cpu", -15, reason="correct billing error"
         )
 
     def test_consumption_post_shows_success_message(self):
