@@ -36,33 +36,22 @@ _slurm_quota() {
     cword="$COMP_CWORD"
     words=("${COMP_WORDS[@]}")
 
-    local -a public_subcommands restricted_subcommands subcommands
-    public_subcommands=(
-        stats
+    local -a subcommands
+    subcommands=(
         login
+        token
+        stats
         role
-        gpu-factors
-        default-quotas
-    )
-    restricted_subcommands=(
         adjust
         user-quota
         account-quota
         user-gpu-quota
         account-gpu-quota
+        gpu-factors
         set-gpu-factor
+        default-quotas
         set-default-quotas
     )
-    subcommands=("${public_subcommands[@]}")
-
-    local is_privileged=0
-    if [[ "$EUID" -eq 0 || "$USER" == "slurm" ]]; then
-        is_privileged=1
-    fi
-
-    if (( is_privileged )); then
-        subcommands+=("${restricted_subcommands[@]}")
-    fi
 
     local cmd_idx=0
     for (( i=0; i<=cword; i++ )); do
@@ -117,6 +106,9 @@ _slurm_quota() {
             else
                 COMPREPLY=($(compgen -W "$base_opts --save" -- "$cur"))
             fi
+            ;;
+        token)
+            COMPREPLY=($(compgen -W "$base_opts --save" -- "$cur"))
             ;;
         stats)
             COMPREPLY=($(compgen -W "$base_opts --user --account --all --hours" -- "$cur"))
