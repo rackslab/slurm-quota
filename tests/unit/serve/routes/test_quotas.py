@@ -29,7 +29,7 @@ class TestQuotasRoute(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:quota user cpu: manager=alice name=bob value=500",
+                "INFO:slurm_quota:quota user cpu: manager=alice name=bob value=500 reason=n/a",
             ],
         )
         with self.db_connection() as conn:
@@ -56,7 +56,7 @@ class TestQuotasRoute(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:quota user gpu: manager=carol name=bob value=120",
+                "INFO:slurm_quota:quota user gpu: manager=carol name=bob value=120 reason=n/a",
             ],
         )
         with self.db_connection() as conn:
@@ -79,7 +79,7 @@ class TestQuotasRoute(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:quota account cpu: manager=alice name=hpc value=-1",
+                "INFO:slurm_quota:quota account cpu: manager=alice name=hpc value=-1 reason=n/a",
             ],
         )
         with self.db_connection() as conn:
@@ -105,7 +105,7 @@ class TestQuotasRoute(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:quota account gpu: manager=carol name=hpc value=900",
+                "INFO:slurm_quota:quota account gpu: manager=carol name=hpc value=900 reason=n/a",
             ],
         )
         with self.db_connection() as conn:
@@ -167,6 +167,79 @@ class TestQuotasRoute(ServeRoutesTestCase):
             json={},
         )
         self.assertEqual(resp.status_code, 400)
+
+    def test_set_quota_logs_reason_when_provided(self):
+        init_database()
+        client = app.test_client()
+        with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+            resp = client.put(
+                "/quotas/users/bob/cpu",
+                headers=self._headers("alice"),
+                json={"quota_minutes": 500, "reason": "project extension approved"},
+            )
+        self.assertEqual(resp.status_code, 204)
+        self.assertEqual(
+            log_cm.output,
+            [
+                "INFO:slurm_quota:quota user cpu: manager=alice name=bob value=500 "
+                "reason='project extension approved'",
+            ],
+        )
+
+    def test_set_quota_rejects_empty_reason(self):
+        client = app.test_client()
+        resp = client.put(
+            "/quotas/users/bob/cpu",
+            headers=self._headers("alice"),
+            json={"quota_minutes": 500, "reason": "   "},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            resp.get_json(),
+            {"error": "bad_request", "message": "reason must not be empty"},
+        )
+
+    def test_set_quota_rejects_non_string_reason(self):
+        client = app.test_client()
+        resp = client.put(
+            "/quotas/users/bob/cpu",
+            headers=self._headers("alice"),
+            json={"quota_minutes": 500, "reason": 42},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            resp.get_json(),
+            {"error": "bad_request", "message": "reason must be a string"},
+        )
+
+    def test_set_quota_rejects_too_long_reason(self):
+        client = app.test_client()
+        resp = client.put(
+            "/quotas/users/bob/cpu",
+            headers=self._headers("alice"),
+            json={"quota_minutes": 500, "reason": "x" * 501},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            resp.get_json(),
+            {
+                "error": "bad_request",
+                "message": "reason must be at most 500 characters",
+            },
+        )
+
+    def test_set_quota_rejects_multiline_reason(self):
+        client = app.test_client()
+        resp = client.put(
+            "/quotas/users/bob/cpu",
+            headers=self._headers("alice"),
+            json={"quota_minutes": 500, "reason": "line one\nline two"},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            resp.get_json(),
+            {"error": "bad_request", "message": "reason must be a single line"},
+        )
 
     def test_user_cpu_quota_applies_default_gpu_on_create(self):
         self._update_settings(default_user_quota_gpu_minutes=4242)

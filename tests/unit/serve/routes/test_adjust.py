@@ -31,7 +31,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             log_cm.output,
             [
                 "INFO:slurm_quota:consumption user cpu: manager=alice name=bob "
-                "delta=+30 total=130",
+                "delta=+30 total=130 reason=n/a",
             ],
         )
         with self.db_connection() as conn:
@@ -63,7 +63,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             log_cm.output,
             [
                 "INFO:slurm_quota:consumption user gpu: manager=carol name=bob "
-                "delta=-20 total=30",
+                "delta=-20 total=30 reason=n/a",
             ],
         )
 
@@ -180,6 +180,70 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             json={},
         )
         self.assertEqual(resp.status_code, 400)
+
+    def test_adjust_consumption_logs_reason_when_provided(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 100),
+            )
+            conn.commit()
+        client = app.test_client()
+        with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+            resp = client.patch(
+                "/consumption/user/bob/cpu",
+                headers=self._headers("alice"),
+                json={"delta_minutes": 30, "reason": "correct billing error"},
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            log_cm.output,
+            [
+                "INFO:slurm_quota:consumption user cpu: manager=alice name=bob "
+                "delta=+30 total=130 reason='correct billing error'",
+            ],
+        )
+
+    def test_adjust_consumption_rejects_empty_reason(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 100),
+            )
+            conn.commit()
+        client = app.test_client()
+        resp = client.patch(
+            "/consumption/user/bob/cpu",
+            headers=self._headers("alice"),
+            json={"delta_minutes": 30, "reason": ""},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            resp.get_json(),
+            {"error": "bad_request", "message": "reason must not be empty"},
+        )
+
+    def test_adjust_consumption_rejects_multiline_reason(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("bob", 100),
+            )
+            conn.commit()
+        client = app.test_client()
+        resp = client.patch(
+            "/consumption/user/bob/cpu",
+            headers=self._headers("alice"),
+            json={"delta_minutes": 30, "reason": "line one\nline two"},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            resp.get_json(),
+            {"error": "bad_request", "message": "reason must be a single line"},
+        )
 
     def test_unknown_entity_returns_404(self):
         client = app.test_client()
