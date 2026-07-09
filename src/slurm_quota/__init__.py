@@ -5,4 +5,4 @@
 """Slurm Quota Management Tool."""
 
 DB_PATH = "/var/lib/state/slurm-quota/slurm-quota.db"
-APP_VERSION = "2.0.0"
+APP_VERSION = "3.0.0"
