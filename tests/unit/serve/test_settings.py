@@ -17,6 +17,7 @@ from slurm_quota.serve.settings import (
     ServeSetupError,
     conf_defs_path,
     load_bind_password,
+    load_log_settings,
     load_serve_settings,
     site_config_path,
     validate_auth_settings,
@@ -75,6 +76,41 @@ class TestSiteConfigPath(SlurmQuotaTestCase):
             custom.touch()
             with patch.dict("os.environ", {"SLURM_QUOTA_SERVE_CONFIG": str(custom)}):
                 self.assertEqual(site_config_path(), custom)
+
+
+class TestLoadLogSettings(SlurmQuotaTestCase):
+    def setUp(self):
+        super().setUp()
+        self.defs_path = serve_conf_defs()
+
+    def test_yaml_defaults_when_site_ini_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            site_ini = Path(tmp) / "missing.ini"
+            log_flags, debug_flags = load_log_settings(self.defs_path, site_ini)
+
+        self.assertEqual(log_flags, ["slurm_quota"])
+        self.assertEqual(debug_flags, ["slurm_quota"])
+
+    def test_site_ini_overrides_log_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            site_ini = Path(tmp) / "serve.ini"
+            site_ini.write_text(
+                textwrap.dedent(
+                    """\
+                    [log]
+                    log_flags=
+                      rfl
+                      werkzeug
+                    debug_flags=
+                      rfl
+                    """
+                ),
+                encoding="utf-8",
+            )
+            log_flags, debug_flags = load_log_settings(self.defs_path, site_ini)
+
+        self.assertEqual(log_flags, ["rfl", "werkzeug"])
+        self.assertEqual(debug_flags, ["rfl"])
 
 
 class TestValidateAuthSettings(SlurmQuotaTestCase):
