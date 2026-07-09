@@ -132,3 +132,18 @@ tls:
   key:
     type: path
     doc: Path to the server TLS private key file in PEM format (required when enabled)
+
+log:
+  _doc: Logging settings
+  log_flags:
+    type: list
+    content: str
+    default:
+      - slurm_quota
+    doc: Components whose logs are enabled (special value ALL)
+  debug_flags:
+    type: list
+    content: str
+    default:
+      - slurm_quota
+    doc: Components whose debug logs are enabled when debug mode is on

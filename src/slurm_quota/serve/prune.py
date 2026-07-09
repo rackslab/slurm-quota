@@ -6,7 +6,7 @@
 
 import argparse
 
-from slurm_quota import APP_VERSION
+from slurm_quota.cli import add_common_arguments
 from slurm_quota.commands import prune_command
 from slurm_quota.log import setup_logging
 
@@ -19,24 +19,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    log_level_group = parser.add_mutually_exclusive_group()
-    log_level_group.add_argument(
-        "--debug",
-        action="store_true",
-        help="Print debug output",
-    )
-    log_level_group.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help="Only print errors and warnings",
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {APP_VERSION}",
-        help="Show program version and exit",
-    )
+    add_common_arguments(parser)
 
     prune_target_group = parser.add_mutually_exclusive_group()
     prune_target_group.add_argument(
@@ -74,7 +57,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    setup_logging(debug=args.debug, quiet=args.quiet)
+    setup_logging(args)
     prune_command(
         preallocs=args.preallocs,
         users=args.users,
