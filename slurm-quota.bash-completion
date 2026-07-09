@@ -69,6 +69,10 @@ _slurm_quota() {
         if [[ "${words[i]}" == --debug || "${words[i]}" == -q || "${words[i]}" == --quiet || "${words[i]}" == --version || "${words[i]}" == -h || "${words[i]}" == --help ]]; then
             continue
         fi
+        if [[ "${words[i]}" == --log-flags || "${words[i]}" == --debug-flags ]]; then
+            ((i++))
+            continue
+        fi
         if [[ "${words[i]}" != -* ]]; then
             subcmd="${words[i]}"
             subcmd_idx="$i"
@@ -77,7 +81,7 @@ _slurm_quota() {
     done
 
     if [[ -z "$subcmd" ]]; then
-        COMPREPLY=($(compgen -W "--debug -q --quiet --version -h --help ${subcommands[*]}" -- "$cur"))
+        COMPREPLY=($(compgen -W "--debug -q --quiet --log-flags --debug-flags --version -h --help ${subcommands[*]}" -- "$cur"))
         return 0
     fi
 
@@ -152,6 +156,10 @@ _slurm_quota() {
             local managers_subcmd="" managers_subcmd_idx=-1
             for (( i=cmd_idx+1; i<cword; i++ )); do
                 if [[ "${words[i]}" == --debug || "${words[i]}" == -q || "${words[i]}" == --quiet || "${words[i]}" == --version || "${words[i]}" == -h || "${words[i]}" == --help ]]; then
+                    continue
+                fi
+                if [[ "${words[i]}" == --log-flags || "${words[i]}" == --debug-flags ]]; then
+                    ((i++))
                     continue
                 fi
                 if [[ "${words[i]}" == -* ]]; then

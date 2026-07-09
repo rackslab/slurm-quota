@@ -43,7 +43,7 @@ _slurm_quota_prune() {
             ;;
     esac
 
-    local base_opts="-h --help --version --debug -q --quiet"
+    local base_opts="-h --help --version --debug -q --quiet --log-flags --debug-flags"
     COMPREPLY=($(compgen -W "$base_opts --preallocs --users --accounts --all --dry-run --user --account" -- "$cur"))
 
     return 0

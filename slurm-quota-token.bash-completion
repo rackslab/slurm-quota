@@ -17,6 +17,10 @@ _slurm_quota_token_has_username() {
             --debug|-q|--quiet|--version|-h|--help)
                 continue
                 ;;
+            --log-flags|--debug-flags)
+                ((i++))
+                continue
+                ;;
             --conf-defs|--config|--duration)
                 ((i++))
                 continue
@@ -51,7 +55,7 @@ _slurm_quota_token() {
             ;;
     esac
 
-    local base_opts="-h --help --version --debug -q --quiet --conf-defs --config --duration"
+    local base_opts="-h --help --version --debug -q --quiet --log-flags --debug-flags --conf-defs --config --duration"
     COMPREPLY=($(compgen -W "$base_opts" -- "$cur"))
 
     if ! _slurm_quota_token_has_username && [[ "$cur" != -* ]]; then
