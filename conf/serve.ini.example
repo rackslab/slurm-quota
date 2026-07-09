@@ -26,3 +26,9 @@ admins=
 # enabled=true
 # cert=/etc/slurm-quota/tls/cert.pem
 # key=/etc/slurm-quota/tls/key.pem
+
+# [log]
+# log_flags=
+#   slurm_quota
+# debug_flags=
+#   slurm_quota

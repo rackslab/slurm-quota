@@ -15,11 +15,13 @@ from rfl.authentication.errors import JWTPrivateKeyLoaderError
 from rfl.authentication.jwt import JWTManager
 from rfl.authentication.user import AuthenticatedUser
 
-from slurm_quota import APP_VERSION, auth
+from slurm_quota import auth
+from slurm_quota.cli import add_common_arguments
 from slurm_quota.log import setup_logging
 from slurm_quota.serve.settings import (
     ServeSetupError,
     conf_defs_path,
+    load_log_settings,
     load_serve_settings,
     site_config_path,
 )
@@ -62,24 +64,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    log_level_group = parser.add_mutually_exclusive_group()
-    log_level_group.add_argument(
-        "--debug",
-        action="store_true",
-        help="Print debug output",
-    )
-    log_level_group.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help="Only print errors and warnings",
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {APP_VERSION}",
-        help="Show program version and exit",
-    )
+    add_common_arguments(parser)
     parser.add_argument(
         "--conf-defs",
         type=Path,
@@ -104,7 +89,14 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    setup_logging(debug=args.debug, quiet=args.quiet)
+    config_log_flags, config_debug_flags = load_log_settings(
+        args.conf_defs, args.config
+    )
+    setup_logging(
+        args,
+        config_log_flags=config_log_flags,
+        config_debug_flags=config_debug_flags,
+    )
 
     try:
         current_user = auth.get_current_user()

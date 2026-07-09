@@ -4,6 +4,8 @@
 
 """CLI entry point for slurm-quota."""
 
+from __future__ import annotations
+
 import argparse
 import re
 import sys
@@ -32,6 +34,49 @@ from slurm_quota.commands import (
 )
 from slurm_quota.log import setup_logging
 from slurm_quota.token import ClientToken
+
+
+def add_common_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add global options shared by slurm-quota command-line entry points."""
+    log_level_group = parser.add_mutually_exclusive_group()
+    log_level_group.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print debug output",
+    )
+    log_level_group.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Only print errors and warnings",
+    )
+
+    parser.add_argument(
+        "--log-flags",
+        action="append",
+        default=None,
+        metavar="FLAG",
+        help=(
+            "Component whose logs are enabled (repeatable; special value ALL). "
+            "Default: slurm_quota"
+        ),
+    )
+    parser.add_argument(
+        "--debug-flags",
+        action="append",
+        default=None,
+        metavar="FLAG",
+        help=(
+            "Component whose debug logs are enabled when --debug is used "
+            "(repeatable; special value ALL). Default: slurm_quota"
+        ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {APP_VERSION}",
+        help="Show program version and exit",
+    )
 
 
 def parse_signed_int(value: str) -> int:
@@ -64,25 +109,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # Add global logging options
-    log_level_group = parser.add_mutually_exclusive_group()
-    log_level_group.add_argument(
-        "--debug",
-        action="store_true",
-        help="Print debug output",
-    )
-    log_level_group.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help="Only print errors and warnings",
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {APP_VERSION}",
-        help="Show program version and exit",
-    )
+    add_common_arguments(parser)
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -348,8 +375,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Setup logging with selected log verbosity
-    setup_logging(debug=args.debug, quiet=args.quiet)
+    setup_logging(args)
 
     if args.command == "login":
         login_command(args.username, args.save)

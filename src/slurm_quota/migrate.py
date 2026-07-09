@@ -11,6 +11,7 @@ import sys
 
 import slurm_quota
 from slurm_quota.auth import get_current_user
+from slurm_quota.cli import add_common_arguments
 from slurm_quota.database import (
     connect_database,
     enable_wal_mode,
@@ -234,15 +235,11 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging",
-    )
+    add_common_arguments(parser)
 
     args = parser.parse_args()
 
-    setup_logging(debug=args.debug)
+    setup_logging(args)
 
     current_user = get_current_user()
     if current_user != "root":

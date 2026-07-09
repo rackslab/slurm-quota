@@ -8,7 +8,8 @@ import argparse
 import logging
 import sys
 
-from slurm_quota import APP_VERSION, auth
+from slurm_quota import auth
+from slurm_quota.cli import add_common_arguments
 from slurm_quota.database import init_database, update_user_and_account_resources
 from slurm_quota.log import setup_logging
 from slurm_quota.slurm import get_job_info_from_environment
@@ -65,25 +66,8 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    log_level_group = parser.add_mutually_exclusive_group()
-    log_level_group.add_argument(
-        "--debug",
-        action="store_true",
-        help="Print debug output",
-    )
-    log_level_group.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help="Only print errors and warnings",
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {APP_VERSION}",
-        help="Show program version and exit",
-    )
+    add_common_arguments(parser)
 
     args = parser.parse_args()
-    setup_logging(debug=args.debug, quiet=args.quiet)
+    setup_logging(args)
     charge_command()
