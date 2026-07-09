@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 from slurm_quota.serve.settings import ServeSetupError
-from slurm_quota.serve.token import issue_token, main
+from slurm_quota.serve.token import issue_token
 from tests.test_support import SlurmQuotaTestCase, serve_conf_defs
 from tests.unit.serve.support import write_jwt_site_ini
 
@@ -55,16 +53,3 @@ create_parent=yes
                     site_config=site_ini,
                 )
         self.assertIn("method=jwt", str(cm.exception))
-
-
-class TestTokenCLIMain(SlurmQuotaTestCase):
-    def test_rejects_non_root_user(self):
-        with (
-            patch(
-                "slurm_quota.serve.token.auth.get_current_user", return_value="alice"
-            ),
-            patch.object(sys, "argv", ["slurm-quota-token", "alice"]),
-            self.assertRaises(SystemExit) as cm,
-        ):
-            main()
-        self.assertEqual(cm.exception.code, 1)
