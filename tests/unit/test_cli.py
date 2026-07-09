@@ -4,8 +4,22 @@ from __future__ import annotations
 
 import argparse
 
-from slurm_quota.cli import parse_signed_int
+from slurm_quota.cli import add_common_arguments, parse_signed_int
 from tests.test_support import SlurmQuotaTestCase
+
+
+class TestAddCommonArguments(SlurmQuotaTestCase):
+    def test_registers_logging_flag_options(self):
+        parser = argparse.ArgumentParser()
+        add_common_arguments(parser)
+        args = parser.parse_args(
+            ["--debug", "--log-flags", "rfl", "--debug-flags", "werkzeug"]
+        )
+
+        self.assertTrue(args.debug)
+        self.assertFalse(args.quiet)
+        self.assertEqual(args.log_flags, ["rfl"])
+        self.assertEqual(args.debug_flags, ["werkzeug"])
 
 
 class TestParseSignedInt(SlurmQuotaTestCase):
