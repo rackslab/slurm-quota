@@ -11,7 +11,7 @@ slurm-quota - manage Slurm CPU/GPU quota accounting, limits, and stats
 
 == Synopsis
 
-*slurm-quota* [*-h*] [*--debug* | *-q* | *--quiet*] [*--version*] <command> [<args>...]
+*slurm-quota* [*-h*] [*--debug* | *-q* | *--quiet*] [*--log-flags* <flag>]... [*--debug-flags* <flag>]... [*--version*] <command> [<args>...]
 
 == Description
 
@@ -29,6 +29,12 @@ quota and GPU charging settings, and displays consumption statistics.
 
 *-q*, *--quiet*::
   Only print errors and warnings.
+
+*--log-flags* <flag>::
+  Component whose logs are enabled (repeatable; special value `ALL`). Default: `slurm_quota`.
+
+*--debug-flags* <flag>::
+  Component whose debug logs are enabled when *--debug* is used (repeatable; special value `ALL`). Default: `slurm_quota`.
 
 *--version*::
   Show program version and exit.
