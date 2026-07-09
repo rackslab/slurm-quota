@@ -11,7 +11,7 @@ slurm-quota-prune - prune orphaned/unused records from the slurm-quota database
 
 == Synopsis
 
-*slurm-quota-prune* [*-h*] [*--debug* | *-q* | *--quiet*] [*--version*] [*--preallocs* | *--users* | *--accounts* | *--all*] [*--user* <username>] [*--account* <account>] [*--dry-run*]
+*slurm-quota-prune* [*-h*] [*--debug* | *-q* | *--quiet*] [*--log-flags* <flag>]... [*--debug-flags* <flag>]... [*--version*] [*--preallocs* | *--users* | *--accounts* | *--all*] [*--user* <username>] [*--account* <account>] [*--dry-run*]
 
 == Description
 
@@ -30,6 +30,12 @@ The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 
 *-q*, *--quiet*::
   Only print errors and warnings.
+
+*--log-flags* <flag>::
+  Component whose logs are enabled (repeatable; special value `ALL`). Default: `slurm_quota`.
+
+*--debug-flags* <flag>::
+  Component whose debug logs are enabled when *--debug* is used (repeatable; special value `ALL`). Default: `slurm_quota`.
 
 *--version*::
   Show program version and exit.

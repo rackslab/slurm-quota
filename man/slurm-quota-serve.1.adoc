@@ -11,7 +11,7 @@ slurm-quota-serve - HTTP JSON API for Slurm quota
 
 == Synopsis
 
-*slurm-quota-serve* [*-h*] [*--debug* | *-q* | *--quiet*] [*--version*] [*--host* <host>] [*--port* <port>] [*--idle-timeout* <seconds>] [*--conf-defs* <path>] [*--config* <path>] [*--dump-config*]
+*slurm-quota-serve* [*-h*] [*--debug* | *-q* | *--quiet*] [*--log-flags* <flag>]... [*--debug-flags* <flag>]... [*--version*] [*--host* <host>] [*--port* <port>] [*--idle-timeout* <seconds>] [*--conf-defs* <path>] [*--config* <path>] [*--dump-config*]
 
 == Description
 
@@ -31,6 +31,12 @@ The command must run as the `slurm` system user.
 
 *-q*, *--quiet*::
   Only print errors and warnings.
+
+*--log-flags* <flag>::
+  Component whose logs are enabled (repeatable; special value `ALL`). Overrides `[log] log_flags` from the site configuration file. Default: `slurm_quota`.
+
+*--debug-flags* <flag>::
+  Component whose debug logs are enabled when *--debug* is used (repeatable; special value `ALL`). Overrides `[log] debug_flags` from the site configuration file. Default: `slurm_quota`.
 
 *--version*::
   Show program version and exit.
@@ -52,6 +58,8 @@ The command must run as the `slurm` system user.
 
 *--dump-config*::
   Dump resolved configuration values and exit. Passwords are masked.
+
+The site configuration file supports a `[log]` section with `log_flags` and `debug_flags` lists. Command-line `--log-flags` and `--debug-flags` override these values when provided.
 
 Notes:
 

@@ -11,7 +11,7 @@ slurm-quota-token - Issue JWT tokens for slurm-quota-serve
 
 == Synopsis
 
-*slurm-quota-token* [*-h*] [*--debug* | *-q* | *--quiet*] [*--version*] [*--conf-defs* <path>] [*--config* <path>] [*--duration* <days>] <username>
+*slurm-quota-token* [*-h*] [*--debug* | *-q* | *--quiet*] [*--log-flags* <flag>]... [*--debug-flags* <flag>]... [*--version*] [*--conf-defs* <path>] [*--config* <path>] [*--duration* <days>] <username>
 
 == Description
 
@@ -31,6 +31,12 @@ The command must be run as the `root` user. Tokens are printed to stdout.
 
 *-q*, *--quiet*::
   Only print errors and warnings.
+
+*--log-flags* <flag>::
+  Component whose logs are enabled (repeatable; special value `ALL`). Overrides `[log] log_flags` from the site configuration file. Default: `slurm_quota`.
+
+*--debug-flags* <flag>::
+  Component whose debug logs are enabled when *--debug* is used (repeatable; special value `ALL`). Overrides `[log] debug_flags` from the site configuration file. Default: `slurm_quota`.
 
 *--version*::
   Show program version and exit.
