@@ -2,8 +2,8 @@
 :doctype: manpage
 :manmanual: Slurm Quota JWT Issuance
 :mansource: slurm-quota-token
-:revnumber: 2.0.0
-:revdate: 2026-06-19
+:revnumber: 3.0.0
+:revdate: 2026-07-09
 
 == Name
 

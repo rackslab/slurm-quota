@@ -2,8 +2,8 @@
 :doctype: manpage
 :manmanual: Slurm Quota Charge
 :mansource: slurm-quota-charge
-:revnumber: 2.0.0
-:revdate: 2026-04-20
+:revnumber: 3.0.0
+:revdate: 2026-07-09
 
 == Name
 
