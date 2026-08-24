@@ -40,6 +40,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger("slurm_quota")
 
 
+def _api_error_text(prefix: str, exc: ServiceHTTPError) -> str:
+    return f"{prefix}: {exc.status_text()}"
+
+
 def _web_app() -> SlurmQuotaWebApp:
     return cast("SlurmQuotaWebApp", current_app)
 
@@ -154,7 +158,7 @@ def login_post() -> Any:
                 next_url=next_url,
                 auth_required=True,
             )
-        flash(f"Login failed: HTTP {exc.status}", "error")
+        flash(_api_error_text("Login failed", exc), "error")
         return render_template(
             "login.html",
             csrf_token=csrf_token(),
@@ -216,7 +220,9 @@ def dashboard() -> Response | str:
             if exc.status == 401:
                 session.clear()
                 return redirect(login_url(message="session_expired"))
-            flash(f"Failed to retrieve stats from service: {exc}", "error")
+            flash(
+                _api_error_text("Failed to retrieve stats from service", exc), "error"
+            )
         except ServiceUnreachableError as exc:
             flash(f"Failed to retrieve stats from service: {exc}", "error")
 
@@ -247,7 +253,7 @@ def roles() -> Response | str:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-        flash(f"Failed to retrieve roles from service: HTTP {exc.status}", "error")
+        flash(_api_error_text("Failed to retrieve roles from service", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to retrieve roles from service: {exc}", "error")
 
@@ -294,7 +300,7 @@ def roles_post() -> Any:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-        flash(f"Failed to update role: HTTP {exc.status}", "error")
+        flash(_api_error_text("Failed to update role", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to update role: {exc}", "error")
 
@@ -329,7 +335,7 @@ def roles_manager_accounts_post() -> Any:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-        flash(f"Failed to update manager account: HTTP {exc.status}", "error")
+        flash(_api_error_text("Failed to update manager account", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to update manager account: {exc}", "error")
 
@@ -387,7 +393,7 @@ def quotas_post() -> Any:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-        flash(f"Failed to update quota: HTTP {exc.status}", "error")
+        flash(_api_error_text("Failed to update quota", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to update quota: {exc}", "error")
 
@@ -426,7 +432,7 @@ def consumption_post() -> Any:
         if exc.status in (401, 403):
             session.clear()
             return redirect(login_url(message="session_expired"))
-        flash(f"Failed to adjust consumption: HTTP {exc.status}", "error")
+        flash(_api_error_text("Failed to adjust consumption", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to adjust consumption: {exc}", "error")
 
