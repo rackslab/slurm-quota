@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from slurm_quota.database import init_database
@@ -31,3 +32,37 @@ class ServeRoutesTestCase(SlurmQuotaTestCase):
 
     def _headers(self, username: str = "alice") -> dict[str, str]:
         return {"Authorization": f"Bearer {issue_test_token(self._site_ini, username)}"}
+
+    def _assert_abort_warning(
+        self,
+        log_cm: Any,
+        method: str,
+        path: str,
+        status: int,
+        description: str,
+    ) -> None:
+        expected = f"WARNING:slurm_quota:{method} {path}: HTTP {status} {description}"
+        self.assertIn(expected, log_cm.output)
+
+    def _request_expecting_abort(
+        self,
+        method: str,
+        path: str,
+        status: int,
+        *,
+        description: str,
+        **kwargs: Any,
+    ) -> Any:
+        client = app.test_client()
+        request = getattr(client, method.lower())
+        with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
+            resp = request(path, **kwargs)
+        self.assertEqual(resp.status_code, status)
+        self._assert_abort_warning(
+            log_cm,
+            method.upper(),
+            path.split("?", 1)[0],
+            status,
+            description,
+        )
+        return resp

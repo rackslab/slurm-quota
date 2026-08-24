@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from unittest.mock import patch
 
+from werkzeug.exceptions import NotFound
+
 from slurm_quota.database import grant_operator, init_database
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 
@@ -127,59 +129,65 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
                 ("bob", 100),
             )
             conn.commit()
-        client = app.test_client()
-        resp = client.patch(
+        self._request_expecting_abort(
+            "PATCH",
             "/consumption/user/bob/cpu",
+            403,
+            description="Insufficient permissions",
             headers=self._headers("bob"),
             json={"delta_minutes": 10},
         )
-        self.assertEqual(resp.status_code, 403)
 
     def test_missing_user_returns_400(self):
         init_database()
-        client = app.test_client()
-        resp = client.patch(
+        self._request_expecting_abort(
+            "PATCH",
             "/consumption/user/missing/cpu",
+            400,
+            description="User not found: missing",
             headers=self._headers("alice"),
             json={"delta_minutes": 10},
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_invalid_username_returns_400(self):
-        client = app.test_client()
-        resp = client.patch(
+        self._request_expecting_abort(
+            "PATCH",
             "/consumption/user/bad name/cpu",
+            400,
+            description="Invalid username",
             headers=self._headers("alice"),
             json={"delta_minutes": 10},
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_invalid_account_returns_400(self):
-        client = app.test_client()
-        resp = client.patch(
+        self._request_expecting_abort(
+            "PATCH",
             "/consumption/account/bad account/cpu",
+            400,
+            description="Invalid account",
             headers=self._headers("alice"),
             json={"delta_minutes": 10},
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_invalid_body_returns_400(self):
-        client = app.test_client()
-        resp = client.patch(
+        self._request_expecting_abort(
+            "PATCH",
             "/consumption/user/bob/cpu",
+            400,
+            description="delta_minutes must be an integer",
             headers=self._headers("alice"),
             json={"delta_minutes": "30"},
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_missing_delta_minutes_returns_400(self):
-        client = app.test_client()
-        resp = client.patch(
+        self._request_expecting_abort(
+            "PATCH",
             "/consumption/user/bob/cpu",
+            400,
+            description="delta_minutes must be an integer",
             headers=self._headers("alice"),
             json={},
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_adjust_consumption_logs_reason_when_provided(self):
         init_database()
@@ -213,13 +221,14 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
                 ("bob", 100),
             )
             conn.commit()
-        client = app.test_client()
-        resp = client.patch(
+        resp = self._request_expecting_abort(
+            "PATCH",
             "/consumption/user/bob/cpu",
+            400,
+            description="reason must not be empty",
             headers=self._headers("alice"),
             json={"delta_minutes": 30, "reason": ""},
         )
-        self.assertEqual(resp.status_code, 400)
         self.assertEqual(
             resp.get_json(),
             {"error": "bad_request", "message": "reason must not be empty"},
@@ -233,35 +242,38 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
                 ("bob", 100),
             )
             conn.commit()
-        client = app.test_client()
-        resp = client.patch(
+        resp = self._request_expecting_abort(
+            "PATCH",
             "/consumption/user/bob/cpu",
+            400,
+            description="reason must be a single line",
             headers=self._headers("alice"),
             json={"delta_minutes": 30, "reason": "line one\nline two"},
         )
-        self.assertEqual(resp.status_code, 400)
         self.assertEqual(
             resp.get_json(),
             {"error": "bad_request", "message": "reason must be a single line"},
         )
 
     def test_unknown_entity_returns_404(self):
-        client = app.test_client()
-        resp = client.patch(
+        self._request_expecting_abort(
+            "PATCH",
             "/consumption/teams/bob/cpu",
+            404,
+            description=NotFound.description,
             headers=self._headers("alice"),
             json={"delta_minutes": 10},
         )
-        self.assertEqual(resp.status_code, 404)
 
     def test_invalid_resource_returns_400(self):
-        client = app.test_client()
-        resp = client.patch(
+        resp = self._request_expecting_abort(
+            "PATCH",
             "/consumption/user/bob/mem",
+            400,
+            description="Invalid resource",
             headers=self._headers("alice"),
             json={"delta_minutes": 10},
         )
-        self.assertEqual(resp.status_code, 400)
         self.assertEqual(
             resp.get_json(),
             {"error": "bad_request", "message": "Invalid resource"},

@@ -42,9 +42,13 @@ class TestGpuFactorsRoute(ServeRoutesTestCase):
 
     def test_user_cannot_get_gpu_factors(self):
         init_database()
-        client = app.test_client()
-        resp = client.get("/factors/gpu", headers=self._headers("bob"))
-        self.assertEqual(resp.status_code, 403)
+        self._request_expecting_abort(
+            "GET",
+            "/factors/gpu",
+            403,
+            description="Insufficient permissions",
+            headers=self._headers("bob"),
+        )
 
     def test_admin_sets_gpu_factor(self):
         init_database()
@@ -88,41 +92,45 @@ class TestGpuFactorsRoute(ServeRoutesTestCase):
 
     def test_user_cannot_set_gpu_factor(self):
         init_database()
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/factors/gpu/h100",
+            403,
+            description="Insufficient permissions",
             headers=self._headers("bob"),
             json={"factor": 0.5},
         )
-        self.assertEqual(resp.status_code, 403)
 
     def test_put_rejects_non_positive_factor(self):
         init_database()
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/factors/gpu/h100",
+            400,
+            description="factor must be a positive number",
             headers=self._headers("alice"),
             json={"factor": 0},
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_put_rejects_invalid_json_body(self):
         init_database()
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/factors/gpu/h100",
+            400,
+            description="Invalid JSON body",
             headers=self._headers("alice"),
             data="not-json",
             content_type="application/json",
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_put_requires_factor_field(self):
         init_database()
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/factors/gpu/h100",
+            400,
+            description="factor must be a positive number",
             headers=self._headers("alice"),
             json={},
         )
-        self.assertEqual(resp.status_code, 400)
