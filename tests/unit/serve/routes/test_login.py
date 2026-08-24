@@ -45,7 +45,7 @@ class TestLoginRoute(ServeRoutesTestCase):
             ldap_error = LDAPAuthenticationError("LDAP server unavailable")
             with (
                 patch("slurm_quota.serve.app.LDAPAuthentifier") as m_ldap_cls,
-                self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+                self.assertLogs("slurm_quota", level="WARNING") as log_cm,
             ):
                 m_ldap_cls.return_value.login.side_effect = ldap_error
                 app.setup(serve_conf_defs(), site_ini)
@@ -58,9 +58,12 @@ class TestLoginRoute(ServeRoutesTestCase):
         body = json.loads(resp.data)
         self.assertEqual(body["error"], "unauthorized")
         self.assertEqual(body["message"], "Authentication failed")
-        self.assertEqual(
+        self.assertIn(
+            "ERROR:slurm_quota:LDAP authentication failed: LDAP server unavailable",
             log_cm.output,
-            ["ERROR:slurm_quota:LDAP authentication failed: LDAP server unavailable"],
+        )
+        self._assert_abort_warning(
+            log_cm, "POST", "/login", 401, "Authentication failed"
         )
 
     def test_auth_login_not_found_for_jwt_method(self):

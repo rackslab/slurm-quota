@@ -111,20 +111,24 @@ class TestStatsRoute(ServeRoutesTestCase):
 
     def test_stats_rejects_missing_token(self):
         init_database()
-        client = app.test_client()
-        resp = client.get("/stats")
-        self.assertEqual(resp.status_code, 403)
+        resp = self._request_expecting_abort(
+            "GET",
+            "/stats",
+            403,
+            description="Not allowed to access endpoint without bearer token",
+        )
         body = json.loads(resp.data)
         self.assertEqual(body["error"], "forbidden")
 
     def test_stats_rejects_invalid_token(self):
         init_database()
-        client = app.test_client()
-        resp = client.get(
+        resp = self._request_expecting_abort(
+            "GET",
             "/stats",
+            401,
+            description="Unable to decode token: Not enough segments",
             headers={"Authorization": "Bearer invalid"},
         )
-        self.assertEqual(resp.status_code, 401)
         body = json.loads(resp.data)
         self.assertEqual(body["error"], "unauthorized")
 
@@ -137,9 +141,13 @@ class TestStatsRoute(ServeRoutesTestCase):
             )
             conn.commit()
 
-        client = app.test_client()
-        resp = client.get("/stats?username=bob", headers=self._headers("carol"))
-        self.assertEqual(resp.status_code, 403)
+        self._request_expecting_abort(
+            "GET",
+            "/stats?username=bob",
+            403,
+            description="Not allowed to view stats for other users",
+            headers=self._headers("carol"),
+        )
 
     def test_operator_can_query_all_stats(self):
         init_database()
@@ -207,9 +215,13 @@ class TestStatsRoute(ServeRoutesTestCase):
             grant_manager_account(conn, "carol", "hpc")
             conn.commit()
 
-        client = app.test_client()
-        resp = client.get("/stats?account=dev", headers=self._headers("carol"))
-        self.assertEqual(resp.status_code, 403)
+        self._request_expecting_abort(
+            "GET",
+            "/stats?account=dev",
+            403,
+            description="Not allowed to view stats for this account",
+            headers=self._headers("carol"),
+        )
 
     def test_manager_can_query_member_user_stats(self):
         init_database()
@@ -249,10 +261,13 @@ class TestStatsRoute(ServeRoutesTestCase):
             conn.commit()
 
         with patch("slurm_quota.slurm.get_user_accounts", return_value={"dev"}):
-            client = app.test_client()
-            resp = client.get("/stats?username=bob", headers=self._headers("carol"))
-
-        self.assertEqual(resp.status_code, 403)
+            self._request_expecting_abort(
+                "GET",
+                "/stats?username=bob",
+                403,
+                description="Not allowed to view stats for other users",
+                headers=self._headers("carol"),
+            )
 
     def test_manager_unfiltered_stats_returns_assigned_scope(self):
         init_database()

@@ -57,9 +57,13 @@ class TestDefaultQuotasRoute(ServeRoutesTestCase):
 
     def test_user_cannot_get_default_quotas(self):
         init_database()
-        client = app.test_client()
-        resp = client.get("/quotas/defaults", headers=self._headers("bob"))
-        self.assertEqual(resp.status_code, 403)
+        self._request_expecting_abort(
+            "GET",
+            "/quotas/defaults",
+            403,
+            description="Insufficient permissions",
+            headers=self._headers("bob"),
+        )
 
     def test_admin_sets_all_default_quotas(self):
         init_database()
@@ -118,41 +122,48 @@ class TestDefaultQuotasRoute(ServeRoutesTestCase):
 
     def test_user_cannot_set_default_quotas(self):
         init_database()
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/quotas/defaults",
+            403,
+            description="Insufficient permissions",
             headers=self._headers("bob"),
             json={"user_cpu_minutes": 100},
         )
-        self.assertEqual(resp.status_code, 403)
 
     def test_put_requires_at_least_one_field(self):
         init_database()
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/quotas/defaults",
+            400,
+            description=(
+                "At least one field is required: user_cpu_minutes, "
+                "user_gpu_minutes, account_cpu_minutes, account_gpu_minutes"
+            ),
             headers=self._headers("alice"),
             json={},
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_put_rejects_invalid_json_body(self):
         init_database()
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/quotas/defaults",
+            400,
+            description="Invalid JSON body",
             headers=self._headers("alice"),
             data="not-json",
             content_type="application/json",
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_put_rejects_value_below_minus_one(self):
         init_database()
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/quotas/defaults",
+            400,
+            description="user_cpu_minutes must be an integer >= -1",
             headers=self._headers("alice"),
             json={"user_cpu_minutes": -2},
         )
-        self.assertEqual(resp.status_code, 400)

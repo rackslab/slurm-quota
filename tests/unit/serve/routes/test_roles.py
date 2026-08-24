@@ -49,9 +49,13 @@ class TestRolesRoute(ServeRoutesTestCase):
         self.assertEqual(bob["accounts"], ["hpc"])
 
     def test_non_admin_cannot_list_roles(self):
-        client = app.test_client()
-        resp = client.get("/roles", headers=self._headers("carol"))
-        self.assertEqual(resp.status_code, 403)
+        self._request_expecting_abort(
+            "GET",
+            "/roles",
+            403,
+            description="Insufficient permissions",
+            headers=self._headers("carol"),
+        )
 
     def test_non_admin_cannot_grant_operator(self):
         init_database()
@@ -62,15 +66,22 @@ class TestRolesRoute(ServeRoutesTestCase):
             )
             conn.commit()
 
-        client = app.test_client()
-        grant = client.put("/roles/operators/bob", headers=self._headers("carol"))
-        self.assertEqual(grant.status_code, 403)
+        self._request_expecting_abort(
+            "PUT",
+            "/roles/operators/bob",
+            403,
+            description="Insufficient permissions",
+            headers=self._headers("carol"),
+        )
 
     def test_non_admin_cannot_grant_manager(self):
-        init_database()
-        client = app.test_client()
-        grant = client.put("/roles/managers/bob", headers=self._headers("carol"))
-        self.assertEqual(grant.status_code, 403)
+        self._request_expecting_abort(
+            "PUT",
+            "/roles/managers/bob",
+            403,
+            description="Insufficient permissions",
+            headers=self._headers("carol"),
+        )
 
     def test_admin_grants_and_revokes_operator(self):
         init_database()
@@ -166,9 +177,10 @@ class TestRolesRoute(ServeRoutesTestCase):
 
     def test_manager_account_assignment_requires_manager_role(self):
         init_database()
-        client = app.test_client()
-        add = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/roles/managers/bob/accounts/hpc",
+            404,
+            description="User is not a manager",
             headers=self._headers("alice"),
         )
-        self.assertEqual(add.status_code, 404)

@@ -117,40 +117,44 @@ class TestQuotasRoute(ServeRoutesTestCase):
 
     def test_user_cannot_set_quota(self):
         init_database()
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/quotas/users/bob/cpu",
+            403,
+            description="Insufficient permissions",
             headers=self._headers("bob"),
             json={"quota_minutes": 100},
         )
-        self.assertEqual(resp.status_code, 403)
 
     def test_invalid_username_returns_400(self):
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/quotas/users/bad name/cpu",
+            400,
+            description="Invalid username",
             headers=self._headers("alice"),
             json={"quota_minutes": 100},
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_invalid_account_returns_400(self):
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/quotas/accounts/bad account/cpu",
+            400,
+            description="Invalid account",
             headers=self._headers("alice"),
             json={"quota_minutes": 100},
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_invalid_body_returns_400(self):
-        client = app.test_client()
-        resp = client.put(
+        resp = self._request_expecting_abort(
+            "PUT",
             "/quotas/users/bob/cpu",
+            400,
+            description="quota_minutes must be an integer >= -1",
             headers=self._headers("alice"),
             json={"quota_minutes": -2},
         )
-        self.assertEqual(resp.status_code, 400)
         self.assertEqual(
             resp.get_json(),
             {
@@ -160,13 +164,14 @@ class TestQuotasRoute(ServeRoutesTestCase):
         )
 
     def test_missing_quota_minutes_returns_400(self):
-        client = app.test_client()
-        resp = client.put(
+        self._request_expecting_abort(
+            "PUT",
             "/quotas/users/bob/cpu",
+            400,
+            description="quota_minutes must be an integer >= -1",
             headers=self._headers("alice"),
             json={},
         )
-        self.assertEqual(resp.status_code, 400)
 
     def test_set_quota_logs_reason_when_provided(self):
         init_database()
@@ -187,39 +192,42 @@ class TestQuotasRoute(ServeRoutesTestCase):
         )
 
     def test_set_quota_rejects_empty_reason(self):
-        client = app.test_client()
-        resp = client.put(
+        resp = self._request_expecting_abort(
+            "PUT",
             "/quotas/users/bob/cpu",
+            400,
+            description="reason must not be empty",
             headers=self._headers("alice"),
             json={"quota_minutes": 500, "reason": "   "},
         )
-        self.assertEqual(resp.status_code, 400)
         self.assertEqual(
             resp.get_json(),
             {"error": "bad_request", "message": "reason must not be empty"},
         )
 
     def test_set_quota_rejects_non_string_reason(self):
-        client = app.test_client()
-        resp = client.put(
+        resp = self._request_expecting_abort(
+            "PUT",
             "/quotas/users/bob/cpu",
+            400,
+            description="reason must be a string",
             headers=self._headers("alice"),
             json={"quota_minutes": 500, "reason": 42},
         )
-        self.assertEqual(resp.status_code, 400)
         self.assertEqual(
             resp.get_json(),
             {"error": "bad_request", "message": "reason must be a string"},
         )
 
     def test_set_quota_rejects_too_long_reason(self):
-        client = app.test_client()
-        resp = client.put(
+        resp = self._request_expecting_abort(
+            "PUT",
             "/quotas/users/bob/cpu",
+            400,
+            description="reason must be at most 500 characters",
             headers=self._headers("alice"),
             json={"quota_minutes": 500, "reason": "x" * 501},
         )
-        self.assertEqual(resp.status_code, 400)
         self.assertEqual(
             resp.get_json(),
             {
@@ -229,13 +237,14 @@ class TestQuotasRoute(ServeRoutesTestCase):
         )
 
     def test_set_quota_rejects_multiline_reason(self):
-        client = app.test_client()
-        resp = client.put(
+        resp = self._request_expecting_abort(
+            "PUT",
             "/quotas/users/bob/cpu",
+            400,
+            description="reason must be a single line",
             headers=self._headers("alice"),
             json={"quota_minutes": 500, "reason": "line one\nline two"},
         )
-        self.assertEqual(resp.status_code, 400)
         self.assertEqual(
             resp.get_json(),
             {"error": "bad_request", "message": "reason must be a single line"},
