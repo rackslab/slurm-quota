@@ -12,11 +12,11 @@ import time
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from rfl.authentication.ldap import LDAPAuthentifier
 from rfl.settings import RuntimeSettings
 from rfl.web.tokens import RFLTokenizedWebApp
-from werkzeug.exceptions import BadRequest, Forbidden, Unauthorized
+from werkzeug.exceptions import BadRequest, Forbidden, HTTPException, Unauthorized
 
 from slurm_quota import auth
 from slurm_quota.database import init_database
@@ -50,6 +50,7 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
         self.register_error_handler(403, self.forbidden)
         self.register_error_handler(404, self.not_found)
         self.register_error_handler(400, self.bad_request)
+        self.register_error_handler(HTTPException, self.http_exception)
         self.add_url_rule("/health", view_func=routes.health, methods=["GET"])
         self.add_url_rule("/login", view_func=routes.login, methods=["POST"])
         self.add_url_rule("/stats", view_func=routes.stats, methods=["GET"])
@@ -190,38 +191,63 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
     def touch_activity(self) -> None:
         self._last_activity = time.monotonic()
 
-    def not_found(self, _exc: Any) -> Any:
-        return jsonify({"error": "not_found"}), 404
+    def _http_abort_response(
+        self,
+        exc: HTTPException,
+        error: str,
+        *,
+        message: str | None = None,
+    ) -> Any:
+        """Log an HTTP abort and return a JSON error payload."""
+        code = exc.code or 500
+        description = exc.description or exc.name
+        log_message = "%s %s: HTTP %s %s"
+        args = (request.method, request.path, code, description)
+        if code >= 500:
+            logger.error(log_message, *args)
+        else:
+            logger.warning(log_message, *args)
+        payload: dict[str, str] = {"error": error}
+        if message is not None:
+            payload["message"] = message
+        return jsonify(payload), code
+
+    def not_found(self, exc: HTTPException) -> Any:
+        return self._http_abort_response(exc, "not_found")
 
     def unauthorized(self, exc: Unauthorized) -> Any:
-        return (
-            jsonify(
-                {
-                    "error": "unauthorized",
-                    "message": exc.description or "Authentication required",
-                }
-            ),
-            401,
+        """Return JSON 401 for authentication failures and log the abort."""
+        return self._http_abort_response(
+            exc,
+            "unauthorized",
+            message=exc.description or "Authentication required",
         )
 
     def forbidden(self, exc: Forbidden) -> Any:
-        return (
-            jsonify(
-                {
-                    "error": "forbidden",
-                    "message": exc.description or "Forbidden",
-                }
-            ),
-            403,
+        """Return JSON 403 for permission denials and log the abort."""
+        return self._http_abort_response(
+            exc,
+            "forbidden",
+            message=exc.description or "Forbidden",
         )
 
     def bad_request(self, exc: BadRequest) -> Any:
-        return (
-            jsonify(
-                {
-                    "error": "bad_request",
-                    "message": exc.description or "Bad request",
-                }
-            ),
-            400,
+        """Return JSON 400 for validation failures and log the abort."""
+        return self._http_abort_response(
+            exc,
+            "bad_request",
+            message=exc.description or "Bad request",
+        )
+
+    def http_exception(self, exc: HTTPException) -> Any:
+        """Log and JSON-encode abort codes not handled by the 400/401/403/404 methods.
+
+        Flask uses this only when no more specific handler matches (for example
+        405 Method Not Allowed), so those responses are not silent HTML errors.
+        """
+        error = (exc.name or "error").lower().replace(" ", "_")
+        return self._http_abort_response(
+            exc,
+            error,
+            message=exc.description or exc.name,
         )
