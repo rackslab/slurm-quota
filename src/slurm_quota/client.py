@@ -34,6 +34,12 @@ class ServiceHTTPError(Exception):
         self.error = error
         super().__init__(f"HTTP {status}")
 
+    def status_text(self) -> str:
+        """HTTP status, with the API JSON message appended when present."""
+        if self.message:
+            return f"HTTP {self.status}: {self.message}"
+        return f"HTTP {self.status}"
+
     @classmethod
     def from_http_error(cls, exc: HTTPError) -> ServiceHTTPError:
         payload: dict[str, Any] = {}

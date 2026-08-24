@@ -43,7 +43,7 @@ def _handle_api_error(exc: ServiceHTTPError, *, forbidden_message: str) -> None:
             logger.error(f"Authentication failed: {detail}.")
         logger.info(RELOGIN_GUIDANCE)
     else:
-        logger.error(f"API request failed: HTTP {exc.status}")
+        logger.error(f"API request failed: {exc.status_text()}")
     sys.exit(1)
 
 
@@ -464,7 +464,7 @@ def login_command(username: Optional[str] = None, save: bool = False) -> None:
                 "(POST /login returned HTTP 404)"
             )
         else:
-            logger.error(f"Login failed: HTTP {e.status}")
+            logger.error(f"Login failed: {e.status_text()}")
         sys.exit(1)
     except OSError as e:
         logger.error(f"Failed to save authentication token: {e}")
