@@ -934,6 +934,37 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
             "Failed to adjust consumption: HTTP 500", resp.get_data(as_text=True)
         )
 
+    def test_consumption_post_failure_shows_api_message(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value="operator"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            m_client.return_value.adjust_consumption.side_effect = ServiceHTTPError(
+                400, message="Invalid account"
+            )
+            client = web_app().test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            resp = client.post(
+                "/consumption",
+                data={
+                    "_csrf": csrf,
+                    "target": "user",
+                    "name": "alice",
+                    "resource": "cpu",
+                    "delta_minutes": "-15",
+                },
+                follow_redirects=True,
+            )
+        self.assertIn(
+            "Failed to adjust consumption: HTTP 400: Invalid account",
+            resp.get_data(as_text=True),
+        )
+
     def test_consumption_post_redirects_user_to_dashboard(self):
         with (
             patch(

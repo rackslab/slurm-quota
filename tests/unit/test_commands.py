@@ -392,6 +392,23 @@ class TestRoleCommands(SlurmQuotaTestCase):
             ["ERROR:slurm_quota:API request failed: HTTP 502"],
         )
 
+    def test_role_show_http_error_includes_api_message(self):
+        with (
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
+        ):
+            m_client.return_value.me.side_effect = ServiceHTTPError(
+                400, message="Invalid account"
+            )
+            role_show_command()
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(
+            log_cm.output,
+            ["ERROR:slurm_quota:API request failed: HTTP 400: Invalid account"],
+        )
+
     def test_role_list_prints_table(self):
         buf = io.StringIO()
         with (
