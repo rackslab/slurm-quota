@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import sqlite3
 from typing import TYPE_CHECKING, Any, cast
 
@@ -52,12 +51,23 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("slurm_quota")
 
-_USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 _MAX_REASON_LENGTH = 500
 
 
+def _valid_name(value: str) -> bool:
+    """Return whether value is a usable user or account name.
+
+    Invalid names are empty, contain / (which would split a URL path
+    segment), or contain whitespace or ASCII control characters. Other
+    punctuation, including @, is accepted.
+    """
+    if not value or "/" in value:
+        return False
+    return not any(ch.isspace() or ord(ch) < 32 for ch in value)
+
+
 def _validate_username(username: str) -> None:
-    if not username or not _USERNAME_PATTERN.fullmatch(username):
+    if not _valid_name(username):
         abort(
             400,
             description="Invalid username",
@@ -65,7 +75,7 @@ def _validate_username(username: str) -> None:
 
 
 def _validate_account(account: str) -> None:
-    if not account or not _USERNAME_PATTERN.fullmatch(account):
+    if not _valid_name(account):
         abort(
             400,
             description="Invalid account",
