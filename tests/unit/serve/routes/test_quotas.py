@@ -146,6 +146,38 @@ class TestQuotasRoute(ServeRoutesTestCase):
             json={"quota_minutes": 100},
         )
 
+    def test_admin_sets_user_cpu_quota_with_at_sign(self):
+        init_database()
+        client = app.test_client()
+        resp = client.put(
+            "/quotas/users/alice@site/cpu",
+            headers=self._headers("alice"),
+            json={"quota_minutes": 500},
+        )
+        self.assertEqual(resp.status_code, 204)
+        with self.db_connection() as conn:
+            row = conn.execute(
+                "SELECT quota_cpu_minutes FROM users WHERE username = ?",
+                ("alice@site",),
+            ).fetchone()
+        self.assertEqual(row[0], 500)
+
+    def test_admin_sets_account_cpu_quota_with_at_sign(self):
+        init_database()
+        client = app.test_client()
+        resp = client.put(
+            "/quotas/accounts/lab@site/cpu",
+            headers=self._headers("alice"),
+            json={"quota_minutes": 900},
+        )
+        self.assertEqual(resp.status_code, 204)
+        with self.db_connection() as conn:
+            row = conn.execute(
+                "SELECT quota_cpu_minutes FROM accounts WHERE account = ?",
+                ("lab@site",),
+            ).fetchone()
+        self.assertEqual(row[0], 900)
+
     def test_invalid_body_returns_400(self):
         resp = self._request_expecting_abort(
             "PUT",
