@@ -524,6 +524,15 @@ class TestAPIClientQuotas(SlurmQuotaTestCase):
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"quota_minutes": -1})
 
+    def test_set_account_cpu_quota_quotes_at_sign_in_path(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").set_account_cpu_quota("lab@site", 100)
+        req = m_urlopen.call_args[0][0]
+        self.assertIn("/quotas/accounts/lab%40site/cpu", req.full_url)
+
     def test_set_user_gpu_quota_raises_service_http_error_on_bad_status(self):
         with (
             patch(
