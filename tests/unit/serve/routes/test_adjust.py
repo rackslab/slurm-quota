@@ -169,6 +169,40 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             json={"delta_minutes": 10},
         )
 
+    def test_admin_adjusts_user_cpu_consumption_with_at_sign(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("alice@site", 100),
+            )
+            conn.commit()
+        client = app.test_client()
+        resp = client.patch(
+            "/consumption/user/alice@site/cpu",
+            headers=self._headers("alice"),
+            json={"delta_minutes": 30},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"total_consumed_minutes": 130})
+
+    def test_admin_adjusts_account_cpu_consumption_with_at_sign(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
+                ("lab@site", 200),
+            )
+            conn.commit()
+        client = app.test_client()
+        resp = client.patch(
+            "/consumption/account/lab@site/cpu",
+            headers=self._headers("alice"),
+            json={"delta_minutes": 10},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"total_consumed_minutes": 210})
+
     def test_invalid_body_returns_400(self):
         self._request_expecting_abort(
             "PATCH",
