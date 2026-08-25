@@ -13,7 +13,7 @@ import ssl
 from http import HTTPStatus
 from typing import Any, Literal
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urljoin, urlparse
+from urllib.parse import quote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 logger = logging.getLogger("slurm_quota")
@@ -72,6 +72,10 @@ class ServiceUnreachableError(Exception):
 
 def _default_base_url() -> str:
     return os.environ.get("SLURM_QUOTA_URL", "http://127.0.0.1:9911/")
+
+
+def _quote_name(value: str) -> str:
+    return quote(value, safe="")
 
 
 def _ssl_context(base_url: str) -> ssl.SSLContext | None:
@@ -219,7 +223,7 @@ class APIClient:
     def grant_role(self, role: Literal["operator", "manager"], username: str) -> None:
         self._api_request(
             "PUT",
-            f"roles/{role}s/{username}",
+            f"roles/{role}s/{_quote_name(username)}",
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
         )
@@ -227,14 +231,16 @@ class APIClient:
     def revoke_role(self, role: Literal["operator", "manager"], username: str) -> None:
         self._api_request(
             "DELETE",
-            f"roles/{role}s/{username}",
+            f"roles/{role}s/{_quote_name(username)}",
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
         )
 
     def list_manager_accounts(self, username: str) -> list[str]:
         payload = self._api_request(
-            "GET", f"roles/managers/{username}/accounts", require_token=True
+            "GET",
+            f"roles/managers/{_quote_name(username)}/accounts",
+            require_token=True,
         )
         accounts = payload.get("accounts", [])
         if not isinstance(accounts, list):
@@ -244,7 +250,7 @@ class APIClient:
     def add_manager_account(self, username: str, account: str) -> None:
         self._api_request(
             "PUT",
-            f"roles/managers/{username}/accounts/{account}",
+            f"roles/managers/{_quote_name(username)}/accounts/{_quote_name(account)}",
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
         )
@@ -252,7 +258,7 @@ class APIClient:
     def remove_manager_account(self, username: str, account: str) -> None:
         self._api_request(
             "DELETE",
-            f"roles/managers/{username}/accounts/{account}",
+            f"roles/managers/{_quote_name(username)}/accounts/{_quote_name(account)}",
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
         )
@@ -265,7 +271,7 @@ class APIClient:
             body["reason"] = reason
         self._api_request(
             "PUT",
-            f"quotas/users/{username}/cpu",
+            f"quotas/users/{_quote_name(username)}/cpu",
             body=body,
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
@@ -279,7 +285,7 @@ class APIClient:
             body["reason"] = reason
         self._api_request(
             "PUT",
-            f"quotas/users/{username}/gpu",
+            f"quotas/users/{_quote_name(username)}/gpu",
             body=body,
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
@@ -293,7 +299,7 @@ class APIClient:
             body["reason"] = reason
         self._api_request(
             "PUT",
-            f"quotas/accounts/{account}/cpu",
+            f"quotas/accounts/{_quote_name(account)}/cpu",
             body=body,
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
@@ -307,7 +313,7 @@ class APIClient:
             body["reason"] = reason
         self._api_request(
             "PUT",
-            f"quotas/accounts/{account}/gpu",
+            f"quotas/accounts/{_quote_name(account)}/gpu",
             body=body,
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
@@ -362,7 +368,7 @@ class APIClient:
         *,
         reason: str | None = None,
     ) -> int:
-        path = f"consumption/{target}/{name}/{resource}"
+        path = f"consumption/{target}/{_quote_name(name)}/{resource}"
         body: dict[str, Any] = {"delta_minutes": delta_minutes}
         if reason is not None:
             body["reason"] = reason
