@@ -572,6 +572,24 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
         self.assertIn('action="/quotas"', body)
         self.assertIn('name="quota_minutes"', body)
 
+    def test_dashboard_shows_quota_edit_for_operator(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value="operator"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            resp = client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_data(as_text=True)
+        self.assertIn('data-edit="quota"', body)
+        self.assertIn('action="/quotas"', body)
+        self.assertIn('name="quota_minutes"', body)
+        self.assertIn(">Edit</button>", body)
+
     def test_dashboard_hides_quota_edit_for_user(self):
         with (
             patch(
@@ -809,6 +827,24 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
         self.assertIn('data-edit="consumption"', body)
         self.assertIn('action="/consumption"', body)
         self.assertIn('name="delta_minutes"', body)
+
+    def test_dashboard_shows_consumption_edit_for_operator(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value="operator"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            resp = client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_data(as_text=True)
+        self.assertIn('data-edit="consumption"', body)
+        self.assertIn('action="/consumption"', body)
+        self.assertIn('name="delta_minutes"', body)
+        self.assertIn(">Edit</button>", body)
 
     def test_dashboard_hides_consumption_edit_for_user(self):
         with (
