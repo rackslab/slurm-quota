@@ -43,6 +43,48 @@ class SlurmQuotaTestCase(unittest.TestCase):
             configure_connection(conn)
             yield conn
 
+    @staticmethod
+    def insert_consumption(
+        conn,
+        username: str,
+        account: str,
+        cpu_minutes: int = 0,
+        gpu_minutes: int = 0,
+    ) -> None:
+        """Record consumption of a user on an account, in minutes.
+
+        User and account rows are created when missing (with unlimited quotas).
+        Consumption is stored in seconds, added to any existing pair consumption.
+        """
+        conn.execute("INSERT OR IGNORE INTO users (username) VALUES (?)", (username,))
+        conn.execute("INSERT OR IGNORE INTO accounts (account) VALUES (?)", (account,))
+        conn.execute(
+            """
+            INSERT INTO user_account_consumption (
+                username, account, consumed_cpu_seconds, consumed_gpu_seconds
+            )
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (username, account) DO UPDATE SET
+                consumed_cpu_seconds = consumed_cpu_seconds
+                    + excluded.consumed_cpu_seconds,
+                consumed_gpu_seconds = consumed_gpu_seconds
+                    + excluded.consumed_gpu_seconds
+            """,
+            (username, account, cpu_minutes * 60, gpu_minutes * 60),
+        )
+
+    @staticmethod
+    def pair_consumption(conn, username: str, account: str) -> tuple[int, int]:
+        """Return (cpu_seconds, gpu_seconds) consumed by a user on an account."""
+        row = conn.execute(
+            """
+            SELECT consumed_cpu_seconds, consumed_gpu_seconds
+            FROM user_account_consumption WHERE username = ? AND account = ?
+            """,
+            (username, account),
+        ).fetchone()
+        return (int(row[0]), int(row[1])) if row else (0, 0)
+
     def env(self, updates: dict[str, str]):
         p = patch.dict(os.environ, updates, clear=False)
         p.start()

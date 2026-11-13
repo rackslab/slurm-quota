@@ -8,7 +8,7 @@ from unittest.mock import patch
 from slurm_quota.database import init_database
 from tests.functional.functional_base import FunctionalCLIBase
 
-# Slurm jobcomp-style env: 1 proc × (1860 − 60)s / 60 = 30 CPU minutes (START/END non-zero).
+# Slurm jobcomp-style env: 1 proc × (1860 − 60)s = 1800 CPU seconds (START/END non-zero).
 _SLURM_CHARGE_JOB_ENV = {
     "JOBID": "9",
     "ARRAYJOBID": "0",
@@ -58,29 +58,23 @@ class TestChargeCommand(FunctionalCLIBase):
             log_cm.output,
             [
                 "WARNING:slurm_quota:No job UUID found in admin_comment for job 9",
-                "INFO:slurm_quota:charge: user=u1 account=a1 job_id=9 +30 CPUmins +0 GPUmins "
+                "INFO:slurm_quota:charge: user=u1 account=a1 job_id=9 +1800 CPUsecs +0 GPUsecs "
                 "uuid=none prealloc_status=none",
             ],
         )
         with self.db_connection() as conn:
             u = conn.execute(
-                """
-                SELECT total_consumed_cpu_minutes, total_consumed_gpu_minutes,
-                       quota_cpu_minutes, quota_gpu_minutes
-                FROM users WHERE username=?
-                """,
+                "SELECT quota_cpu_minutes, quota_gpu_minutes FROM users WHERE username = ?",
                 ("u1",),
             ).fetchone()
             a = conn.execute(
-                """
-                SELECT total_consumed_cpu_minutes, total_consumed_gpu_minutes,
-                       quota_cpu_minutes, quota_gpu_minutes
-                FROM accounts WHERE account=?
-                """,
+                "SELECT quota_cpu_minutes, quota_gpu_minutes FROM accounts WHERE account = ?",
                 ("a1",),
             ).fetchone()
-        self.assertEqual(u, (30, 0, 11, 22))
-        self.assertEqual(a, (30, 0, 33, 44))
+            pair = self.pair_consumption(conn, "u1", "a1")
+        self.assertEqual(u, (11, 22))
+        self.assertEqual(a, (33, 44))
+        self.assertEqual(pair, (1800, 0))
 
     def test_charge_applies_default_quotas_when_creating_user_and_account(self):
         init_database()
@@ -111,28 +105,22 @@ class TestChargeCommand(FunctionalCLIBase):
             [
                 "WARNING:slurm_quota:No job UUID found in admin_comment for job 9",
                 "INFO:slurm_quota:charge: user=jamal account=climate_ensemble job_id=9 "
-                "+30 CPUmins +0 GPUmins uuid=none prealloc_status=none",
+                "+1800 CPUsecs +0 GPUsecs uuid=none prealloc_status=none",
             ],
         )
         with self.db_connection() as conn:
             u = conn.execute(
-                """
-                SELECT total_consumed_cpu_minutes, total_consumed_gpu_minutes,
-                       quota_cpu_minutes, quota_gpu_minutes
-                FROM users WHERE username = ?
-                """,
+                "SELECT quota_cpu_minutes, quota_gpu_minutes FROM users WHERE username = ?",
                 ("jamal",),
             ).fetchone()
             a = conn.execute(
-                """
-                SELECT total_consumed_cpu_minutes, total_consumed_gpu_minutes,
-                       quota_cpu_minutes, quota_gpu_minutes
-                FROM accounts WHERE account = ?
-                """,
+                "SELECT quota_cpu_minutes, quota_gpu_minutes FROM accounts WHERE account = ?",
                 ("climate_ensemble",),
             ).fetchone()
-        self.assertEqual(u, (30, 0, 701, 702))
-        self.assertEqual(a, (30, 0, 703, 704))
+            pair = self.pair_consumption(conn, "jamal", "climate_ensemble")
+        self.assertEqual(u, (701, 702))
+        self.assertEqual(a, (703, 704))
+        self.assertEqual(pair, (1800, 0))
 
     def test_charge_initializes_database_when_missing(self):
         self.assertFalse(
@@ -155,7 +143,7 @@ class TestChargeCommand(FunctionalCLIBase):
             [
                 "INFO:slurm_quota:Database initialized successfully",
                 "WARNING:slurm_quota:No job UUID found in admin_comment for job 9",
-                "INFO:slurm_quota:charge: user=u1 account=a1 job_id=9 +30 CPUmins +0 GPUmins "
+                "INFO:slurm_quota:charge: user=u1 account=a1 job_id=9 +1800 CPUsecs +0 GPUsecs "
                 "uuid=none prealloc_status=none",
             ],
         )
@@ -168,7 +156,13 @@ class TestChargeCommand(FunctionalCLIBase):
             }
         self.assertGreaterEqual(
             tables,
-            {"users", "accounts", "jobs_preallocations", "gpu_factors"},
+            {
+                "users",
+                "accounts",
+                "user_account_consumption",
+                "jobs_preallocations",
+                "gpu_factors",
+            },
         )
 
     def test_charge_removes_preallocation_when_array_size_one(self):
@@ -205,7 +199,7 @@ class TestChargeCommand(FunctionalCLIBase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:charge: user=u1 account=a1 job_id=9 +30 CPUmins +0 GPUmins "
+                "INFO:slurm_quota:charge: user=u1 account=a1 job_id=9 +1800 CPUsecs +0 GPUsecs "
                 f"uuid={job_uuid} prealloc_status=removed",
             ],
         )
@@ -214,17 +208,9 @@ class TestChargeCommand(FunctionalCLIBase):
                 "SELECT COUNT(*) FROM jobs_preallocations WHERE job_uuid = ?",
                 (job_uuid,),
             ).fetchone()[0]
-            u = conn.execute(
-                "SELECT total_consumed_cpu_minutes FROM users WHERE username=?",
-                ("u1",),
-            ).fetchone()
-            a = conn.execute(
-                "SELECT total_consumed_cpu_minutes FROM accounts WHERE account=?",
-                ("a1",),
-            ).fetchone()
+            pair = self.pair_consumption(conn, "u1", "a1")
         self.assertEqual(n, 0)
-        self.assertEqual(u[0], 30)
-        self.assertEqual(a[0], 30)
+        self.assertEqual(pair, (1800, 0))
 
     def test_charge_rejects_non_slurm_user(self):
         with (

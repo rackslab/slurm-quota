@@ -18,8 +18,8 @@ class TestRolesRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 10),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             grant_operator(conn, "carol")
             conn.commit()
@@ -61,8 +61,8 @@ class TestRolesRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 5),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.commit()
 
@@ -87,8 +87,8 @@ class TestRolesRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 5),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.commit()
 
@@ -117,8 +117,8 @@ class TestRolesRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 5),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.commit()
 
