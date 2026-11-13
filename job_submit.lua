@@ -291,6 +291,12 @@ local function load_default_quota_settings(conn)
     return defaults
 end
 
+-- Remaining quota in seconds. Quotas and preallocations are expressed in
+-- minutes, consumption in seconds. Comparing in seconds avoids rounding.
+local function available_seconds(quota_minutes, consumed_seconds, preallocated_minutes)
+    return math.max(0, quota_minutes * 60 - consumed_seconds - preallocated_minutes * 60)
+end
+
 -- Get or create user in database
 local function get_or_create_user(conn, username)
     if not conn then
@@ -299,7 +305,7 @@ local function get_or_create_user(conn, username)
     end
 
     -- Check if user exists
-    local stmt, perr = conn:prepare("SELECT total_consumed_cpu_minutes AS consumed, quota_cpu_minutes AS quota, total_consumed_gpu_minutes AS consumed_gpu, quota_gpu_minutes AS quota_gpu FROM users WHERE username = ?")
+    local stmt, perr = conn:prepare("SELECT COALESCE((SELECT SUM(c.consumed_cpu_seconds) FROM user_account_consumption c WHERE c.username = e.username), 0) AS consumed_s, quota_cpu_minutes AS quota, COALESCE((SELECT SUM(c.consumed_gpu_seconds) FROM user_account_consumption c WHERE c.username = e.username), 0) AS consumed_gpu_s, quota_gpu_minutes AS quota_gpu FROM users e WHERE e.username = ?")
     if not stmt then
         slurm.log_error("slurm_job_submit: failed to prepare statement: " .. tostring(perr))
         return nil
@@ -317,15 +323,15 @@ local function get_or_create_user(conn, username)
 
     if row then
         return {
-            consumed = row.consumed or 0,
+            consumed_s = row.consumed_s or 0,
             quota = row.quota or -1,
-            consumed_gpu = row.consumed_gpu or 0,
+            consumed_gpu_s = row.consumed_gpu_s or 0,
             quota_gpu = row.quota_gpu or -1
         }
     else
         local default_quotas = load_default_quota_settings(conn)
         -- User doesn't exist, create it
-        local insert_stmt, ierr = conn:prepare("INSERT INTO users (username, total_consumed_cpu_minutes, quota_cpu_minutes, total_consumed_gpu_minutes, quota_gpu_minutes) VALUES (?, 0, ?, 0, ?)")
+        local insert_stmt, ierr = conn:prepare("INSERT INTO users (username, quota_cpu_minutes, quota_gpu_minutes) VALUES (?, ?, ?)")
         if not insert_stmt then
             slurm.log_error("slurm_job_submit: failed to prepare insert statement: " .. tostring(ierr))
             return nil
@@ -344,9 +350,9 @@ local function get_or_create_user(conn, username)
 
         slurm.log_info("slurm_job_submit: created new user: " .. username)
         return {
-            consumed = 0,
+            consumed_s = 0,
             quota = default_user_cpu,
-            consumed_gpu = 0,
+            consumed_gpu_s = 0,
             quota_gpu = default_user_gpu
         }
     end
@@ -359,7 +365,7 @@ local function get_or_create_account(conn, account)
         return nil
     end
 
-    local stmt, perr = conn:prepare("SELECT total_consumed_cpu_minutes AS consumed, quota_cpu_minutes AS quota, total_consumed_gpu_minutes AS consumed_gpu, quota_gpu_minutes AS quota_gpu FROM accounts WHERE account = ?")
+    local stmt, perr = conn:prepare("SELECT COALESCE((SELECT SUM(c.consumed_cpu_seconds) FROM user_account_consumption c WHERE c.account = e.account), 0) AS consumed_s, quota_cpu_minutes AS quota, COALESCE((SELECT SUM(c.consumed_gpu_seconds) FROM user_account_consumption c WHERE c.account = e.account), 0) AS consumed_gpu_s, quota_gpu_minutes AS quota_gpu FROM accounts e WHERE e.account = ?")
     if not stmt then
         slurm.log_error("slurm_job_submit: failed to prepare statement: " .. tostring(perr))
         return nil
@@ -377,14 +383,14 @@ local function get_or_create_account(conn, account)
 
     if row then
         return {
-            consumed = row.consumed or 0,
+            consumed_s = row.consumed_s or 0,
             quota = row.quota or -1,
-            consumed_gpu = row.consumed_gpu or 0,
+            consumed_gpu_s = row.consumed_gpu_s or 0,
             quota_gpu = row.quota_gpu or -1
         }
     else
         local default_quotas = load_default_quota_settings(conn)
-        local insert_stmt, ierr = conn:prepare("INSERT INTO accounts (account, total_consumed_cpu_minutes, quota_cpu_minutes, total_consumed_gpu_minutes, quota_gpu_minutes) VALUES (?, 0, ?, 0, ?)")
+        local insert_stmt, ierr = conn:prepare("INSERT INTO accounts (account, quota_cpu_minutes, quota_gpu_minutes) VALUES (?, ?, ?)")
         if not insert_stmt then
             slurm.log_error("slurm_job_submit: failed to prepare insert statement: " .. tostring(ierr))
             return nil
@@ -400,9 +406,9 @@ local function get_or_create_account(conn, account)
         insert_stmt:close()
         slurm.log_info("slurm_job_submit: created new account: " .. account)
         return {
-            consumed = 0,
+            consumed_s = 0,
             quota = default_account_cpu,
-            consumed_gpu = 0,
+            consumed_gpu_s = 0,
             quota_gpu = default_account_gpu
         }
     end
@@ -758,9 +764,9 @@ function slurm_job_submit(job_desc, part_list, submit_uid)
 
     -- If quota limited, verify and log remaining
     if user_data.quota ~= -1 then
-        local total_used_user = user_data.consumed + get_current_preallocated_for_user(conn, username, nil)
-        available_user = math.max(0, user_data.quota - total_used_user)
-        if (requested_cpu_minutes * array_job_count) > available_user then
+        local available_user_s = available_seconds(user_data.quota, user_data.consumed_s, get_current_preallocated_for_user(conn, username, nil))
+        available_user = math.floor(available_user_s / 60)
+        if (requested_cpu_minutes * array_job_count * 60) > available_user_s then
             conn:close()
             slurm.log_info(
                 "slurm_job_submit: reject user %s job submission due to quota: requested_cpu_minutes=%d available_quota=%d",
@@ -773,9 +779,9 @@ function slurm_job_submit(job_desc, part_list, submit_uid)
 
     -- If account has a quota, enforce it too
     if account_data.quota ~= -1 then
-        local total_used_account = account_data.consumed + get_current_preallocated_for_account(conn, account, nil)
-        available_account = math.max(0, account_data.quota - total_used_account)
-        if (requested_cpu_minutes * array_job_count) > available_account then
+        local available_account_s = available_seconds(account_data.quota, account_data.consumed_s, get_current_preallocated_for_account(conn, account, nil))
+        available_account = math.floor(available_account_s / 60)
+        if (requested_cpu_minutes * array_job_count * 60) > available_account_s then
             conn:close()
             slurm.log_info(
                 "slurm_job_submit: reject account %s job submission due to quota: requested_cpu_minutes=%d available_quota=%d",
@@ -788,9 +794,9 @@ function slurm_job_submit(job_desc, part_list, submit_uid)
 
     -- Check GPU quota for user
     if user_data.quota_gpu ~= -1 then
-        local total_used_user_gpu = user_data.consumed_gpu + get_current_preallocated_gpu_for_user(conn, username, nil)
-        available_user_gpu = math.max(0, user_data.quota_gpu - total_used_user_gpu)
-        if (requested_gpu_minutes * array_job_count) > available_user_gpu then
+        local available_user_gpu_s = available_seconds(user_data.quota_gpu, user_data.consumed_gpu_s, get_current_preallocated_gpu_for_user(conn, username, nil))
+        available_user_gpu = math.floor(available_user_gpu_s / 60)
+        if (requested_gpu_minutes * array_job_count * 60) > available_user_gpu_s then
             conn:close()
             slurm.log_info(
                 "slurm_job_submit: reject user %s job submission due to GPU quota: requested_gpu_minutes=%d available_quota=%d",
@@ -803,9 +809,9 @@ function slurm_job_submit(job_desc, part_list, submit_uid)
 
     -- Check GPU quota for account
     if account_data.quota_gpu ~= -1 then
-        local total_used_account_gpu = account_data.consumed_gpu + get_current_preallocated_gpu_for_account(conn, account, nil)
-        available_account_gpu = math.max(0, account_data.quota_gpu - total_used_account_gpu)
-        if (requested_gpu_minutes * array_job_count) > available_account_gpu then
+        local available_account_gpu_s = available_seconds(account_data.quota_gpu, account_data.consumed_gpu_s, get_current_preallocated_gpu_for_account(conn, account, nil))
+        available_account_gpu = math.floor(available_account_gpu_s / 60)
+        if (requested_gpu_minutes * array_job_count * 60) > available_account_gpu_s then
             conn:close()
             slurm.log_info(
                 "slurm_job_submit: reject account %s job submission due to GPU quota: requested_gpu_minutes=%d available_quota=%d",
@@ -917,9 +923,9 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
 
     -- Check quota
     if user_data.quota ~= -1 then
-        local total_used_user = user_data.consumed + get_current_preallocated_for_user(conn, username, job_uuid)
-        available_user = math.max(0, user_data.quota - total_used_user)
-        if (requested_cpu_minutes * array_job_count) > available_user then
+        local available_user_s = available_seconds(user_data.quota, user_data.consumed_s, get_current_preallocated_for_user(conn, username, job_uuid))
+        available_user = math.floor(available_user_s / 60)
+        if (requested_cpu_minutes * array_job_count * 60) > available_user_s then
             conn:close()
             slurm.log_info(
                 "slurm_job_modify: reject user %s job modification due to quota: requested_cpu_minutes=%d available_quota=%d",
@@ -931,9 +937,9 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
     end
 
     if account_data and account_data.quota ~= -1 then
-        local total_used_account = account_data.consumed + get_current_preallocated_for_account(conn, account, job_uuid)
-        available_account = math.max(0, account_data.quota - total_used_account)
-        if (requested_cpu_minutes * array_job_count) > available_account then
+        local available_account_s = available_seconds(account_data.quota, account_data.consumed_s, get_current_preallocated_for_account(conn, account, job_uuid))
+        available_account = math.floor(available_account_s / 60)
+        if (requested_cpu_minutes * array_job_count * 60) > available_account_s then
             conn:close()
             slurm.log_info(
                 "slurm_job_modify: reject account %s job modification due to quota: requested_cpu_minutes=%d available_quota=%d",
@@ -946,9 +952,9 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
 
     -- Check GPU quota for user
     if user_data.quota_gpu ~= -1 then
-        local total_used_user_gpu = user_data.consumed_gpu + get_current_preallocated_gpu_for_user(conn, username, job_uuid)
-        available_user_gpu = math.max(0, user_data.quota_gpu - total_used_user_gpu)
-        if (requested_gpu_minutes * array_job_count) > available_user_gpu then
+        local available_user_gpu_s = available_seconds(user_data.quota_gpu, user_data.consumed_gpu_s, get_current_preallocated_gpu_for_user(conn, username, job_uuid))
+        available_user_gpu = math.floor(available_user_gpu_s / 60)
+        if (requested_gpu_minutes * array_job_count * 60) > available_user_gpu_s then
             conn:close()
             slurm.log_info(
                 "slurm_job_modify: reject user %s job modification due to GPU quota: requested_gpu_minutes=%d available_quota=%d",
@@ -961,9 +967,9 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
 
     -- Check GPU quota for account
     if account_data and account_data.quota_gpu ~= -1 then
-        local total_used_account_gpu = account_data.consumed_gpu + get_current_preallocated_gpu_for_account(conn, account, job_uuid)
-        available_account_gpu = math.max(0, account_data.quota_gpu - total_used_account_gpu)
-        if (requested_gpu_minutes * array_job_count) > available_account_gpu then
+        local available_account_gpu_s = available_seconds(account_data.quota_gpu, account_data.consumed_gpu_s, get_current_preallocated_gpu_for_account(conn, account, job_uuid))
+        available_account_gpu = math.floor(available_account_gpu_s / 60)
+        if (requested_gpu_minutes * array_job_count * 60) > available_account_gpu_s then
             conn:close()
             slurm.log_info(
                 "slurm_job_modify: reject account %s job modification due to GPU quota: requested_gpu_minutes=%d available_quota=%d",
