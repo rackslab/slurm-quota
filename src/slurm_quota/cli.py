@@ -237,11 +237,10 @@ def main():
     # Adjust command
     adjust_parser = subparsers.add_parser(
         "adjust",
-        help="Adjust consumed CPU/GPU time for a user/account (root only)",
+        help="Adjust consumed CPU/GPU time of a user on an account",
     )
-    adjust_target_group = adjust_parser.add_mutually_exclusive_group(required=True)
-    adjust_target_group.add_argument("--user", help="Username to adjust")
-    adjust_target_group.add_argument("--account", help="Account to adjust")
+    adjust_parser.add_argument("--user", required=True, help="Username to adjust")
+    adjust_parser.add_argument("--account", required=True, help="Account to adjust")
     adjust_resource_group = adjust_parser.add_mutually_exclusive_group(required=True)
     adjust_resource_group.add_argument(
         "--cpu", action="store_true", help="Adjust consumed CPU minutes"

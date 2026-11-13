@@ -18,23 +18,17 @@ class TestAdjustCommand(FunctionalAPICliBase):
     def _adjust_urlopen_side_effect(self, request, **_kwargs):
         url = request.full_url
         method = request.get_method()
-        if method == "PATCH" and "/consumption/user/" in url and url.endswith("/cpu"):
+        if method == "PATCH" and url.endswith("/consumption/alice/hpc/cpu"):
             body = json.loads(request.data.decode("utf-8"))
             self.assertIn("delta_minutes", body)
             return FakeJsonUrlopenResponse({"total_consumed_minutes": 130})
-        if (
-            method == "PATCH"
-            and "/consumption/account/" in url
-            and url.endswith("/gpu")
-        ):
+        if method == "PATCH" and url.endswith("/consumption/alice/hpc/gpu"):
             body = json.loads(request.data.decode("utf-8"))
             self.assertIn("delta_minutes", body)
             return FakeJsonUrlopenResponse({"total_consumed_minutes": 210})
-        if method == "PATCH" and "/consumption/user/" in url and url.endswith("/gpu"):
-            return FakeJsonUrlopenResponse({"total_consumed_minutes": 0})
         raise AssertionError(f"unexpected request: {method} {url}")
 
-    def test_adjust_user_cpu_minutes(self):
+    def test_adjust_pair_cpu_minutes(self):
         with (
             patch(
                 "slurm_quota.client.urlopen",
@@ -48,6 +42,8 @@ class TestAdjustCommand(FunctionalAPICliBase):
                     "adjust",
                     "--user",
                     "alice",
+                    "--account",
+                    "hpc",
                     "--cpu",
                     "--minutes",
                     "+30",
@@ -56,18 +52,19 @@ class TestAdjustCommand(FunctionalAPICliBase):
         self.assertEqual(
             out.getvalue(),
             (
-                "Successfully adjusted CPU consumed time for user alice: "
+                "Successfully adjusted CPU consumed time for user alice on "
+                "account hpc: "
                 "+30 minutes (new total: 130 minutes)\n"
             ),
         )
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.get_method(), "PATCH")
-        self.assertTrue(req.full_url.endswith("/consumption/user/alice/cpu"))
+        self.assertTrue(req.full_url.endswith("/consumption/alice/hpc/cpu"))
         self.assertEqual(req.get_header("Authorization"), "Bearer saved-jwt")
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"delta_minutes": 30})
 
-    def test_adjust_account_gpu_hours(self):
+    def test_adjust_pair_gpu_hours(self):
         with (
             patch(
                 "slurm_quota.client.urlopen",
@@ -79,6 +76,8 @@ class TestAdjustCommand(FunctionalAPICliBase):
                 [
                     "slurm-quota",
                     "adjust",
+                    "--user",
+                    "alice",
                     "--account",
                     "hpc",
                     "--gpu",
@@ -89,12 +88,13 @@ class TestAdjustCommand(FunctionalAPICliBase):
         self.assertEqual(
             out.getvalue(),
             (
-                "Successfully adjusted GPU consumed time for account hpc: "
+                "Successfully adjusted GPU consumed time for user alice on "
+                "account hpc: "
                 "+2 hours (new total: 210 minutes)\n"
             ),
         )
         req = m_urlopen.call_args[0][0]
-        self.assertTrue(req.full_url.endswith("/consumption/account/hpc/gpu"))
+        self.assertTrue(req.full_url.endswith("/consumption/alice/hpc/gpu"))
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"delta_minutes": 120})
 
@@ -107,6 +107,8 @@ class TestAdjustCommand(FunctionalAPICliBase):
                     "adjust",
                     "--user",
                     "alice",
+                    "--account",
+                    "hpc",
                     "--cpu",
                     "--minutes",
                     "+10",
@@ -129,6 +131,8 @@ class TestAdjustCommand(FunctionalAPICliBase):
                     "adjust",
                     "--user",
                     "alice",
+                    "--account",
+                    "hpc",
                     "--cpu",
                     "--minutes",
                     "+10",
@@ -154,6 +158,8 @@ class TestAdjustCommand(FunctionalAPICliBase):
                     "adjust",
                     "--user",
                     "alice",
+                    "--account",
+                    "hpc",
                     "--cpu",
                     "--minutes",
                     "+10",
@@ -169,12 +175,22 @@ class TestAdjustCommand(FunctionalAPICliBase):
                 "adjust",
                 "--user",
                 "alice",
+                "--account",
+                "hpc",
                 "--cpu",
                 "--minutes",
                 "30",
             ],
             2,
         )
+
+    def test_adjust_requires_user_and_account(self):
+        for argv in (
+            ["slurm-quota", "adjust", "--user", "alice", "--cpu", "--minutes", "+1"],
+            ["slurm-quota", "adjust", "--account", "hpc", "--cpu", "--minutes", "+1"],
+        ):
+            with self.subTest(argv=argv):
+                self.run_cli_main_exit(argv, 2)
 
     def test_adjust_reports_api_error_on_missing_target(self):
         def _bad_request(request, **_kwargs):
@@ -188,6 +204,8 @@ class TestAdjustCommand(FunctionalAPICliBase):
                 [
                     "slurm-quota",
                     "adjust",
+                    "--user",
+                    "alice",
                     "--account",
                     "missing",
                     "--cpu",

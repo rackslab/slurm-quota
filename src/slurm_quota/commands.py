@@ -190,25 +190,19 @@ def set_account_gpu_quota_command(
 
 
 def adjust_command(
-    username: Optional[str],
-    account: Optional[str],
+    username: str,
+    account: str,
     cpu: bool,
     gpu: bool,
     minutes: Optional[int],
     hours: Optional[int],
     reason: Optional[str] = None,
 ) -> None:
-    """Adjust consumed CPU/GPU time via the REST API.
+    """Adjust consumed CPU/GPU time of a user on an account via the REST API.
 
     Operator or admin role required.
     """
     try:
-        target_type = "user" if username is not None else "account"
-        target_name = username if username is not None else account
-        if target_name is None:
-            logger.error("adjust command requires --user or --account")
-            sys.exit(1)
-
         resource = "cpu" if cpu else "gpu"
         if minutes is not None:
             delta_minutes = minutes
@@ -222,14 +216,13 @@ def adjust_command(
 
         api = _api_client_from_token()
         new_total = api.adjust_consumption(
-            target_type, target_name, resource, delta_minutes, reason=reason
+            username, account, resource, delta_minutes, reason=reason
         )
 
         delta_source = minutes if minutes is not None else hours
-        target_label = "user" if target_type == "user" else "account"
         print(
             f"Successfully adjusted {resource.upper()} consumed time "
-            f"for {target_label} {target_name}: "
+            f"for user {username} on account {account}: "
             f"{delta_source:+d} {unit_label} (new total: {new_total} minutes)"
         )
 

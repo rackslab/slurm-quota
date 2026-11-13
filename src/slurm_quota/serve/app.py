@@ -107,7 +107,7 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
             methods=["PUT"],
         )
         self.add_url_rule(
-            "/consumption/<entity>/<name>/<resource>",
+            "/consumption/<username>/<account>/<resource>",
             view_func=routes.adjust_consumption,
             methods=["PATCH"],
         )

@@ -512,13 +512,9 @@ def set_quota(entity: str, name: str, resource: str) -> Any:
 
 
 @require_role("admin", "operator")
-def adjust_consumption(entity: str, name: str, resource: str) -> Any:
-    if entity == "user":
-        _validate_username(name)
-    elif entity == "account":
-        _validate_account(name)
-    else:
-        abort(404)
+def adjust_consumption(username: str, account: str, resource: str) -> Any:
+    _validate_username(username)
+    _validate_account(account)
     if resource not in ("cpu", "gpu"):
         abort(400, description="Invalid resource")
     payload = request.get_json(silent=True)
@@ -529,18 +525,18 @@ def adjust_consumption(entity: str, name: str, resource: str) -> Any:
         abort(400, description="delta_minutes must be an integer")
     reason = _parse_optional_reason(payload)
     try:
-        total = db_adjust_consumed_minutes(entity, name, resource, delta_minutes)
+        total = db_adjust_consumed_minutes(username, account, resource, delta_minutes)
     except ValueError as exc:
         abort(400, description=str(exc))
     except sqlite3.Error as exc:
-        logger.error("adjust %s %s consumption failed: %s", entity, resource, exc)
+        logger.error("adjust %s consumption failed: %s", resource, exc)
         return jsonify({"error": "db_error"}), 500
     logger.info(
-        "consumption %s %s: manager=%s name=%s delta=%+d total=%d reason=%s",
-        entity,
+        "consumption %s: manager=%s user=%s account=%s delta=%+d total=%d reason=%s",
         resource,
         cast(str, request.user.login),
-        name,
+        username,
+        account,
         delta_minutes,
         total,
         "n/a" if reason is None else repr(reason),
