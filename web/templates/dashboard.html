@@ -213,11 +213,17 @@
 <dialog id="consumption-edit-dialog" class="edit-dialog">
   <form method="post" action="{{ url_for('consumption_post') }}" class="consumption-edit-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <input type="hidden" name="target" value="">
-    <input type="hidden" name="name" value="">
     <input type="hidden" name="resource" value="">
     <h3 id="consumption-dialog-title" class="edit-dialog-title">Adjust consumption</h3>
     <p id="consumption-dialog-current" class="edit-dialog-context"></p>
+    <label class="edit-dialog-field">
+      User
+      <input type="text" name="username" class="consumption-username-input" required>
+    </label>
+    <label class="edit-dialog-field">
+      Account
+      <input type="text" name="account" class="consumption-account-input" required>
+    </label>
     <label class="edit-dialog-field">
       Delta (minutes)
       <input
@@ -394,6 +400,8 @@
       var consumptionTitle = document.getElementById("consumption-dialog-title");
       var consumptionCurrent = document.getElementById("consumption-dialog-current");
       var deltaInput = consumptionForm.querySelector(".consumption-delta-input");
+      var usernameInput = consumptionForm.querySelector(".consumption-username-input");
+      var accountInput = consumptionForm.querySelector(".consumption-account-input");
 
       document.querySelectorAll('.stat-edit-btn[data-edit="consumption"]').forEach(function (btn) {
         btn.addEventListener("click", function () {
@@ -402,19 +410,27 @@
           var resource = btn.getAttribute("data-resource");
           var consumed = btn.getAttribute("data-consumed");
 
-          consumptionForm.querySelector('input[name="target"]').value = target;
-          consumptionForm.querySelector('input[name="name"]').value = name;
           consumptionForm.querySelector('input[name="resource"]').value = resource;
+
+          // Consumption is adjusted per user/account pair: the clicked row
+          // gives one side of the pair, the other side must be entered.
+          var fixedInput = target === "user" ? usernameInput : accountInput;
+          var otherInput = target === "user" ? accountInput : usernameInput;
+          fixedInput.value = name;
+          fixedInput.readOnly = true;
+          otherInput.value = "";
+          otherInput.readOnly = false;
 
           var resourceLabel = resource.toUpperCase();
           var targetLabel = target === "user" ? "user" : "account";
           consumptionTitle.textContent =
             "Adjust " + resourceLabel + " consumption for " + targetLabel + " " + name;
-          consumptionCurrent.textContent = "Current consumed: " + consumed;
+          consumptionCurrent.textContent =
+            "Current consumed (all " + (target === "user" ? "accounts" : "users") + "): " + consumed;
 
           deltaInput.value = "";
           consumptionDialog.showModal();
-          deltaInput.focus();
+          otherInput.focus();
         });
       });
     }

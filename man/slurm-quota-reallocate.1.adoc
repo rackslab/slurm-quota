@@ -1,0 +1,116 @@
+= slurm-quota-reallocate(1)
+:doctype: manpage
+:manmanual: Slurm Quota Reallocate
+:mansource: slurm-quota-reallocate
+:revnumber: 4.0.0
+:revdate: 2026-11-13
+
+== Name
+
+slurm-quota-reallocate - reallocate unattributed legacy consumption to user/account pairs
+
+== Synopsis
+
+*slurm-quota-reallocate* [*-h*] [*--debug* | *-q* | *--quiet*] [*--log-flags* <flag>]... [*--debug-flags* <flag>]... [*--version*] *--starttime* <date> [*--endtime* <date>] [*--chunk-days* <days>] [*--dry-run*]
+
+== Description
+
+Since version 4, consumption is recorded per user/account pair. When migrating a
+version 3 database, `slurm-quota-migrate` stores the legacy consumption of each
+user on pair (user, `(unattributed)`) and the legacy consumption of each account on
+pair (`(unattributed)`, account), as which user consumed on which account is not
+recorded in version 3 databases.
+
+*slurm-quota-reallocate* uses Slurm accounting to determine the actual user/account
+pairs and their shares, distributes all unattributed consumption accordingly, and
+removes the `(unattributed)` pairs, user and account. User and account
+consumption totals are preserved.
+
+For CPU and GPU separately, users and accounts with unattributed consumption get
+user/account pairs from the first available source, by order of preference:
+
+. Jobs found in Slurm accounting (`sacct`) in the selected period, weighted by
+  their consumption of the resource.
+. Jobs found in Slurm accounting in the selected period, weighted by their
+  consumption of the other resource.
+. Slurm associations (`sacctmgr`), with equal weights.
+. All counterparts with unattributed consumption, with equal weights. A warning
+  is emitted for each user or account in this case.
+
+Unattributed consumption is then distributed among these pairs with iterative
+proportional fitting, so that each user total and each account total is
+preserved. When the overall unattributed consumption of users differs from the
+one of accounts (after version 3 adjustments of only users or only accounts),
+user totals are preserved and account totals are rescaled. When pairs make exact
+account totals impossible, user totals are preserved and account deviations are
+reported.
+
+Job consumption is computed like `slurm-quota-charge` does, with the current GPU
+factors. Only shares matter, the period does not need to cover all legacy
+consumption: it must be representative of how users consumed on their accounts.
+
+Everything is done in a single transaction. Once done, the command reports there
+is nothing to reallocate. This command must run as `root`.
+
+The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
+
+== Options
+
+*-h*, *--help*::
+  Show help and exit.
+
+*--debug*::
+  Enable debug output, including details of jobs and reallocated pairs.
+
+*-q*, *--quiet*::
+  Only print errors and warnings.
+
+*--log-flags* <flag>::
+  Component whose logs are enabled (repeatable; special value `ALL`). Default: `slurm_quota`.
+
+*--debug-flags* <flag>::
+  Component whose debug logs are enabled when *--debug* is used (repeatable; special value `ALL`). Default: `slurm_quota`.
+
+*--version*::
+  Show program version and exit.
+
+*--starttime* <date>::
+  Consider jobs ending after this local date, formatted `YYYY-MM-DD[THH:MM[:SS]]`. Required.
+
+*--endtime* <date>::
+  Consider jobs ending before this local date, formatted `YYYY-MM-DD[THH:MM[:SS]]`.
+  Default: time of the database migration to user/account pairs.
+
+*--chunk-days* <days>::
+  Split Slurm accounting queries in periods of this number of days. Default: `30`.
+
+*--dry-run*::
+  Report the reallocation without modifying the database.
+
+== Examples
+
+....
+sudo slurm-quota-reallocate --starttime 2025-01-01 --dry-run
+sudo slurm-quota-reallocate --starttime 2025-01-01
+sudo slurm-quota-reallocate --starttime 2025-01-01 --endtime 2025-12-31 --chunk-days 7
+....
+
+== Files
+
+`/var/lib/state/slurm-quota/slurm-quota.db`::
+  SQLite database for quotas, consumed/preallocated counters, GPU factors, and default settings.
+
+== Exit Status
+
+*0*::
+  Success, including when there is nothing to reallocate.
+
+*1*::
+  Runtime/permission/operational error, for example when Slurm accounting cannot be queried.
+
+*2*::
+  Command-line parsing error.
+
+== See Also
+
+`slurm-quota(1)`, `slurm-quota-charge(1)`, `sacct(1)`, `sacctmgr(1)`

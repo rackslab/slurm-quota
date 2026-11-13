@@ -221,6 +221,31 @@ def set_gpu_factor(gpu_type: str, factor: float) -> None:
         raise
 
 
+def create_consumption_table(cursor: sqlite3.Cursor) -> None:
+    """Create the user_account_consumption table and its index.
+
+    Consumption is recorded per (user, account) pair in seconds. User and account
+    totals are the sums over their pairs. Rows are removed along with the
+    referenced user or account.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_account_consumption (
+            username TEXT NOT NULL,
+            account TEXT NOT NULL,
+            consumed_cpu_seconds INTEGER NOT NULL DEFAULT 0,
+            consumed_gpu_seconds INTEGER NOT NULL DEFAULT 0,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (username, account),
+            FOREIGN KEY (username) REFERENCES users (username) ON DELETE CASCADE,
+            FOREIGN KEY (account) REFERENCES accounts (account) ON DELETE CASCADE
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_user_account_consumption_account
+        ON user_account_consumption (account)
+    """)
+
+
 def init_database() -> None:
     """
     Initialize the SQLite database only if it doesn't exist yet. Set permissions on
@@ -245,9 +270,7 @@ def init_database() -> None:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     username TEXT PRIMARY KEY,
-                    total_consumed_cpu_minutes INTEGER DEFAULT 0,
                     quota_cpu_minutes INTEGER DEFAULT -1,
-                    total_consumed_gpu_minutes INTEGER DEFAULT 0,
                     quota_gpu_minutes INTEGER DEFAULT -1,
                     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -257,13 +280,15 @@ def init_database() -> None:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS accounts (
                     account TEXT PRIMARY KEY,
-                    total_consumed_cpu_minutes INTEGER DEFAULT 0,
                     quota_cpu_minutes INTEGER DEFAULT -1,
-                    total_consumed_gpu_minutes INTEGER DEFAULT 0,
                     quota_gpu_minutes INTEGER DEFAULT -1,
                     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # Create user/account consumption table, the single source of truth
+            # for consumed resources (in seconds).
+            create_consumption_table(cursor)
 
             # Create jobs_preallocations table to track preallocated resources per job
             cursor.execute("""
@@ -411,9 +436,12 @@ def prune_resources(
             cursor = conn.cursor()
             users_query = """
                 SELECT username
-                FROM users
-                WHERE total_consumed_cpu_minutes = 0
-                  AND total_consumed_gpu_minutes = 0
+                FROM users u
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM user_account_consumption c
+                    WHERE c.username = u.username
+                      AND (c.consumed_cpu_seconds > 0 OR c.consumed_gpu_seconds > 0)
+                )
             """
             users_params: list[str] = []
             if user_filter:
@@ -433,9 +461,12 @@ def prune_resources(
             cursor = conn.cursor()
             accounts_query = """
                 SELECT account
-                FROM accounts
-                WHERE total_consumed_cpu_minutes = 0
-                  AND total_consumed_gpu_minutes = 0
+                FROM accounts a
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM user_account_consumption c
+                    WHERE c.account = a.account
+                      AND (c.consumed_cpu_seconds > 0 OR c.consumed_gpu_seconds > 0)
+                )
             """
             accounts_params: list[str] = []
             if account_filter:
@@ -496,20 +527,22 @@ def prune_resources(
 def update_user_and_account_resources(
     username: str,
     account: str,
-    consumed_cpu_minutes: int,
+    consumed_cpu_seconds: int,
     job_uuid: Optional[str],
-    consumed_gpu_minutes: int = 0,
+    consumed_gpu_seconds: int = 0,
 ) -> str:
     """
-    Update user and account resource consumption in the database and adjust any
-    preallocation associated with the job UUID.
+    Charge consumed resources to the user/account pair in the database and adjust
+    any preallocation associated with the job UUID.
+
+    User and account rows are created with default quotas when missing.
 
     Args:
         username: The username of the job owner
         account: The account of the job
-        consumed_cpu_minutes: Actual CPU minutes consumed by the job
+        consumed_cpu_seconds: Actual CPU seconds consumed by the job
         job_uuid: The job UUID from admin_comment
-        consumed_gpu_minutes: Actual GPU minutes consumed by the job
+        consumed_gpu_seconds: Actual GPU seconds consumed by the job
     Returns:
         One of:
         - "removed": a preallocation row was fully removed
@@ -520,56 +553,61 @@ def update_user_and_account_resources(
         with connect_database() as conn:
             cursor = conn.cursor()
             dq = get_default_quota_settings(conn)
-            default_user_cpu = dq["default_user_quota_cpu_minutes"]
-            default_user_gpu = dq["default_user_quota_gpu_minutes"]
-            default_account_cpu = dq["default_account_quota_cpu_minutes"]
-            default_account_gpu = dq["default_account_quota_gpu_minutes"]
 
-            # Update consumed CPU and GPU minutes for user
+            # Ensure user exists, with default quotas when created
             cursor.execute(
                 """
                 INSERT INTO users (
-                    username, total_consumed_cpu_minutes, quota_cpu_minutes,
-                    total_consumed_gpu_minutes, quota_gpu_minutes, last_updated
+                    username, quota_cpu_minutes, quota_gpu_minutes, last_updated
                 )
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT (username) DO
-                UPDATE SET total_consumed_cpu_minutes = total_consumed_cpu_minutes + ?,
-                           total_consumed_gpu_minutes = total_consumed_gpu_minutes + ?,
+                UPDATE SET last_updated = CURRENT_TIMESTAMP
+                """,
+                (
+                    username,
+                    dq["default_user_quota_cpu_minutes"],
+                    dq["default_user_quota_gpu_minutes"],
+                ),
+            )
+
+            # Ensure account exists, with default quotas when created
+            cursor.execute(
+                """
+                INSERT INTO accounts (
+                    account, quota_cpu_minutes, quota_gpu_minutes, last_updated
+                )
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (account) DO
+                UPDATE SET last_updated = CURRENT_TIMESTAMP
+                """,
+                (
+                    account,
+                    dq["default_account_quota_cpu_minutes"],
+                    dq["default_account_quota_gpu_minutes"],
+                ),
+            )
+
+            # Charge consumed CPU and GPU seconds to the user/account pair
+            cursor.execute(
+                """
+                INSERT INTO user_account_consumption (
+                    username, account, consumed_cpu_seconds, consumed_gpu_seconds,
+                    last_updated
+                )
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (username, account) DO
+                UPDATE SET consumed_cpu_seconds = consumed_cpu_seconds + ?,
+                           consumed_gpu_seconds = consumed_gpu_seconds + ?,
                            last_updated = CURRENT_TIMESTAMP
                 """,
                 (
                     username,
-                    consumed_cpu_minutes,
-                    default_user_cpu,
-                    consumed_gpu_minutes,
-                    default_user_gpu,
-                    consumed_cpu_minutes,
-                    consumed_gpu_minutes,
-                ),
-            )
-
-            # Update consumed CPU and GPU minutes for account
-            cursor.execute(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, quota_cpu_minutes,
-                    total_consumed_gpu_minutes, quota_gpu_minutes, last_updated
-                )
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT (account) DO
-                UPDATE SET total_consumed_cpu_minutes = total_consumed_cpu_minutes + ?,
-                           total_consumed_gpu_minutes = total_consumed_gpu_minutes + ?,
-                            last_updated = CURRENT_TIMESTAMP
-                """,
-                (
                     account,
-                    consumed_cpu_minutes,
-                    default_account_cpu,
-                    consumed_gpu_minutes,
-                    default_account_gpu,
-                    consumed_cpu_minutes,
-                    consumed_gpu_minutes,
+                    consumed_cpu_seconds,
+                    consumed_gpu_seconds,
+                    consumed_cpu_seconds,
+                    consumed_gpu_seconds,
                 ),
             )
 
@@ -766,228 +804,168 @@ def set_account_gpu_quota(account: str, quota_gpu_minutes: int) -> None:
 
 
 def adjust_consumed_minutes(
-    target_type: str, target_name: str, resource: str, delta_minutes: int
+    username: str, account: str, resource: str, delta_minutes: int
 ) -> int:
     """
-    Adjust consumed CPU/GPU minutes for a user or account.
+    Adjust consumed CPU/GPU time of a user/account pair.
+
+    Consumption is stored in seconds, the delta is expressed in minutes. The pair
+    row is created when missing, provided both the user and the account exist.
+    The resulting consumption is clamped at zero.
 
     Args:
-        target_type: "user" or "account"
-        target_name: Username or account name
+        username: Username of the pair
+        account: Account of the pair
         resource: "cpu" or "gpu"
         delta_minutes: Signed minutes to add/subtract
 
     Returns:
-        New consumed minutes value after update
+        New consumed time of the pair, in whole minutes (floored)
 
     Raises:
-        ValueError: If target type/resource is invalid or target row is missing
+        ValueError: If resource is invalid or user/account row is missing
     """
-    target_mapping = {
-        "user": ("users", "username", "User"),
-        "account": ("accounts", "account", "Account"),
-    }
     resource_mapping = {
-        "cpu": "total_consumed_cpu_minutes",
-        "gpu": "total_consumed_gpu_minutes",
+        "cpu": "consumed_cpu_seconds",
+        "gpu": "consumed_gpu_seconds",
     }
-    if target_type not in target_mapping:
-        raise ValueError(f"Invalid target type: {target_type}")
     if resource not in resource_mapping:
         raise ValueError(f"Invalid resource type: {resource}")
-
-    table_name, id_column, target_label = target_mapping[target_type]
     consumed_column = resource_mapping[resource]
 
     with connect_database() as conn:
         cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM users WHERE username = ?", (username,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"User not found: {username}")
+        cursor.execute("SELECT 1 FROM accounts WHERE account = ?", (account,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Account not found: {account}")
+
         cursor.execute(
-            f"SELECT {consumed_column} FROM {table_name} WHERE {id_column} = ?",
-            (target_name,),
+            f"SELECT {consumed_column} FROM user_account_consumption "
+            "WHERE username = ? AND account = ?",
+            (username, account),
         )
         row = cursor.fetchone()
-        if row is None:
-            raise ValueError(f"{target_label} not found: {target_name}")
-
-        current_value = int(row[0] or 0)
-        updated_value = max(0, current_value + delta_minutes)
+        current_value = int(row[0] or 0) if row is not None else 0
+        updated_value = max(0, current_value + delta_minutes * 60)
         cursor.execute(
-            (
-                f"UPDATE {table_name} "
-                f"SET {consumed_column} = ?, last_updated = CURRENT_TIMESTAMP "
-                f"WHERE {id_column} = ?"
-            ),
-            (updated_value, target_name),
+            f"""
+            INSERT INTO user_account_consumption (
+                username, account, {consumed_column}, last_updated
+            )
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT (username, account) DO
+            UPDATE SET {consumed_column} = excluded.{consumed_column},
+                       last_updated = CURRENT_TIMESTAMP
+            """,
+            (username, account, updated_value),
         )
         conn.commit()
-        return updated_value
+        return updated_value // 60
+
+
+def _query_aggregate(
+    conn: sqlite3.Connection,
+    table: str,
+    key: str,
+    names: Optional[set[str]],
+) -> list[dict[str, Any]]:
+    """Return consumption, preallocation and quota aggregates of users or accounts.
+
+    Consumption is summed over user/account pairs, stored in seconds, and
+    reported in whole minutes (floored). Consumption sums are correlated
+    subqueries so that the preallocations join does not multiply them.
+
+    Args:
+        conn: Database connection.
+        table: "users" or "accounts".
+        key: Primary key column of table ("username" or "account").
+        names: Optional set of names to restrict results, None for all.
+    """
+    if names is not None and len(names) == 0:
+        return []
+    where = ""
+    params: tuple[str, ...] = ()
+    if names is not None:
+        where = f"WHERE e.{key} IN ({','.join(['?'] * len(names))})"
+        params = tuple(names)
+    cursor = conn.cursor()
+    cursor.execute(
+        f"""
+        SELECT e.{key},
+               COALESCE(
+                   (SELECT SUM(c.consumed_cpu_seconds)
+                    FROM user_account_consumption c
+                    WHERE c.{key} = e.{key}),
+                   0
+               ) / 60 as total_consumed_cpu_minutes,
+               COALESCE(
+                   SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)),
+                   0
+               ) as total_preallocated_cpu_minutes,
+               e.quota_cpu_minutes,
+               COALESCE(
+                   (SELECT SUM(c.consumed_gpu_seconds)
+                    FROM user_account_consumption c
+                    WHERE c.{key} = e.{key}),
+                   0
+               ) / 60 as total_consumed_gpu_minutes,
+               COALESCE(
+                   SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)),
+                   0
+               ) as total_preallocated_gpu_minutes,
+               e.quota_gpu_minutes, e.last_updated,
+               COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
+        FROM {table} e
+        LEFT JOIN jobs_preallocations j ON e.{key} = j.{key}
+        {where}
+        GROUP BY e.{key}, e.quota_cpu_minutes, e.quota_gpu_minutes, e.last_updated
+        ORDER BY e.{key}
+        """,
+        params,
+    )
+    results: list[dict[str, Any]] = []
+    for row in cursor.fetchall():
+        (
+            name,
+            consumed_cpu,
+            prealloc_cpu,
+            quota_cpu,
+            consumed_gpu,
+            prealloc_gpu,
+            quota_gpu,
+            last_updated,
+            job_count,
+        ) = row
+        results.append(
+            {
+                key: name,
+                "total_consumed_cpu_minutes": int(consumed_cpu or 0),
+                "total_preallocated_cpu_minutes": int(prealloc_cpu or 0),
+                "quota_cpu_minutes": int(quota_cpu if quota_cpu is not None else -1),
+                "total_consumed_gpu_minutes": int(consumed_gpu or 0),
+                "total_preallocated_gpu_minutes": int(prealloc_gpu or 0),
+                "quota_gpu_minutes": int(quota_gpu if quota_gpu is not None else -1),
+                "last_updated": last_updated,
+                "job_count": int(job_count or 0),
+            }
+        )
+    return results
 
 
 def query_users_aggregate(
     conn: sqlite3.Connection,
     usernames: Optional[set[str]] = None,
 ) -> list[dict[str, Any]]:
-    cursor = conn.cursor()
-    if usernames is not None:
-        if len(usernames) == 0:
-            return []
-        placeholders = ",".join(["?"] * len(usernames))
-        cursor.execute(
-            f"""
-            SELECT u.username, u.total_consumed_cpu_minutes,
-                   COALESCE(
-                       SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)),
-                       0
-                   ) as total_preallocated_cpu_minutes,
-                   u.quota_cpu_minutes, u.total_consumed_gpu_minutes,
-                   COALESCE(
-                       SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)),
-                       0
-                   ) as total_preallocated_gpu_minutes,
-                   u.quota_gpu_minutes, u.last_updated,
-                   COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
-            FROM users u
-            LEFT JOIN jobs_preallocations j ON u.username = j.username
-            WHERE u.username IN ({placeholders})
-            GROUP BY u.username, u.total_consumed_cpu_minutes, u.quota_cpu_minutes,
-                     u.total_consumed_gpu_minutes, u.quota_gpu_minutes, u.last_updated
-            ORDER BY u.username
-            """,
-            tuple(usernames),
-        )
-    else:
-        cursor.execute(
-            """
-            SELECT u.username, u.total_consumed_cpu_minutes,
-                   COALESCE(
-                       SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)),
-                       0
-                   ) as total_preallocated_cpu_minutes,
-                   u.quota_cpu_minutes, u.total_consumed_gpu_minutes,
-                   COALESCE(
-                       SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)),
-                       0
-                   ) as total_preallocated_gpu_minutes,
-                   u.quota_gpu_minutes, u.last_updated,
-                   COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
-            FROM users u
-            LEFT JOIN jobs_preallocations j ON u.username = j.username
-            GROUP BY u.username, u.total_consumed_cpu_minutes, u.quota_cpu_minutes,
-                     u.total_consumed_gpu_minutes, u.quota_gpu_minutes, u.last_updated
-            ORDER BY u.username
-            """
-        )
-    rows = cursor.fetchall()
-    results: list[dict[str, Any]] = []
-    for row in rows:
-        (
-            uname,
-            consumed_cpu,
-            prealloc_cpu,
-            quota_cpu,
-            consumed_gpu,
-            prealloc_gpu,
-            quota_gpu,
-            last_updated,
-            job_count,
-        ) = row
-        results.append(
-            {
-                "username": uname,
-                "total_consumed_cpu_minutes": int(consumed_cpu or 0),
-                "total_preallocated_cpu_minutes": int(prealloc_cpu or 0),
-                "quota_cpu_minutes": int(quota_cpu if quota_cpu is not None else -1),
-                "total_consumed_gpu_minutes": int(consumed_gpu or 0),
-                "total_preallocated_gpu_minutes": int(prealloc_gpu or 0),
-                "quota_gpu_minutes": int(quota_gpu if quota_gpu is not None else -1),
-                "last_updated": last_updated,
-                "job_count": int(job_count or 0),
-            }
-        )
-    return results
+    return _query_aggregate(conn, "users", "username", usernames)
 
 
 def query_accounts_aggregate(
     conn: sqlite3.Connection, accounts_filter: Optional[set[str]] = None
 ) -> list[dict[str, Any]]:
-    cursor = conn.cursor()
-    if accounts_filter is not None:
-        if len(accounts_filter) == 0:
-            return []
-        placeholders = ",".join(["?"] * len(accounts_filter))
-        cursor.execute(
-            f"""
-            SELECT a.account, a.total_consumed_cpu_minutes,
-                   COALESCE(
-                       SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)),
-                       0
-                   ) as total_preallocated_cpu_minutes,
-                   a.quota_cpu_minutes, a.total_consumed_gpu_minutes,
-                   COALESCE(
-                       SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)),
-                       0
-                   ) as total_preallocated_gpu_minutes,
-                   a.quota_gpu_minutes, a.last_updated,
-                   COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
-            FROM accounts a
-            LEFT JOIN jobs_preallocations j ON a.account = j.account
-            WHERE a.account IN ({placeholders})
-            GROUP BY a.account, a.total_consumed_cpu_minutes, a.quota_cpu_minutes,
-                     a.total_consumed_gpu_minutes, a.quota_gpu_minutes, a.last_updated
-            ORDER BY a.account
-            """,
-            tuple(accounts_filter),
-        )
-    else:
-        cursor.execute(
-            """
-            SELECT a.account, a.total_consumed_cpu_minutes,
-                   COALESCE(
-                       SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)),
-                       0
-                   ) as total_preallocated_cpu_minutes,
-                   a.quota_cpu_minutes, a.total_consumed_gpu_minutes,
-                   COALESCE(
-                       SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)),
-                       0
-                   ) as total_preallocated_gpu_minutes,
-                   a.quota_gpu_minutes, a.last_updated,
-                   COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
-            FROM accounts a
-            LEFT JOIN jobs_preallocations j ON a.account = j.account
-            GROUP BY a.account, a.total_consumed_cpu_minutes, a.quota_cpu_minutes,
-                     a.total_consumed_gpu_minutes, a.quota_gpu_minutes, a.last_updated
-            ORDER BY a.account
-            """
-        )
-    rows = cursor.fetchall()
-    results: list[dict[str, Any]] = []
-    for row in rows:
-        (
-            account,
-            consumed_cpu,
-            prealloc_cpu,
-            quota_cpu,
-            consumed_gpu,
-            prealloc_gpu,
-            quota_gpu,
-            last_updated,
-            job_count,
-        ) = row
-        results.append(
-            {
-                "account": account,
-                "total_consumed_cpu_minutes": int(consumed_cpu or 0),
-                "total_preallocated_cpu_minutes": int(prealloc_cpu or 0),
-                "quota_cpu_minutes": int(quota_cpu if quota_cpu is not None else -1),
-                "total_consumed_gpu_minutes": int(consumed_gpu or 0),
-                "total_preallocated_gpu_minutes": int(prealloc_gpu or 0),
-                "quota_gpu_minutes": int(quota_gpu if quota_gpu is not None else -1),
-                "last_updated": last_updated,
-                "job_count": int(job_count or 0),
-            }
-        )
-    return results
+    return _query_aggregate(conn, "accounts", "account", accounts_filter)
 
 
 def is_operator(conn: sqlite3.Connection, username: str) -> bool:

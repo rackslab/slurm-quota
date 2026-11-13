@@ -187,22 +187,9 @@ class TestServeCommand(FunctionalCLIBase):
     def test_serve_get_stats_supports_username_query_filter(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("alice", 120),
-            )
-            conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
-            )
-            conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
-            )
-            conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("dev", 40),
-            )
+            self.insert_consumption(conn, "alice", "hpc", cpu_minutes=100)
+            self.insert_consumption(conn, "alice", "dev", cpu_minutes=20)
+            self.insert_consumption(conn, "bob", "dev", cpu_minutes=30)
             conn.commit()
 
         host = "127.0.0.1"
@@ -221,8 +208,10 @@ class TestServeCommand(FunctionalCLIBase):
                 body = json.loads(resp.read().decode("utf-8"))
                 self.assertEqual(len(body["users"]), 1)
                 self.assertEqual(body["users"][0]["username"], "alice")
+                self.assertEqual(body["users"][0]["total_consumed_cpu_minutes"], 120)
                 self.assertEqual(len(body["accounts"]), 1)
                 self.assertEqual(body["accounts"][0]["account"], "hpc")
+                self.assertEqual(body["accounts"][0]["total_consumed_cpu_minutes"], 100)
             finally:
                 conn.close()
 
@@ -231,18 +220,8 @@ class TestServeCommand(FunctionalCLIBase):
     def test_serve_get_stats_supports_account_query_filter(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("alice", 120),
-            )
-            conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
-            )
-            conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("dev", 40),
-            )
+            self.insert_consumption(conn, "alice", "hpc", cpu_minutes=100)
+            self.insert_consumption(conn, "alice", "dev", cpu_minutes=40)
             conn.commit()
 
         host = "127.0.0.1"

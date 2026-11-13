@@ -29,6 +29,7 @@
   - [`slurm-quota-token` Command](#slurm-quota-token-command)
   - [`slurm-quota-web` Command](#slurm-quota-web-command)
   - [`slurm-quota-prune` Command](#slurm-quota-prune-command)
+  - [`slurm-quota-reallocate` Command](#slurm-quota-reallocate-command)
 - [Upgrade](#upgrade)
 - [Development](#development)
   - [Tests](#tests)
@@ -166,11 +167,11 @@ is used for 2 reasons:
   preserved to trace operations.
 
 Upon job completion, the `slurm-quota-charge` command retrieves the UUID from `admin_comment` and the allocated GPU
-resources from `AllocTRES` (via `sacct`). It calculates the effective consumption in CPU minutes according to
-`PROCS × (END − START) / 60` and in GPU minutes according to the allocated GPUs, their type, and the configured load
-factors. It credits these consumptions to the user and to the account, and deletes the corresponding preallocation in
-the database. This step ensures that the difference between "reserved" and "actually used" is correctly reconciled for
-both dimensions (CPU and GPU).
+resources from `AllocTRES` (via `sacct`). It calculates the effective consumption in CPU seconds according to
+`PROCS × (END − START)` and in GPU seconds according to the allocated GPUs, their type, and the configured load factors.
+It credits these consumptions to the user/account pair of the job, and deletes the corresponding preallocation in the
+database. User and account consumptions are the sums over their pairs. This step ensures that the difference between
+"reserved" and "actually used" is correctly reconciled for both dimensions (CPU and GPU).
 
 Additionally, a logrotate configuration file is provided (`slurm-quota-charge.logrotate`) to prevent the log file fed by
 the `slurm-quota-charge-wrapper` wrapper from growing too large over time.
@@ -179,8 +180,11 @@ the `slurm-quota-charge-wrapper` wrapper from growing too large over time.
 
 The SQLite database contains these tables:
 
-- `users`: user names, consumed CPU and GPU minutes, and assigned quotas.
-- `accounts`: Slurm account names, consumed CPU and GPU minutes, and assigned quotas.
+- `users`: user names and assigned quotas.
+- `accounts`: Slurm account names and assigned quotas.
+- `user_account_consumption`: consumed CPU and GPU seconds per user/account pair. After an upgrade from version 3,
+  legacy consumption is held by temporary pairs with an `(unattributed)` user and account until
+  [`slurm-quota-reallocate`](#slurm-quota-reallocate-command) is run.
 - `jobs_preallocations`: CPU and GPU minutes preallocated to non-completed jobs, with `job_uuid`, `username`, and
   `account`.
 - `gpu_factors`: load factors by GPU type for billed GPU minute calculation.
@@ -883,6 +887,17 @@ sudo slurm-quota-prune --dry-run        # preview removals without applying them
 > of the call to the `slurm-quota-charge` command by Slurm. Its execution is nevertheless safe, it can be executed if in
 > doubt about the preallocated durations assigned to users.
 
+### `slurm-quota-reallocate` Command<a name="slurm-quota-reallocate-command"></a>
+
+Attributes legacy consumption held by the temporary `(unattributed)` user and account, after an upgrade from version 3,
+to actual user/account pairs based on Slurm accounting (root only). User and account consumptions are preserved. See
+[upgrade from version 3 to 4](docs/upgrade-v3-to-v4.md#5-reallocate-unattributed-consumption) for details.
+
+```bash
+sudo slurm-quota-reallocate --starttime 2025-01-01 --dry-run  # preview the reallocation
+sudo slurm-quota-reallocate --starttime 2025-01-01            # apply it
+```
+
 ## Upgrade<a name="upgrade"></a>
 
 The following guides cover upgrades beyond routine RPM package updates:
@@ -890,6 +905,7 @@ The following guides cover upgrades beyond routine RPM package updates:
 - [Migrate from manual installation to RPM packages](docs/migration-manual-to-rpm.md)
 - [Database migrations](docs/database-migrations.md)
 - [Upgrade from version 2 to 3](docs/upgrade-v2-to-v3.md)
+- [Upgrade from version 3 to 4](docs/upgrade-v3-to-v4.md)
 
 ## Development<a name="development"></a>
 

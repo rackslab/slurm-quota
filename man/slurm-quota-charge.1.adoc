@@ -7,7 +7,7 @@
 
 == Name
 
-slurm-quota-charge - update consumed CPU/GPU minutes on Slurm job completion
+slurm-quota-charge - update consumed CPU/GPU time on Slurm job completion
 
 == Synopsis
 
@@ -15,7 +15,8 @@ slurm-quota-charge - update consumed CPU/GPU minutes on Slurm job completion
 
 == Description
 
-*slurm-quota-charge* updates consumed CPU/GPU minutes for a completed job using
+*slurm-quota-charge* charges consumed CPU/GPU time, in seconds, of a completed
+job to its user/account pair using
 Slurm job completion environment variables and `sacct`. This command is designed
 to be executed by Slurm as a JobCompType=jobcomp/script with the `slurm` system
 user.
@@ -45,7 +46,7 @@ The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 == Environment
 
 *JOBID*, *ARRAYJOBID*, *ARRAYTASKID*, *USERNAME*, *ACCOUNT*, *PROCS*, *START*, *END*::
-  Used to compute job identity and consumed CPU minutes.
+  Used to compute job identity and consumed CPU seconds.
 
 == Files
 

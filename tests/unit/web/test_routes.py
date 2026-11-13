@@ -827,6 +827,8 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
         self.assertIn('data-edit="consumption"', body)
         self.assertIn('action="/consumption"', body)
         self.assertIn('name="delta_minutes"', body)
+        self.assertIn('name="username"', body)
+        self.assertIn('name="account"', body)
 
     def test_dashboard_shows_consumption_edit_for_operator(self):
         with (
@@ -877,8 +879,8 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                 "/consumption",
                 data={
                     "_csrf": csrf,
-                    "target": "user",
-                    "name": "alice",
+                    "username": "alice",
+                    "account": "hpc",
                     "resource": "cpu",
                     "delta_minutes": "-15",
                 },
@@ -886,7 +888,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
             )
         self.assertEqual(resp.status_code, 302)
         m_client.return_value.adjust_consumption.assert_called_once_with(
-            "user", "alice", "cpu", -15, reason=None
+            "alice", "hpc", "cpu", -15, reason=None
         )
 
     def test_consumption_post_forwards_reason_when_provided(self):
@@ -905,8 +907,8 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                 "/consumption",
                 data={
                     "_csrf": csrf,
-                    "target": "user",
-                    "name": "alice",
+                    "username": "alice",
+                    "account": "hpc",
                     "resource": "cpu",
                     "delta_minutes": "-15",
                     "reason": "correct billing error",
@@ -914,7 +916,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                 follow_redirects=False,
             )
         m_client.return_value.adjust_consumption.assert_called_once_with(
-            "user", "alice", "cpu", -15, reason="correct billing error"
+            "alice", "hpc", "cpu", -15, reason="correct billing error"
         )
 
     def test_consumption_post_shows_success_message(self):
@@ -933,14 +935,46 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                 "/consumption",
                 data={
                     "_csrf": csrf,
-                    "target": "user",
-                    "name": "alice",
+                    "username": "alice",
+                    "account": "hpc",
                     "resource": "cpu",
                     "delta_minutes": "-15",
                 },
                 follow_redirects=True,
             )
-        self.assertIn("Consumption adjusted for alice.", resp.get_data(as_text=True))
+        self.assertIn(
+            "Consumption adjusted for user alice on account hpc.",
+            resp.get_data(as_text=True),
+        )
+
+    def test_consumption_post_rejects_missing_account(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value="operator"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            dashboard = client.get("/")
+            csrf = extract_csrf(dashboard.get_data(as_text=True))
+            resp = client.post(
+                "/consumption",
+                data={
+                    "_csrf": csrf,
+                    "username": "alice",
+                    "account": "  ",
+                    "resource": "cpu",
+                    "delta_minutes": "-15",
+                },
+                follow_redirects=True,
+            )
+        self.assertIn(
+            "Invalid consumption user, account or resource.",
+            resp.get_data(as_text=True),
+        )
+        m_client.return_value.adjust_consumption.assert_not_called()
 
     def test_consumption_post_failure_shows_error(self):
         with (
@@ -959,8 +993,8 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                 "/consumption",
                 data={
                     "_csrf": csrf,
-                    "target": "user",
-                    "name": "alice",
+                    "username": "alice",
+                    "account": "hpc",
                     "resource": "cpu",
                     "delta_minutes": "-15",
                 },
@@ -989,8 +1023,8 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                 "/consumption",
                 data={
                     "_csrf": csrf,
-                    "target": "user",
-                    "name": "alice",
+                    "username": "alice",
+                    "account": "hpc",
                     "resource": "cpu",
                     "delta_minutes": "-15",
                 },
@@ -1014,8 +1048,8 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                 "/consumption",
                 data={
                     "_csrf": "token",
-                    "target": "user",
-                    "name": "alice",
+                    "username": "alice",
+                    "account": "hpc",
                     "resource": "cpu",
                     "delta_minutes": "10",
                 },
@@ -1031,8 +1065,8 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                 "/consumption",
                 data={
                     "_csrf": "wrong",
-                    "target": "user",
-                    "name": "alice",
+                    "username": "alice",
+                    "account": "hpc",
                     "resource": "cpu",
                     "delta_minutes": "10",
                 },
