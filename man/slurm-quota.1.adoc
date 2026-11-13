@@ -171,18 +171,20 @@ slurm-quota role managers bob add hpc
 
 === adjust
 
-*slurm-quota adjust* (*--user* <username> | *--account* <account>) (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int>)
+*slurm-quota adjust* *--user* <username> *--account* <account> (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int>)
 
-Adjust consumed CPU/GPU time for one user or one account.
+Adjust consumed CPU/GPU time of one user on one account. Consumption is recorded
+per user/account pair: the adjustment changes both the user total and the account
+total.
 Requires a saved JWT token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
 
 Options:
 
 *--user* <username>::
-  Target user.
+  Target user (required).
 
 *--account* <account>::
-  Target account.
+  Target account (required).
 
 *--cpu*::
   Adjust consumed CPU minutes.
@@ -198,13 +200,14 @@ Options:
 
 Notes:
 
-- Negative adjustments are clamped at zero (consumed time never becomes negative).
+- Negative adjustments are clamped at zero (consumed time of the user/account pair never becomes negative).
+- Both the user and the account must already be known in the database.
 
 Examples:
 
 ....
-slurm-quota adjust --user alice --cpu --minutes=+30
-slurm-quota adjust --account projX --gpu --hours=-1
+slurm-quota adjust --user alice --account projX --cpu --minutes=+30
+slurm-quota adjust --user alice --account projX --gpu --hours=-1
 ....
 
 === user-quota
