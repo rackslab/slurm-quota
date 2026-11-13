@@ -361,14 +361,14 @@ class APIClient:
 
     def adjust_consumption(
         self,
-        target: Literal["user", "account"],
-        name: str,
+        username: str,
+        account: str,
         resource: Literal["cpu", "gpu"],
         delta_minutes: int,
         *,
         reason: str | None = None,
     ) -> int:
-        path = f"consumption/{target}/{_quote_name(name)}/{resource}"
+        path = f"consumption/{_quote_name(username)}/{_quote_name(account)}/{resource}"
         body: dict[str, Any] = {"delta_minutes": delta_minutes}
         if reason is not None:
             body["reason"] = reason

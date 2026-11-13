@@ -668,16 +668,16 @@ class TestAPIClientGpuFactors(SlurmQuotaTestCase):
 
 
 class TestAPIClientConsumption(SlurmQuotaTestCase):
-    def test_adjust_consumption_sends_patch_for_user_cpu(self):
+    def test_adjust_consumption_sends_patch_for_pair_cpu(self):
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse({"total_consumed_minutes": 130}),
         ) as m_urlopen:
-            total = APIClient(token="jwt").adjust_consumption("user", "bob", "cpu", 30)
+            total = APIClient(token="jwt").adjust_consumption("bob", "hpc", "cpu", 30)
         self.assertEqual(total, 130)
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.method, "PATCH")
-        self.assertIn("/consumption/user/bob/cpu", req.full_url)
+        self.assertIn("/consumption/bob/hpc/cpu", req.full_url)
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"delta_minutes": 30})
 
@@ -687,23 +687,21 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
             return_value=_FakeUrlopenResponse({"total_consumed_minutes": 130}),
         ) as m_urlopen:
             APIClient(token="jwt").adjust_consumption(
-                "user", "bob", "cpu", 30, reason="correct billing error"
+                "bob", "hpc", "cpu", 30, reason="correct billing error"
             )
         req = m_urlopen.call_args[0][0]
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"delta_minutes": 30, "reason": "correct billing error"})
 
-    def test_adjust_consumption_sends_patch_for_account_gpu(self):
+    def test_adjust_consumption_sends_patch_for_pair_gpu(self):
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse({"total_consumed_minutes": 0}),
         ) as m_urlopen:
-            total = APIClient(token="jwt").adjust_consumption(
-                "account", "hpc", "gpu", -10
-            )
+            total = APIClient(token="jwt").adjust_consumption("bob", "hpc", "gpu", -10)
         self.assertEqual(total, 0)
         req = m_urlopen.call_args[0][0]
-        self.assertIn("/consumption/account/hpc/gpu", req.full_url)
+        self.assertIn("/consumption/bob/hpc/gpu", req.full_url)
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"delta_minutes": -10})
 
@@ -715,12 +713,12 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
             ),
             self.assertRaises(ServiceHTTPError) as cm,
         ):
-            APIClient(token="jwt").adjust_consumption("user", "bob", "gpu", 10)
+            APIClient(token="jwt").adjust_consumption("bob", "hpc", "gpu", 10)
         self.assertEqual(cm.exception.status, 403)
 
     def test_adjust_raises_value_error_when_token_missing(self):
         with self.assertRaises(ValueError):
-            APIClient(token=None).adjust_consumption("user", "bob", "cpu", 10)
+            APIClient(token=None).adjust_consumption("bob", "hpc", "cpu", 10)
 
     def test_adjust_raises_value_error_when_total_missing(self):
         with (
@@ -730,7 +728,7 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
             ),
             self.assertRaises(ValueError),
         ):
-            APIClient(token="jwt").adjust_consumption("user", "bob", "cpu", 10)
+            APIClient(token="jwt").adjust_consumption("bob", "hpc", "cpu", 10)
 
 
 class TestAPIClientTls(SlurmQuotaTestCase):

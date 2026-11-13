@@ -408,13 +408,13 @@ def consumption_post() -> Any:
     if not validate_csrf():
         abort(400, description="Invalid or missing CSRF token.")
 
-    target = (request.form.get("target") or "").strip()
-    name = (request.form.get("name") or "").strip()
+    username = (request.form.get("username") or "").strip()
+    account = (request.form.get("account") or "").strip()
     resource = (request.form.get("resource") or "").strip()
     delta_raw = (request.form.get("delta_minutes") or "").strip()
 
-    if not name or target not in ("user", "account") or resource not in ("cpu", "gpu"):
-        flash("Invalid consumption target or resource.", "error")
+    if not username or not account or resource not in ("cpu", "gpu"):
+        flash("Invalid consumption user, account or resource.", "error")
         return redirect(url_for("dashboard"))
 
     try:
@@ -426,8 +426,13 @@ def consumption_post() -> Any:
     try:
         api = api_client()
         reason = _optional_form_reason()
-        api.adjust_consumption(target, name, resource, delta_minutes, reason=reason)
-        flash(f"Consumption adjusted for {name}.", "success")
+        api.adjust_consumption(
+            username, account, resource, delta_minutes, reason=reason
+        )
+        flash(
+            f"Consumption adjusted for user {username} on account {account}.",
+            "success",
+        )
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
             session.clear()
