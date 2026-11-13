@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 from typing import Optional
 
 from slurm_quota import database as database_layer
@@ -296,3 +297,143 @@ def get_job_info_from_environment() -> tuple[str, str, int, str, Optional[str], 
     except (ValueError, KeyError) as e:
         logger.error(f"Failed to extract job information: {e}")
         raise
+
+
+class SlurmQueryError(Exception):
+    """Raised when Slurm accounting cannot be queried."""
+
+
+def _sacct_time(epoch: int) -> str:
+    """Format epoch seconds as a sacct --starttime/--endtime local timestamp."""
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(epoch))
+
+
+def collect_pair_usage_from_sacct(
+    start: int,
+    end: int,
+    chunk_days: int,
+    factors: dict[str, float],
+) -> dict[tuple[str, str], tuple[int, int]]:
+    """Return CPU and GPU seconds consumed per (user, account) pair from sacct.
+
+    Jobs ending in [start, end) are considered. The period is split in chunks of
+    chunk_days to limit the size of sacct responses. sacct reports jobs running
+    at any time in a chunk, so a job is counted only in the chunk where it ends,
+    to avoid counting jobs spanning multiple chunks several times.
+
+    Consumption is computed like slurm-quota-charge does: allocated CPUs times
+    elapsed seconds for CPU, and allocated GPUs times elapsed seconds times GPU
+    type factors for GPU.
+
+    Args:
+        start: Start of the period (epoch seconds, included).
+        end: End of the period (epoch seconds, excluded).
+        chunk_days: Length of sacct queries chunks, in days.
+        factors: GPU factors, as returned by load_gpu_factors().
+
+    Returns:
+        Mapping of (username, account) to (cpu_seconds, gpu_seconds).
+
+    Raises:
+        SlurmQueryError: If sacct fails.
+    """
+    usage: dict[tuple[str, str], list[int]] = {}
+    env = dict(os.environ, SLURM_TIME_FORMAT="%s")
+    chunk_start = start
+    while chunk_start < end:
+        chunk_end = min(end, chunk_start + chunk_days * 86400)
+        try:
+            result = subprocess.run(
+                [
+                    "sacct",
+                    "--allusers",
+                    "--allocations",
+                    "--noheader",
+                    "--parsable2",
+                    "--starttime",
+                    _sacct_time(chunk_start),
+                    "--endtime",
+                    _sacct_time(chunk_end),
+                    "--format",
+                    "jobid,user,account,alloccpus,start,end,alloctres",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                env=env,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError) as err:
+            raise SlurmQueryError(f"Failed to query jobs with sacct: {err}") from err
+
+        for line in result.stdout.splitlines():
+            fields = line.split("|")
+            if len(fields) < 7:
+                continue
+            job_id, user, account, cpus, job_start, job_end, alloc_tres = fields[:7]
+            if not user or not account:
+                continue
+            try:
+                started = int(job_start)
+                ended = int(job_end)
+                alloc_cpus = int(cpus)
+            except ValueError:
+                # Unknown/None times of pending or running jobs
+                continue
+            if not chunk_start <= ended < chunk_end or ended <= started:
+                continue
+            duration = ended - started
+            cpu_seconds = alloc_cpus * duration
+            gpu_seconds = 0
+            if alloc_tres and alloc_tres != "(null)":
+                gpu_counts = parse_alloc_tres(alloc_tres)
+                if gpu_counts:
+                    gpu_seconds = calculate_consumed_gpu_seconds(
+                        gpu_counts, duration, factors
+                    )
+            logger.debug(
+                "sacct job %s: user=%s account=%s cpu=%ds gpu=%ds",
+                job_id,
+                user,
+                account,
+                cpu_seconds,
+                gpu_seconds,
+            )
+            entry = usage.setdefault((user, account), [0, 0])
+            entry[0] += cpu_seconds
+            entry[1] += gpu_seconds
+        chunk_start = chunk_end
+
+    return {pair: (cpu, gpu) for pair, (cpu, gpu) in usage.items()}
+
+
+def get_associations() -> set[tuple[str, str]]:
+    """Return all (user, account) associations defined in Slurm using sacctmgr.
+
+    Associations without user (account level associations) are ignored.
+
+    Returns:
+        A set of (username, account) pairs (may be empty when none or on error)
+    """
+    try:
+        result = subprocess.run(
+            [
+                "sacctmgr",
+                "list",
+                "associations",
+                "format=user,account",
+                "-P",
+                "-n",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.warning(f"Failed to get associations via sacctmgr: {e}")
+        return set()
+    associations: set[tuple[str, str]] = set()
+    for line in result.stdout.splitlines():
+        user, _, account = line.strip().partition("|")
+        if user and account:
+            associations.add((user, account))
+    return associations
