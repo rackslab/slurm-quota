@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# Bash completion for slurm-quota-reallocate
+
+_slurm_quota_reallocate() {
+    local cur prev
+
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev=""
+    if (( COMP_CWORD > 0 )); then
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+    fi
+
+    case "$prev" in
+        --starttime|--endtime|--chunk-days)
+            COMPREPLY=()
+            return 0
+            ;;
+    esac
+
+    local base_opts="-h --help --version --debug -q --quiet --log-flags --debug-flags"
+    COMPREPLY=($(compgen -W "$base_opts --starttime --endtime --chunk-days --dry-run" -- "$cur"))
+
+    return 0
+}
+
+complete -F _slurm_quota_reallocate slurm-quota-reallocate
