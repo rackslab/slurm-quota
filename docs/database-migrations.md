@@ -27,3 +27,7 @@ Example output:
 
 > [!NOTE]
 > Then, the other components (`job_submit.lua`, `slurm-quota`, etc.) must be updated.
+
+> [!NOTE]
+> Upgrades between major versions may require additional steps before or after the database migration. They are
+> documented in the upgrade guides, for example [upgrade from version 3 to 4](upgrade-v3-to-v4.md).

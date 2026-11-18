@@ -105,9 +105,9 @@ curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/jso
   -d '{"user_cpu_minutes":50000,"account_cpu_minutes":200000}' \
   https://127.0.0.1:9911/quotas/defaults
 curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
-  -d '{"delta_minutes":30}' https://127.0.0.1:9911/consumption/user/alice/cpu
+  -d '{"delta_minutes":30}' https://127.0.0.1:9911/consumption/alice/hpc/cpu
 curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
-  -d '{"delta_minutes":-60}' https://127.0.0.1:9911/consumption/account/hpc/gpu
+  -d '{"delta_minutes":-60}' https://127.0.0.1:9911/consumption/alice/hpc/gpu
 curl -H 'Authorization: Bearer <token>' https://127.0.0.1:9911/factors/gpu
 curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
   -d '{"factor":0.5}' https://127.0.0.1:9911/factors/gpu/h100

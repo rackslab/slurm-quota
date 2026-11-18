@@ -9,5 +9,6 @@ Additional guides for slurm-quota:
 | [migration-manual-to-rpm.md](migration-manual-to-rpm.md) | Switch an existing manual deployment to RPM packages    |
 | [database-migrations.md](database-migrations.md)         | Run or troubleshoot SQLite schema migrations            |
 | [upgrade-v2-to-v3.md](upgrade-v2-to-v3.md)               | Upgrade the web dashboard from version 2 to 3           |
+| [upgrade-v3-to-v4.md](upgrade-v3-to-v4.md)               | Upgrade from version 3 to 4                             |
 
 The main [README](../README.md) covers features, architecture, RPM installation with LDAP, and usage.
