@@ -37,19 +37,19 @@ def charge_command() -> None:
         (
             username,
             job_id,
-            consumed_cpu_minutes,
+            consumed_cpu_seconds,
             account,
             job_uuid,
-            consumed_gpu_minutes,
+            consumed_gpu_seconds,
         ) = get_job_info_from_environment()
 
         prealloc_status = update_user_and_account_resources(
-            username, account, consumed_cpu_minutes, job_uuid, consumed_gpu_minutes
+            username, account, consumed_cpu_seconds, job_uuid, consumed_gpu_seconds
         )
 
         logger.info(
             f"charge: user={username} account={account} job_id={job_id} "
-            f"+{consumed_cpu_minutes} CPUmins +{consumed_gpu_minutes} GPUmins "
+            f"+{consumed_cpu_seconds} CPUsecs +{consumed_gpu_seconds} GPUsecs "
             f"uuid={job_uuid or 'none'} prealloc_status={prealloc_status}"
         )
 

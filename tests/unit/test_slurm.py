@@ -6,7 +6,7 @@ import subprocess
 from unittest.mock import patch
 
 from slurm_quota.slurm import (
-    calculate_consumed_gpu_minutes,
+    calculate_consumed_gpu_seconds,
     collect_active_job_uuids,
     get_account_users,
     get_job_info_from_environment,
@@ -30,17 +30,23 @@ class TestParseAllocTres(SlurmQuotaTestCase):
         )
 
 
-class TestCalculateConsumedGpuMinutes(SlurmQuotaTestCase):
-    def test_calculate_consumed_gpu_minutes(self):
+class TestCalculateConsumedGpuSeconds(SlurmQuotaTestCase):
+    def test_calculate_consumed_gpu_seconds(self):
         self.assertEqual(
-            calculate_consumed_gpu_minutes({"h100": 2}, 30, {"__default__": 1.0}),
+            calculate_consumed_gpu_seconds({"h100": 2}, 30, {"__default__": 1.0}),
             60,
         )
         self.assertEqual(
-            calculate_consumed_gpu_minutes(
+            calculate_consumed_gpu_seconds(
                 {"h100": 4}, 10, {"__default__": 1.0, "h100": 0.5}
             ),
             20,
+        )
+
+    def test_calculate_consumed_gpu_seconds_truncates_below_one_second(self):
+        self.assertEqual(
+            calculate_consumed_gpu_seconds({"h100": 1}, 3, {"__default__": 0.3}),
+            0,
         )
 
 
@@ -121,5 +127,36 @@ class TestGetJobInfoFromEnvironment(SlurmQuotaTestCase):
         out = get_job_info_from_environment()
         self.assertEqual(out[0], "alice")
         self.assertEqual(out[1], "99")
-        self.assertEqual(out[2], 60)
-        self.assertEqual(out[5], 120)
+        self.assertEqual(out[2], 3600)
+        self.assertEqual(out[5], 7200)
+
+    @patch("slurm_quota.slurm.get_job_info_from_sacct", return_value=("uuid", ""))
+    def test_get_job_info_from_environment_charges_sub_minute_job(self, _sacct):
+        self.env(
+            {
+                "JOBID": "100",
+                "USERNAME": "alice",
+                "ACCOUNT": "proj",
+                "PROCS": "4",
+                "START": "1000",
+                "END": "1030",
+            }
+        )
+        out = get_job_info_from_environment()
+        self.assertEqual(out[2], 120)
+        self.assertEqual(out[5], 0)
+
+    @patch("slurm_quota.slurm.get_job_info_from_sacct", return_value=("uuid", ""))
+    def test_get_job_info_from_environment_without_end_charges_nothing(self, _sacct):
+        self.env(
+            {
+                "JOBID": "101",
+                "USERNAME": "alice",
+                "ACCOUNT": "proj",
+                "PROCS": "4",
+                "START": "1000",
+                "END": "0",
+            }
+        )
+        out = get_job_info_from_environment()
+        self.assertEqual(out[2], 0)

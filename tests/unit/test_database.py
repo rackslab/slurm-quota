@@ -59,30 +59,13 @@ class TestPruneResources(SlurmQuotaTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [
-                    ("u_free", 0, 0),
-                    ("u_orphan_prealloc", 0, 0),
-                    ("u_active_prealloc", 0, 0),
-                    ("u_busy", 10, 0),
-                ],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u_free",), ("u_orphan_prealloc",), ("u_active_prealloc",)],
             )
+            self.insert_consumption(conn, "u_busy", "a_busy", 10, 0)
             conn.executemany(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [
-                    ("a_free", 0, 0),
-                    ("a_orphan_prealloc", 0, 0),
-                    ("a_active_prealloc", 0, 0),
-                    ("a_busy", 5, 0),
-                ],
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a_free",), ("a_orphan_prealloc",), ("a_active_prealloc",)],
             )
             conn.executemany(
                 """
@@ -147,12 +130,12 @@ class TestPruneResources(SlurmQuotaTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes, total_consumed_gpu_minutes) VALUES (?, ?, ?)",
-                ("u1", 0, 0),
+                "INSERT INTO users (username) VALUES (?)",
+                ("u1",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes, total_consumed_gpu_minutes) VALUES (?, ?, ?)",
-                ("a1", 0, 0),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("a1",),
             )
             conn.execute(
                 """
@@ -214,20 +197,13 @@ class TestPruneResources(SlurmQuotaTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [
-                    ("u_free", 0, 0),
-                    ("u_orphan_prealloc", 0, 0),
-                    ("u_busy", 1, 0),
-                ],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u_free",), ("u_orphan_prealloc",)],
             )
+            self.insert_consumption(conn, "u_busy", "a_busy", 1, 0)
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes, total_consumed_gpu_minutes) VALUES (?, ?, ?)",
-                ("a1", 0, 0),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("a1",),
             )
             conn.execute(
                 """
@@ -257,12 +233,12 @@ class TestPruneResources(SlurmQuotaTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes, total_consumed_gpu_minutes) VALUES (?, ?, ?)",
-                ("u_orphan_prealloc", 0, 0),
+                "INSERT INTO users (username) VALUES (?)",
+                ("u_orphan_prealloc",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes, total_consumed_gpu_minutes) VALUES (?, ?, ?)",
-                ("a_orphan_prealloc", 0, 0),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("a_orphan_prealloc",),
             )
             conn.execute(
                 """
@@ -305,21 +281,15 @@ class TestPruneResources(SlurmQuotaTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("u1", 0, 0), ("u2", 0, 0), ("u_busy", 1, 0)],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u1",), ("u2",)],
             )
+            self.insert_consumption(conn, "u_busy", "a_busy", 1, 0)
             conn.executemany(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("a1", 0, 0), ("a2", 0, 0), ("a_busy", 0, 1)],
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a1",), ("a2",)],
             )
+            self.insert_consumption(conn, "u_busy", "a_busy", 0, 1)
             conn.commit()
 
         with self.assertLogs("slurm_quota", level="INFO") as log_cm:
@@ -352,21 +322,15 @@ class TestPruneResources(SlurmQuotaTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("u_busy", 3, 0), ("u_zero", 0, 0)],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u_zero",)],
             )
+            self.insert_consumption(conn, "u_busy", "a_busy", 3, 0)
             conn.executemany(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("a_busy", 0, 4), ("a_zero", 0, 0)],
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a_zero",)],
             )
+            self.insert_consumption(conn, "u_busy", "a_busy", 0, 4)
             conn.commit()
 
         counts = prune_resources(
@@ -605,76 +569,154 @@ class TestSetAccountGpuQuota(SlurmQuotaTestCase):
 
 
 class TestAdjustConsumedMinutes(SlurmQuotaTestCase):
-    def test_adjust_user_cpu_adds_minutes(self):
+    def test_adjust_pair_cpu_adds_minutes(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("alice", 100),
-            )
+            self.insert_consumption(conn, "alice", "hpc", cpu_minutes=100)
+            self.insert_consumption(conn, "alice", "dev", cpu_minutes=7)
             conn.commit()
 
-        new_value = adjust_consumed_minutes("user", "alice", "cpu", 25)
+        new_value = adjust_consumed_minutes("alice", "hpc", "cpu", 25)
         self.assertEqual(new_value, 125)
 
         with self.db_connection() as conn:
-            row = conn.execute(
-                "SELECT total_consumed_cpu_minutes FROM users WHERE username = ?",
-                ("alice",),
-            ).fetchone()
-        self.assertEqual(row, (125,))
+            self.assertEqual(self.pair_consumption(conn, "alice", "hpc"), (7500, 0))
+            self.assertEqual(self.pair_consumption(conn, "alice", "dev"), (420, 0))
 
-    def test_adjust_account_gpu_clamps_to_zero(self):
+    def test_adjust_creates_missing_pair(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                "INSERT INTO accounts (account, total_consumed_gpu_minutes) VALUES (?, ?)",
-                ("hpc", 40),
-            )
+            self.insert_consumption(conn, "alice", "hpc", cpu_minutes=10)
+            self.insert_consumption(conn, "bob", "dev", gpu_minutes=10)
             conn.commit()
 
-        new_value = adjust_consumed_minutes("account", "hpc", "gpu", -100)
+        new_value = adjust_consumed_minutes("alice", "dev", "gpu", 3)
+        self.assertEqual(new_value, 3)
+
+        with self.db_connection() as conn:
+            self.assertEqual(self.pair_consumption(conn, "alice", "dev"), (0, 180))
+
+    def test_adjust_pair_gpu_clamps_to_zero(self):
+        init_database()
+        with self.db_connection() as conn:
+            self.insert_consumption(conn, "alice", "hpc", gpu_minutes=40)
+            conn.commit()
+
+        new_value = adjust_consumed_minutes("alice", "hpc", "gpu", -100)
         self.assertEqual(new_value, 0)
 
         with self.db_connection() as conn:
-            row = conn.execute(
-                "SELECT total_consumed_gpu_minutes FROM accounts WHERE account = ?",
-                ("hpc",),
-            ).fetchone()
-        self.assertEqual(row, (0,))
+            self.assertEqual(self.pair_consumption(conn, "alice", "hpc"), (0, 0))
 
-    def test_adjust_raises_for_missing_target(self):
+    def test_adjust_returns_floored_minutes(self):
         init_database()
-        with self.assertRaisesRegex(ValueError, "User not found: missing"):
-            adjust_consumed_minutes("user", "missing", "cpu", 1)
+        with self.db_connection() as conn:
+            self.insert_consumption(conn, "alice", "hpc")
+            conn.execute(
+                "UPDATE user_account_consumption SET consumed_cpu_seconds = 119"
+            )
+            conn.commit()
 
-    def test_adjust_rejects_invalid_target_type(self):
-        with self.assertRaisesRegex(ValueError, "Invalid target type: team"):
-            adjust_consumed_minutes("team", "dev", "cpu", 1)
+        self.assertEqual(adjust_consumed_minutes("alice", "hpc", "cpu", 1), 2)
+        with self.db_connection() as conn:
+            self.assertEqual(self.pair_consumption(conn, "alice", "hpc"), (179, 0))
+
+    def test_adjust_raises_for_missing_user(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute("INSERT INTO accounts (account) VALUES ('hpc')")
+            conn.commit()
+        with self.assertRaisesRegex(ValueError, "User not found: missing"):
+            adjust_consumed_minutes("missing", "hpc", "cpu", 1)
+
+    def test_adjust_raises_for_missing_account(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute("INSERT INTO users (username) VALUES ('alice')")
+            conn.commit()
+        with self.assertRaisesRegex(ValueError, "Account not found: missing"):
+            adjust_consumed_minutes("alice", "missing", "cpu", 1)
 
     def test_adjust_rejects_invalid_resource_type(self):
         with self.assertRaisesRegex(ValueError, "Invalid resource type: mem"):
-            adjust_consumed_minutes("user", "alice", "mem", 1)
+            adjust_consumed_minutes("alice", "hpc", "mem", 1)
+
+
+class TestUserAccountConsumption(SlurmQuotaTestCase):
+    def test_charge_records_seconds_per_pair(self):
+        init_database()
+        update_user_and_account_resources("u1", "a1", 90, None, 30)
+        update_user_and_account_resources("u1", "a1", 10, None, 0)
+        update_user_and_account_resources("u1", "a2", 600, None, 0)
+        with self.db_connection() as conn:
+            self.assertEqual(self.pair_consumption(conn, "u1", "a1"), (100, 30))
+            self.assertEqual(self.pair_consumption(conn, "u1", "a2"), (600, 0))
+
+    def test_aggregates_sum_pairs_in_floored_minutes(self):
+        init_database()
+        update_user_and_account_resources("u1", "a1", 90, None, 130)
+        update_user_and_account_resources("u1", "a2", 600, None, 0)
+        update_user_and_account_resources("u2", "a1", 60, None, 0)
+        with self.db_connection() as conn:
+            users = {u["username"]: u for u in query_users_aggregate(conn)}
+            accounts = {a["account"]: a for a in query_accounts_aggregate(conn)}
+        # u1: 690s -> 11 min, 130s GPU -> 2 min
+        self.assertEqual(users["u1"]["total_consumed_cpu_minutes"], 11)
+        self.assertEqual(users["u1"]["total_consumed_gpu_minutes"], 2)
+        self.assertEqual(users["u2"]["total_consumed_cpu_minutes"], 1)
+        # a1: 150s -> 2 min
+        self.assertEqual(accounts["a1"]["total_consumed_cpu_minutes"], 2)
+        self.assertEqual(accounts["a2"]["total_consumed_cpu_minutes"], 10)
+
+    def test_aggregates_do_not_multiply_consumption_with_preallocations(self):
+        init_database()
+        with self.db_connection() as conn:
+            self.insert_consumption(conn, "u1", "a1", cpu_minutes=10)
+            self.insert_consumption(conn, "u1", "a2", cpu_minutes=5)
+            conn.executemany(
+                """
+                INSERT INTO jobs_preallocations (
+                    job_uuid, username, account, preallocated_cpu_minutes, array_size
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                [("j1", "u1", "a1", 5, 2), ("j2", "u1", "a1", 1, 1)],
+            )
+            conn.commit()
+            users = query_users_aggregate(conn, {"u1"})
+            accounts = query_accounts_aggregate(conn, {"a1"})
+        self.assertEqual(users[0]["total_consumed_cpu_minutes"], 15)
+        self.assertEqual(users[0]["total_preallocated_cpu_minutes"], 11)
+        self.assertEqual(users[0]["job_count"], 3)
+        self.assertEqual(accounts[0]["total_consumed_cpu_minutes"], 10)
+        self.assertEqual(accounts[0]["total_preallocated_cpu_minutes"], 11)
+
+    def test_prune_removes_zero_pairs_with_user(self):
+        init_database()
+        with self.db_connection() as conn:
+            self.insert_consumption(conn, "u_zero", "a1")
+            self.insert_consumption(conn, "u_busy", "a1", cpu_minutes=1)
+            conn.commit()
+        counts = prune_resources({"users", "accounts"})
+        self.assertEqual(counts, {"preallocs": 0, "users": 1, "accounts": 0})
+        with self.db_connection() as conn:
+            pairs = conn.execute(
+                "SELECT username, account FROM user_account_consumption"
+            ).fetchall()
+        self.assertEqual(pairs, [("u_busy", "a1")])
 
 
 class TestQueryUsersAggregate(SlurmQuotaTestCase):
     def test_query_users_aggregate(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("u1", 10),
-            )
-            conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("a1", 20),
-            )
+            self.insert_consumption(conn, "u1", "a1", cpu_minutes=10)
             conn.execute(
                 "INSERT INTO jobs_preallocations (job_uuid, username, account, preallocated_cpu_minutes, array_size) VALUES (?, ?, ?, ?, ?)",
                 ("j1", "u1", "a1", 5, 2),
             )
             conn.commit()
             users = query_users_aggregate(conn)
+        self.assertEqual(users[0]["total_consumed_cpu_minutes"], 10)
         self.assertEqual(users[0]["total_preallocated_cpu_minutes"], 10)
         self.assertEqual(users[0]["job_count"], 2)
 
@@ -683,14 +725,7 @@ class TestQueryAccountsAggregate(SlurmQuotaTestCase):
     def test_query_accounts_aggregate(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("u1", 10),
-            )
-            conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("a1", 20),
-            )
+            self.insert_consumption(conn, "u1", "a1", cpu_minutes=20)
             conn.execute(
                 "INSERT INTO jobs_preallocations (job_uuid, username, account, preallocated_cpu_minutes, array_size) VALUES (?, ?, ?, ?, ?)",
                 ("j1", "u1", "a1", 5, 2),
@@ -698,6 +733,7 @@ class TestQueryAccountsAggregate(SlurmQuotaTestCase):
             conn.commit()
             accounts = query_accounts_aggregate(conn, {"a1"})
         self.assertEqual(accounts[0]["account"], "a1")
+        self.assertEqual(accounts[0]["total_consumed_cpu_minutes"], 20)
 
 
 class TestOperatorsAndManagers(SlurmQuotaTestCase):
@@ -763,10 +799,7 @@ class TestOperatorsAndManagers(SlurmQuotaTestCase):
 
     def test_list_users_with_roles_merges_users_admins_operators_and_managers(self):
         with self.db_connection() as conn:
-            conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 10),
-            )
+            self.insert_consumption(conn, "bob", "hpc", cpu_minutes=10)
             grant_operator(conn, "carol")
             grant_manager(conn, "dave")
             grant_manager_account(conn, "dave", "hpc")

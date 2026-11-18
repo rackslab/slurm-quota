@@ -37,29 +37,14 @@ class TestPruneCommand(FunctionalCLIBase):
     def test_prune_as_root_defaults_to_all_targets(self):
         init_database()
         with self.db_connection() as conn:
+            self.insert_consumption(conn, "u_active", "a_active", 10, 0)
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [
-                    ("u_free", 0, 0),
-                    ("u_with_orphan", 0, 0),
-                    ("u_active", 10, 0),
-                ],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u_free",), ("u_with_orphan",)],
             )
             conn.executemany(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [
-                    ("a_free", 0, 0),
-                    ("a_with_orphan", 0, 0),
-                    ("a_active", 10, 0),
-                ],
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a_free",), ("a_with_orphan",)],
             )
             conn.executemany(
                 """
@@ -120,20 +105,12 @@ class TestPruneCommand(FunctionalCLIBase):
         init_database()
         with self.db_connection() as conn:
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("u1", 0, 0), ("u2", 0, 0)],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u1",), ("u2",)],
             )
             conn.executemany(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("a1", 0, 0), ("a2", 0, 0)],
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a1",), ("a2",)],
             )
             conn.executemany(
                 """
@@ -172,21 +149,14 @@ class TestPruneCommand(FunctionalCLIBase):
     def test_prune_only_users(self):
         init_database()
         with self.db_connection() as conn:
+            self.insert_consumption(conn, "u_busy", "a_busy", 5, 0)
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("u_free", 0, 0), ("u_busy", 5, 0)],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u_free",)],
             )
-            conn.execute(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                ("a1", 0, 0),
+            conn.executemany(
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a1",)],
             )
             conn.commit()
         with (
@@ -204,28 +174,20 @@ class TestPruneCommand(FunctionalCLIBase):
                 for row in conn.execute("SELECT username FROM users ORDER BY username")
             }
             self.assertEqual(users, {"u_busy"})
-            self.assertEqual(
-                conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], 1
-            )
+            accounts = {row[0] for row in conn.execute("SELECT account FROM accounts")}
+            self.assertEqual(accounts, {"a1", "a_busy"})
 
     def test_prune_only_accounts(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                ("u1", 0, 0),
+            self.insert_consumption(conn, "u_busy", "a_busy", 0, 7)
+            conn.executemany(
+                "INSERT INTO users (username) VALUES (?)",
+                [("u1",)],
             )
             conn.executemany(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("a_free", 0, 0), ("a_busy", 0, 7)],
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a_free",)],
             )
             conn.commit()
         with (
@@ -243,28 +205,19 @@ class TestPruneCommand(FunctionalCLIBase):
                 for row in conn.execute("SELECT account FROM accounts ORDER BY account")
             }
             self.assertEqual(accounts, {"a_busy"})
-            self.assertEqual(
-                conn.execute("SELECT COUNT(*) FROM users").fetchone()[0], 1
-            )
+            users = {row[0] for row in conn.execute("SELECT username FROM users")}
+            self.assertEqual(users, {"u1", "u_busy"})
 
     def test_prune_users_with_linked_prealloc_fails(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                ("u_link", 0, 0),
+            conn.executemany(
+                "INSERT INTO users (username) VALUES (?)",
+                [("u_link",)],
             )
-            conn.execute(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                ("a1", 0, 0),
+            conn.executemany(
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a1",)],
             )
             conn.execute(
                 """
@@ -305,21 +258,13 @@ class TestPruneCommand(FunctionalCLIBase):
     def test_prune_accounts_with_linked_prealloc_fails(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                ("u1", 0, 0),
+            conn.executemany(
+                "INSERT INTO users (username) VALUES (?)",
+                [("u1",)],
             )
-            conn.execute(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                ("a_link", 0, 0),
+            conn.executemany(
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a_link",)],
             )
             conn.execute(
                 """
@@ -360,26 +305,14 @@ class TestPruneCommand(FunctionalCLIBase):
     def test_prune_users_dry_run(self):
         init_database()
         with self.db_connection() as conn:
+            self.insert_consumption(conn, "u4", "a_busy", 12, 0)
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [
-                    ("u1", 0, 0),
-                    ("u2", 0, 0),
-                    ("u3", 0, 0),
-                    ("u4", 12, 0),
-                ],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u1",), ("u2",), ("u3",)],
             )
-            conn.execute(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                ("a1", 0, 0),
+            conn.executemany(
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a1",)],
             )
             conn.execute(
                 """
@@ -421,9 +354,8 @@ class TestPruneCommand(FunctionalCLIBase):
             self.assertEqual(
                 conn.execute("SELECT COUNT(*) FROM users").fetchone()[0], 4
             )
-            self.assertEqual(
-                conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], 1
-            )
+            accounts = {row[0] for row in conn.execute("SELECT account FROM accounts")}
+            self.assertEqual(accounts, {"a1", "a_busy"})
             self.assertEqual(
                 conn.execute("SELECT COUNT(*) FROM jobs_preallocations").fetchone()[0],
                 1,
@@ -432,21 +364,14 @@ class TestPruneCommand(FunctionalCLIBase):
     def test_prune_users_filtered_by_username(self):
         init_database()
         with self.db_connection() as conn:
+            self.insert_consumption(conn, "u_busy", "a_busy", 5, 0)
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("u_keep", 0, 0), ("u_drop", 0, 0), ("u_busy", 5, 0)],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u_keep",), ("u_drop",)],
             )
-            conn.execute(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                ("a1", 0, 0),
+            conn.executemany(
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a1",)],
             )
             conn.commit()
 
@@ -469,13 +394,10 @@ class TestPruneCommand(FunctionalCLIBase):
     def test_prune_users_filtered_username_ineligible(self):
         init_database()
         with self.db_connection() as conn:
+            self.insert_consumption(conn, "u_busy", "a_busy", 5, 0)
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("u_zero", 0, 0), ("u_busy", 5, 0)],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u_zero",)],
             )
             conn.commit()
 
@@ -493,21 +415,14 @@ class TestPruneCommand(FunctionalCLIBase):
     def test_prune_accounts_filtered_by_account(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                ("u1", 0, 0),
+            self.insert_consumption(conn, "u_busy", "a_busy", 0, 9)
+            conn.executemany(
+                "INSERT INTO users (username) VALUES (?)",
+                [("u1",)],
             )
             conn.executemany(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("a_keep", 0, 0), ("a_drop", 0, 0), ("a_busy", 0, 9)],
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a_keep",), ("a_drop",)],
             )
             conn.commit()
 
@@ -533,20 +448,12 @@ class TestPruneCommand(FunctionalCLIBase):
         init_database()
         with self.db_connection() as conn:
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("u1", 0, 0), ("u2", 0, 0)],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u1",), ("u2",)],
             )
             conn.executemany(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("a1", 0, 0), ("a2", 0, 0)],
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a1",), ("a2",)],
             )
             conn.commit()
 
@@ -575,21 +482,14 @@ class TestPruneCommand(FunctionalCLIBase):
     def test_prune_accounts_filtered_account_ineligible(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                ("u1", 0, 0),
+            self.insert_consumption(conn, "u_busy", "a_busy", 2, 0)
+            conn.executemany(
+                "INSERT INTO users (username) VALUES (?)",
+                [("u1",)],
             )
             conn.executemany(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("a_zero", 0, 0), ("a_busy", 2, 0)],
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a_zero",)],
             )
             conn.commit()
 
@@ -612,20 +512,12 @@ class TestPruneCommand(FunctionalCLIBase):
         init_database()
         with self.db_connection() as conn:
             conn.executemany(
-                """
-                INSERT INTO users (
-                    username, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                [("u1", 0, 0), ("u2", 0, 0)],
+                "INSERT INTO users (username) VALUES (?)",
+                [("u1",), ("u2",)],
             )
-            conn.execute(
-                """
-                INSERT INTO accounts (
-                    account, total_consumed_cpu_minutes, total_consumed_gpu_minutes
-                ) VALUES (?, ?, ?)
-                """,
-                ("a1", 0, 0),
+            conn.executemany(
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a1",)],
             )
             conn.commit()
 
@@ -652,14 +544,7 @@ class TestPruneCommand(FunctionalCLIBase):
     def test_prune_prints_nothing_to_prune(self):
         init_database()
         with self.db_connection() as conn:
-            conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("u1", 10),
-            )
-            conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("a1", 10),
-            )
+            self.insert_consumption(conn, "u1", "a1", cpu_minutes=10)
             conn.execute(
                 """
                 INSERT INTO jobs_preallocations (

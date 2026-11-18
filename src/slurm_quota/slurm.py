@@ -44,28 +44,28 @@ def parse_alloc_tres(alloc_tres: str) -> dict[str, int]:
     return gpu_counts
 
 
-def calculate_consumed_gpu_minutes(
-    gpu_counts: dict[str, int], job_duration_minutes: int, factors: dict[str, float]
+def calculate_consumed_gpu_seconds(
+    gpu_counts: dict[str, int], job_duration_seconds: int, factors: dict[str, float]
 ) -> int:
     """
-    Calculate consumed GPU minutes based on GPU allocations, duration, and factors.
+    Calculate consumed GPU seconds based on GPU allocations, duration, and factors.
 
     Args:
         gpu_counts: Dictionary mapping GPU type to count
-        job_duration_minutes: Job duration in minutes
+        job_duration_seconds: Job duration in seconds
         factors: Dictionary mapping GPU type to factor (from load_gpu_factors)
 
     Returns:
-        Total GPU minutes consumed (integer)
+        Total GPU seconds consumed (integer)
     """
     default_factor = factors.get("__default__", 1.0)
-    total_gpu_minutes = 0.0
+    total_gpu_seconds = 0.0
 
     for gpu_type, count in gpu_counts.items():
         factor = factors.get(gpu_type, default_factor)
-        total_gpu_minutes += count * job_duration_minutes * factor
+        total_gpu_seconds += count * job_duration_seconds * factor
 
-    return int(total_gpu_minutes)
+    return int(total_gpu_seconds)
 
 
 def get_job_info_from_sacct(job_id: str) -> tuple[Optional[str], Optional[str]]:
@@ -224,8 +224,8 @@ def get_job_info_from_environment() -> tuple[str, str, int, str, Optional[str], 
     Extract job information from Slurm environment variables.
 
     Returns:
-        Tuple of (username, job_id, consumed_cpu_minutes, account, job_uuid,
-        consumed_gpu_minutes)
+        Tuple of (username, job_id, consumed_cpu_seconds, account, job_uuid,
+        consumed_gpu_seconds)
 
     Raises:
         ValueError: If the job ID or username is not found
@@ -256,41 +256,41 @@ def get_job_info_from_environment() -> tuple[str, str, int, str, Optional[str], 
                 "ACCOUNT environment variable not found for job %s", job_id
             )
 
-        # Calculate consumed CPU minutes
-        # PROCS * (END - START) / 60
+        # Calculate consumed CPU seconds
+        # PROCS * (END - START)
         job_procs = int(os.environ.get("PROCS", 1))
         job_start_time = int(os.environ.get("START", 0))
         job_end_time = int(os.environ.get("END", 0))
-        # If START or END is not found, consider the job ran for 0 minutes
+        # If START or END is not found, consider the job ran for 0 seconds
         if not job_start_time or not job_end_time:
-            job_duration_minutes = 0
+            job_duration_seconds = 0
         else:
-            job_duration_minutes = (job_end_time - job_start_time) // 60
+            job_duration_seconds = max(0, job_end_time - job_start_time)
 
-        consumed_cpu_minutes = job_procs * job_duration_minutes
+        consumed_cpu_seconds = job_procs * job_duration_seconds
 
         # Get job UUID and AllocTRES from sacct
         job_uuid, alloc_tres = get_job_info_from_sacct(job_id)
         if not job_uuid:
             logger.warning(f"No job UUID found in admin_comment for job {job_id}")
 
-        # Calculate consumed GPU minutes
-        consumed_gpu_minutes = 0
+        # Calculate consumed GPU seconds
+        consumed_gpu_seconds = 0
         if alloc_tres:
             gpu_factors = database_layer.load_gpu_factors()
             gpu_counts = parse_alloc_tres(alloc_tres)
             if gpu_counts:
-                consumed_gpu_minutes = calculate_consumed_gpu_minutes(
-                    gpu_counts, job_duration_minutes, gpu_factors
+                consumed_gpu_seconds = calculate_consumed_gpu_seconds(
+                    gpu_counts, job_duration_seconds, gpu_factors
                 )
 
         return (
             username,
             job_id,
-            consumed_cpu_minutes,
+            consumed_cpu_seconds,
             account,
             job_uuid,
-            consumed_gpu_minutes,
+            consumed_gpu_seconds,
         )
 
     except (ValueError, KeyError) as e:

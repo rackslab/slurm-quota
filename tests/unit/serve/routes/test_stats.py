@@ -29,20 +29,20 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("alice", 120),
+                "INSERT INTO users (username) VALUES (?)",
+                ("alice",),
             )
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("hpc",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("dev", 40),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("dev",),
             )
             conn.commit()
 
@@ -61,16 +61,16 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("alice", 120),
+                "INSERT INTO users (username) VALUES (?)",
+                ("alice",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("hpc",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("dev", 40),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("dev",),
             )
             conn.commit()
 
@@ -136,8 +136,8 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.commit()
 
@@ -153,8 +153,8 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             grant_operator(conn, "carol")
             conn.commit()
@@ -170,12 +170,12 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("carol", 15),
+                "INSERT INTO users (username) VALUES (?)",
+                ("carol",),
             )
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.commit()
 
@@ -190,12 +190,12 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("hpc",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("dev", 40),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("dev",),
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
@@ -227,12 +227,12 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("hpc",),
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
@@ -253,8 +253,8 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
@@ -273,24 +273,24 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("carol", 10),
+                "INSERT INTO users (username) VALUES (?)",
+                ("carol",),
             )
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("dave", 20),
+                "INSERT INTO users (username) VALUES (?)",
+                ("dave",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("hpc",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("dev", 40),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("dev",),
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
@@ -314,16 +314,16 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("carol", 10),
+                "INSERT INTO users (username) VALUES (?)",
+                ("carol",),
             )
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("hpc",),
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
@@ -342,12 +342,12 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("carol", 10),
+                "INSERT INTO users (username) VALUES (?)",
+                ("carol",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("hpc",),
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
@@ -368,16 +368,16 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("carol", 10),
+                "INSERT INTO users (username) VALUES (?)",
+                ("carol",),
             )
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("personal", 5),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("personal",),
             )
             grant_manager(conn, "carol")
             conn.commit()
@@ -398,12 +398,12 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("hpc",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("personal", 5),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("personal",),
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
@@ -422,20 +422,20 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("carol", 10),
+                "INSERT INTO users (username) VALUES (?)",
+                ("carol",),
             )
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("hpc",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("personal", 5),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("personal",),
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
@@ -463,20 +463,20 @@ class TestStatsRoute(ServeRoutesTestCase):
         init_database()
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("carol", 10),
+                "INSERT INTO users (username) VALUES (?)",
+                ("carol",),
             )
             conn.execute(
-                "INSERT INTO users (username, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("bob", 30),
+                "INSERT INTO users (username) VALUES (?)",
+                ("bob",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("hpc", 100),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("hpc",),
             )
             conn.execute(
-                "INSERT INTO accounts (account, total_consumed_cpu_minutes) VALUES (?, ?)",
-                ("dev", 40),
+                "INSERT INTO accounts (account) VALUES (?)",
+                ("dev",),
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
