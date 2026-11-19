@@ -282,7 +282,9 @@ Following routes are served by REST API:
 
 `GET /stats` returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters filter
 responses: `username` limits users and accounts to that user's Slurm associations (e.g. `/stats?username=alice`), while
-`account` returns only the requested account in the `accounts` array (e.g. `/stats?account=hpc`).
+`account` returns only the requested account in the `accounts` array (e.g. `/stats?account=hpc`). Each entry reports
+consumed and preallocated times in seconds (`total_consumed_cpu_seconds`, `total_preallocated_cpu_seconds` and their GPU
+counterparts) and quotas in minutes (`quota_cpu_minutes`, `quota_gpu_minutes`, `-1` means unlimited).
 
 > [!NOTE]
 > The `username` and `account` query parameters are mutually exclusive.
@@ -291,7 +293,7 @@ Quota routes accept `{"quota_minutes": <int>}` (`-1` means unlimited), with an o
 `{"reason": "<string>"}`. Default quota routes accept a partial object with any of `user_cpu_minutes`,
 `user_gpu_minutes`, `account_cpu_minutes`, `account_gpu_minutes` (`-1` means unlimited); defaults apply only to newly
 auto-created users and accounts. Consumption routes accept `{"delta_minutes": <signed int>}` and return
-`{"total_consumed_minutes": <int>}`, with an optional single-line `{"reason": "<string>"}`. GPU factor routes return
+`{"total_consumed_seconds": <int>}`, with an optional single-line `{"reason": "<string>"}`. GPU factor routes return
 `{"default_factor": <float>, "factors": {<gpu_type>: <float>, ...}}` or accept `{"factor": <positive float>}`.
 
 #### CLI client<a name="cli-client"></a>
@@ -662,8 +664,10 @@ slurm-quota stats --hours         # same stats displayed in hours
 > `--account` is mutually exclusive with user selection (`--user` or positional username).
 
 > [!NOTE]
-> Color display of the status bar can be disabled by setting the `NO_COLOR` environment variable. The `--hours` option
-> changes only the displayed unit in the `stats` output; stored values and API values remain in minutes.
+> Color display of the status bar can be disabled by setting the `NO_COLOR` environment variable. Consumed and
+> preallocated times are displayed in whole minutes (rounded down), or in hours with `--hours`. The `--hours` option
+> changes only the displayed unit: the REST API reports consumed and preallocated times in seconds, and quotas in
+> minutes. Status bars are computed in seconds, like the quota check at job submission.
 
 - `role`: Show or manage REST API roles (requires a saved token or `SLURM_QUOTA_TOKEN`).
 

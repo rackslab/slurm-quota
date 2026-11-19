@@ -14,8 +14,18 @@ For new installations, follow the main [Installation](../README.md#installation)
 - Jobs are charged with second precision: jobs shorter than one minute are now charged.
 
 - Preallocations of pending and running jobs are recorded in seconds. GPU preallocations are rounded up to the second,
-  instead of down to the minute, so they are never lower than the charged consumption. Preallocations remain reported in
-  minutes by `slurm-quota stats`, the REST API and the web dashboard.
+  instead of down to the minute, so they are never lower than the charged consumption.
+
+- The REST API reports consumed and preallocated times in seconds, quotas remain in minutes:
+
+  - `GET /stats` fields `total_consumed_{cpu,gpu}_minutes` and `total_preallocated_{cpu,gpu}_minutes` are replaced by
+    `total_consumed_{cpu,gpu}_seconds` and `total_preallocated_{cpu,gpu}_seconds`.
+  - Consumption adjustments still accept `delta_minutes`, and respond with `total_consumed_seconds` instead of
+    `total_consumed_minutes`.
+
+  Scripts using these fields must be updated, for example divided by 60 to get minutes. `slurm-quota stats` and the web
+  dashboard still display minutes or hours, but compute status bars and usage percentages in seconds, so they match the
+  quota check at job submission.
 
 - Consumption adjustments target a user/account pair:
 
