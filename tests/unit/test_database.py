@@ -21,6 +21,7 @@ from slurm_quota.database import (
     load_gpu_factors,
     prune_resources,
     query_accounts_aggregate,
+    query_consumption_breakdown,
     query_users_aggregate,
     revoke_manager,
     revoke_manager_account,
@@ -752,6 +753,50 @@ class TestQueryAccountsAggregate(SlurmQuotaTestCase):
             accounts = query_accounts_aggregate(conn, {"a1"})
         self.assertEqual(accounts[0]["account"], "a1")
         self.assertEqual(accounts[0]["total_consumed_cpu_seconds"], 1200)
+
+
+class TestQueryConsumptionBreakdown(SlurmQuotaTestCase):
+    def setUp(self):
+        super().setUp()
+        init_database()
+        update_user_and_account_resources("u1", "a1", 90, None, 30)
+        update_user_and_account_resources("u1", "a2", 600, None, 0)
+        update_user_and_account_resources("u2", "a1", 60, None, 0)
+        update_user_and_account_resources("u3", "a3", 5, None, 0)
+
+    def _pairs(self, usernames=None, accounts=None):
+        with self.db_connection() as conn:
+            rows = query_consumption_breakdown(conn, usernames, accounts)
+        return [(r["username"], r["account"]) for r in rows]
+
+    def test_all_pairs_without_filter(self):
+        self.assertEqual(
+            self._pairs(), [("u1", "a1"), ("u1", "a2"), ("u2", "a1"), ("u3", "a3")]
+        )
+
+    def test_pair_values_in_seconds(self):
+        with self.db_connection() as conn:
+            rows = query_consumption_breakdown(conn, {"u1"}, None)
+        self.assertEqual(rows[0]["consumed_cpu_seconds"], 90)
+        self.assertEqual(rows[0]["consumed_gpu_seconds"], 30)
+        self.assertIsNotNone(rows[0]["last_updated"])
+
+    def test_filter_by_usernames(self):
+        self.assertEqual(self._pairs(usernames={"u1"}), [("u1", "a1"), ("u1", "a2")])
+
+    def test_filter_by_accounts(self):
+        self.assertEqual(self._pairs(accounts={"a1"}), [("u1", "a1"), ("u2", "a1")])
+
+    def test_filters_are_combined_with_or(self):
+        self.assertEqual(
+            self._pairs(usernames={"u3"}, accounts={"a1"}),
+            [("u1", "a1"), ("u2", "a1"), ("u3", "a3")],
+        )
+
+    def test_empty_filters_select_nothing(self):
+        self.assertEqual(self._pairs(usernames=set()), [])
+        self.assertEqual(self._pairs(usernames=set(), accounts=set()), [])
+        self.assertEqual(self._pairs(usernames=set(), accounts={"a3"}), [("u3", "a3")])
 
 
 class TestOperatorsAndManagers(SlurmQuotaTestCase):

@@ -982,6 +982,60 @@ def query_accounts_aggregate(
     return _query_aggregate(conn, "accounts", "account", accounts_filter)
 
 
+def query_consumption_breakdown(
+    conn: sqlite3.Connection,
+    usernames: Optional[set[str]] = None,
+    accounts: Optional[set[str]] = None,
+) -> list[dict[str, Any]]:
+    """Return consumption of user/account pairs, in seconds.
+
+    With neither filter, all pairs are returned. Otherwise, pairs whose user
+    is in usernames or whose account is in accounts are returned. A None or
+    empty filter matches no pair when the other filter is given.
+
+    Args:
+        conn: Database connection.
+        usernames: Optional set of usernames to select pairs.
+        accounts: Optional set of accounts to select pairs.
+    """
+    conditions: list[str] = []
+    params: list[str] = []
+    if usernames is None and accounts is None:
+        conditions.append("1")
+    else:
+        if usernames:
+            conditions.append(f"username IN ({','.join(['?'] * len(usernames))})")
+            params.extend(sorted(usernames))
+        if accounts:
+            conditions.append(f"account IN ({','.join(['?'] * len(accounts))})")
+            params.extend(sorted(accounts))
+    if not conditions:
+        return []
+    cursor = conn.cursor()
+    cursor.execute(
+        f"""
+        SELECT username, account, consumed_cpu_seconds, consumed_gpu_seconds,
+               last_updated
+        FROM user_account_consumption
+        WHERE {" OR ".join(conditions)}
+        ORDER BY username, account
+        """,
+        params,
+    )
+    return [
+        {
+            "username": username,
+            "account": account,
+            "consumed_cpu_seconds": int(consumed_cpu or 0),
+            "consumed_gpu_seconds": int(consumed_gpu or 0),
+            "last_updated": last_updated,
+        }
+        for username, account, consumed_cpu, consumed_gpu, last_updated in (
+            cursor.fetchall()
+        )
+    ]
+
+
 def is_operator(conn: sqlite3.Connection, username: str) -> bool:
     cursor = conn.cursor()
     cursor.execute(
