@@ -1,0 +1,85 @@
+= slurm-quota-sync(1)
+:doctype: manpage
+:manmanual: Slurm Quota Sync
+:mansource: slurm-quota-sync
+:revnumber: 4.0.0
+:revdate: 2026-11-19
+
+== Name
+
+slurm-quota-sync - synchronize Slurm associations in the slurm-quota database
+
+== Synopsis
+
+*slurm-quota-sync* [*-h*] [*--debug* | *-q* | *--quiet*] [*--log-flags* <flag>]... [*--debug-flags* <flag>]... [*--version*]
+
+== Description
+
+*slurm-quota-sync* queries the user/account associations defined in Slurm with `sacctmgr` and caches them in the
+slurm-quota database. Account level associations, without user, are ignored. The cache is replaced entirely on each run.
+When `sacctmgr` fails, or reports no user association at all, the cache is left unchanged and the command fails:
+applying an empty result would make `job_submit.lua` refuse all jobs.
+
+Each added and removed association is logged, as well as the total numbers of associations, added and removed
+associations.
+
+The cache is used by:
+
+* `job_submit.lua`, to reject jobs submitted with an account the user is not associated with, before recording anything
+  in the database. Associations must be synchronized before `job_submit.lua` is enabled in Slurm, otherwise all jobs are
+  refused.
+* `slurm-quota-serve`, to select the accounts of users and the users of accounts in statistics, without querying Slurm
+  accounting on each request.
+
+This command must run as `slurm`. It is designed to be run periodically by the `slurm-quota-sync.timer` systemd timer.
+It can also be run right after changing associations with `sacctmgr`, so that new associations are accepted without
+waiting for the next periodic synchronization.
+
+The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
+
+== Options
+
+*-h*, *--help*::
+  Show help and exit.
+
+*--debug*::
+  Enable debug output.
+
+*-q*, *--quiet*::
+  Only print errors and warnings.
+
+*--log-flags* <flag>::
+  Component whose logs are enabled (repeatable; special value `ALL`). Default: `slurm_quota`.
+
+*--debug-flags* <flag>::
+  Component whose debug logs are enabled when *--debug* is used (repeatable; special value `ALL`). Default: `slurm_quota`.
+
+*--version*::
+  Show program version and exit.
+
+== Examples
+
+....
+sudo systemctl start slurm-quota-sync.service
+sudo -u slurm slurm-quota-sync
+....
+
+== Files
+
+`/var/lib/state/slurm-quota/slurm-quota.db`::
+  SQLite database, Slurm associations are cached in the `slurm_associations` table.
+
+== Exit Status
+
+*0*::
+  Success.
+
+*1*::
+  Runtime/permission/operational error (for example, `sacctmgr` failure or no user association reported).
+
+*2*::
+  Command-line parsing error.
+
+== See Also
+
+`slurm-quota(1)`, `slurm-quota-serve(1)`, `sacctmgr(1)`, `slurmctld(8)`

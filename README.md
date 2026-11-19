@@ -29,6 +29,7 @@
   - [`slurm-quota-token` Command](#slurm-quota-token-command)
   - [`slurm-quota-web` Command](#slurm-quota-web-command)
   - [`slurm-quota-prune` Command](#slurm-quota-prune-command)
+  - [`slurm-quota-sync` Command](#slurm-quota-sync-command)
   - [`slurm-quota-reallocate` Command](#slurm-quota-reallocate-command)
 - [Upgrade](#upgrade)
 - [Development](#development)
@@ -137,6 +138,12 @@ by GPU type. It then checks if a numeric quota is set in the database (`quota_cp
 share, defined as the quota minus the sum of "already consumed" and "already preallocated". This check is performed for
 both the user and the account, for both CPU and GPU. If the request exceeds any of the available shares (CPU or GPU),
 the submission or modification is refused, with an explicit message to the user.
+
+Before checking quotas, the Lua script checks that the user is associated with the account of the job in Slurm, based on
+the Slurm associations cached in the database by [`slurm-quota-sync`](#slurm-quota-sync-command). Jobs submitted or
+modified with an account the user is not associated with, for example a mistyped account, are refused before anything is
+recorded in the database. Associations must be synchronized before the script is enabled in Slurm, otherwise all jobs
+are refused. The check can be disabled by setting `CHECK_ASSOCIATIONS = false` at the top of the script.
 
 When a job submission is accepted, the Lua script creates a corresponding preallocation in the `jobs_preallocations`
 table and associates this preallocation with a generated unique UUID identifier, the Slurm `username`, and the Slurm
@@ -404,7 +411,20 @@ sudo dnf install slurm-quota slurm-quota-controller
 sudo systemctl enable --now slurm-quota.socket
 ```
 
-3. Configure Slurm plugins in `slurm.conf`:
+3. Synchronize Slurm associations in the database and enable their periodic synchronization. `slurmdbd` must be running
+   for `sacctmgr` queries:
+
+```bash
+sudo systemctl start slurm-quota-sync.service
+sudo systemctl enable --now slurm-quota-sync.timer
+```
+
+> [!IMPORTANT]
+> The first synchronization must succeed before `job_submit.lua` is enabled in the next step, otherwise all jobs are
+> refused. `systemctl start` fails when the synchronization fails, check its logs with
+> `journalctl -u slurm-quota-sync.service`.
+
+4. Configure Slurm plugins in `slurm.conf`:
 
 Edit the Slurm configuration to set up these parameters:
 
@@ -420,7 +440,7 @@ addition to generic resources (e.g., nodes, cores, memory) in the Slurm accounti
 tracking of all GPU types in the cluster so that the `slurm-quota-charge` command can determine the GPUs allocated to
 completed jobs and account for the time consumed on these GPUs.
 
-4. Configure REST API authentication and HTTPS
+5. Configure REST API authentication and HTTPS
 
 Authentication is required for `GET /stats`. Edit `/etc/slurm-quota/serve.ini`. In production, enable native HTTPS on
 the API so tokens and LDAP credentials are not sent in cleartext over the cluster network:
@@ -904,6 +924,20 @@ sudo slurm-quota-prune --dry-run        # preview removals without applying them
 > It is normally not necessary to execute this command under normal conditions. It may be useful in case of malfunction
 > of the call to the `slurm-quota-charge` command by Slurm. Its execution is nevertheless safe, it can be executed if in
 > doubt about the preallocated durations assigned to users.
+
+### `slurm-quota-sync` Command<a name="slurm-quota-sync-command"></a>
+
+Caches the user/account associations defined in Slurm in the database (`slurm` user only). They are used by
+`job_submit.lua` to refuse jobs with invalid accounts, and by `slurm-quota-serve` to select the accounts and users in
+statistics without querying Slurm accounting. The `slurm-quota-sync.timer` systemd timer runs it every 5 minutes. When
+`sacctmgr` fails or reports no user association, the cache is left unchanged.
+
+After adding associations with `sacctmgr`, synchronize them immediately so that jobs of new users are not refused until
+the next periodic synchronization:
+
+```bash
+sudo systemctl start slurm-quota-sync.service
+```
 
 ### `slurm-quota-reallocate` Command<a name="slurm-quota-reallocate-command"></a>
 

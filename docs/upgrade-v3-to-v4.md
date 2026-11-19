@@ -56,6 +56,20 @@ For new installations, follow the main [Installation](../README.md#installation)
   package, they must not run concurrently with job submissions and completions. This is why the controller upgrade
   requires a maintenance window, described in the following steps.
 
+- Slurm associations are cached in the database by the new `slurm-quota-sync` command, run every 5 minutes by the
+  `slurm-quota-sync.timer` systemd timer, both installed by the `slurm-quota-controller` package:
+
+  - `job_submit.lua` refuses jobs submitted or modified with an account the user is not associated with, for example a
+    mistyped account, instead of recording this account in the database. Associations must be synchronized before
+    `slurmctld` loads the version 4 `job_submit.lua`, otherwise all jobs are refused. The check can be disabled by
+    setting `CHECK_ASSOCIATIONS = false` at the top of the script.
+  - `slurm-quota-serve` reads the accounts of users and the users of accounts in statistics from the cache, instead of
+    querying `sacctmgr` on each request. Until associations are synchronized, regular users and managers see no Slurm
+    account in statistics.
+
+  After adding associations with `sacctmgr`, run `sudo systemctl start slurm-quota-sync.service` so that jobs of new
+  users are not refused until the next periodic synchronization.
+
 - The new `slurm-quota-reallocate` command, installed by the `slurm-quota-controller` package, attributes legacy
   consumption to actual user/account pairs based on Slurm accounting, then removes the `(unattributed)` pairs, user and
   account once all their consumption is reallocated. It can be run any time after the upgrade, see
@@ -121,6 +135,27 @@ sudo /usr/libexec/slurm-quota/slurm-quota-migrate
 
 ```bash
 ls /etc/slurm/job_submit.lua.rpmnew
+```
+
+Synchronize Slurm associations in the database and enable the periodic synchronization. `slurmdbd` must be running for
+`sacctmgr` queries:
+
+```bash
+sudo systemctl start slurm-quota-sync.service
+sudo systemctl enable --now slurm-quota-sync.timer
+```
+
+> [!IMPORTANT]
+> Do not start `slurmctld` until the synchronization succeeds: with an empty associations cache, version 4
+> `job_submit.lua` refuses all jobs. `systemctl start` fails when the synchronization fails. In this case, check the
+> logs with `journalctl -u slurm-quota-sync.service`, fix the reported issue and run the synchronization again.
+
+Check that the number of synchronized associations reported in the logs matches the number of user associations in
+Slurm:
+
+```bash
+sudo journalctl -u slurm-quota-sync.service --grep Synchronized --lines 1
+sacctmgr --noheader --parsable2 list associations format=user,account | grep --count --invert-match '^|'
 ```
 
 Start the REST API and `slurmctld`, which loads the version 4 `job_submit.lua`:

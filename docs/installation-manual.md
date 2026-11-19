@@ -115,21 +115,45 @@ idle timeout). Restart after changing `serve.ini`:
 sudo systemctl restart slurm-quota.socket
 ```
 
-6. Installation of the wrapper script
+6. Installation of the Slurm associations synchronization
+
+`slurm-quota-sync` caches the user/account associations defined in Slurm in the database. They are used by
+`job_submit.lua` to refuse jobs with invalid accounts, and by the HTTP JSON service to select accounts and users in
+statistics. A systemd timer runs it every 5 minutes.
+
+```bash
+# Installation of systemd files
+sudo cp slurm-quota-sync.service /etc/systemd/system/
+sudo cp slurm-quota-sync.timer /etc/systemd/system/
+sudo chmod 0644 /etc/systemd/system/slurm-quota-sync.service
+sudo chmod 0644 /etc/systemd/system/slurm-quota-sync.timer
+
+# Reload systemd, run a first synchronization and enable the timer
+sudo systemctl daemon-reload
+sudo systemctl start slurm-quota-sync.service
+sudo systemctl enable --now slurm-quota-sync.timer
+```
+
+> [!IMPORTANT]
+> `slurmdbd` must be running for `sacctmgr` queries. The first synchronization must succeed before `job_submit.lua` is
+> enabled in Slurm, otherwise all jobs are refused. `systemctl start` fails when the synchronization fails, check its
+> logs with `journalctl -u slurm-quota-sync.service`.
+
+7. Installation of the wrapper script
 
 ```bash
 sudo cp slurm-quota-charge-wrapper /etc/slurm/slurm-quota-charge-wrapper
 sudo chmod 0755 /etc/slurm/slurm-quota-charge-wrapper
 ```
 
-7. Slurm submission plugin (`job_submit.lua`)
+8. Slurm submission plugin (`job_submit.lua`)
 
 ```bash
 sudo cp job_submit.lua /etc/slurm/job_submit.lua
 sudo chmod 0644 /etc/slurm/job_submit.lua
 ```
 
-8. Activation of Slurm plugins
+9. Activation of Slurm plugins
 
 Edit the Slurm configuration to set up these parameters:
 
@@ -145,7 +169,7 @@ addition to generic resources (e.g., nodes, cores, memory) in the Slurm accounti
 tracking of all GPU types in the cluster so that the `slurm-quota-charge` command can determine the GPUs allocated to
 completed jobs and account for the time consumed on these GPUs.
 
-9. Logrotate configuration (recommended)
+10. Logrotate configuration (recommended)
 
 ```bash
 sudo cp slurm-quota-charge.logrotate /etc/logrotate.d/slurm-quota-charge
