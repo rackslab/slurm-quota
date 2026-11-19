@@ -11,6 +11,7 @@ from slurm_quota.database import (
     grant_manager_account,
     grant_operator,
     init_database,
+    update_user_and_account_resources,
 )
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 
@@ -493,3 +494,139 @@ class TestStatsRoute(ServeRoutesTestCase):
         self.assertEqual(len(bob_entries), 1)
         usernames = [entry["username"] for entry in body["users"]]
         self.assertEqual(len(usernames), len(set(usernames)))
+
+
+class TestStatsBreakdown(ServeRoutesTestCase):
+    """GET /stats?breakdown=true: consumption per user/account pair."""
+
+    def setUp(self):
+        super().setUp()
+        update_user_and_account_resources("dave", "hpc", 600, None, 60)
+        update_user_and_account_resources("dave", "dev", 120, None, 0)
+        update_user_and_account_resources("bob", "hpc", 300, None, 0)
+        update_user_and_account_resources("bob", "dev", 30, None, 0)
+        update_user_and_account_resources("(unattributed)", "hpc", 45, None, 0)
+        self._slurm_accounts = {
+            "dave": {"hpc", "dev"},
+            "bob": {"hpc", "dev"},
+            "carol": {"dev"},
+        }
+        patcher = patch(
+            "slurm_quota.slurm.get_user_accounts",
+            side_effect=lambda user: self._slurm_accounts.get(user, set()),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = patch(
+            "slurm_quota.slurm.get_account_users",
+            side_effect=lambda account: {
+                user for user, accts in self._slurm_accounts.items() if account in accts
+            },
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _breakdown(self, query: str, username: str) -> list[tuple[str, str]]:
+        resp = app.test_client().get(
+            f"/stats?{query}breakdown=true", headers=self._headers(username)
+        )
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.data)
+        return [(e["username"], e["account"]) for e in body["breakdown"]]
+
+    def _grant_operator(self, username: str) -> None:
+        with self.db_connection() as conn:
+            grant_operator(conn, username)
+            conn.commit()
+
+    def _grant_manager(self, username: str, *accounts: str) -> None:
+        with self.db_connection() as conn:
+            grant_manager(conn, username)
+            for account in accounts:
+                grant_manager_account(conn, username, account)
+            conn.commit()
+
+    def test_breakdown_absent_by_default(self):
+        resp = app.test_client().get("/stats", headers=self._headers("dave"))
+        self.assertNotIn("breakdown", json.loads(resp.data))
+
+    def test_breakdown_entry_fields_in_seconds(self):
+        resp = app.test_client().get(
+            "/stats?breakdown=1", headers=self._headers("dave")
+        )
+        entries = json.loads(resp.data)["breakdown"]
+        hpc = next(e for e in entries if e["account"] == "hpc")
+        self.assertEqual(hpc["username"], "dave")
+        self.assertEqual(hpc["consumed_cpu_seconds"], 600)
+        self.assertEqual(hpc["consumed_gpu_seconds"], 60)
+        self.assertIn("last_updated", hpc)
+
+    def test_breakdown_false_value_omits_breakdown(self):
+        resp = app.test_client().get(
+            "/stats?breakdown=no", headers=self._headers("dave")
+        )
+        self.assertNotIn("breakdown", json.loads(resp.data))
+
+    def test_operator_sees_all_pairs(self):
+        self._grant_operator("carol")
+        self.assertEqual(
+            self._breakdown("", "carol"),
+            [
+                ("(unattributed)", "hpc"),
+                ("bob", "dev"),
+                ("bob", "hpc"),
+                ("dave", "dev"),
+                ("dave", "hpc"),
+            ],
+        )
+
+    def test_operator_user_query_selects_user_pairs(self):
+        self._grant_operator("carol")
+        self.assertEqual(
+            self._breakdown("username=bob&", "carol"),
+            [("bob", "dev"), ("bob", "hpc")],
+        )
+
+    def test_operator_account_query_selects_account_pairs(self):
+        self._grant_operator("carol")
+        self.assertEqual(
+            self._breakdown("account=hpc&", "carol"),
+            [("(unattributed)", "hpc"), ("bob", "hpc"), ("dave", "hpc")],
+        )
+
+    def test_user_sees_own_pairs(self):
+        self.assertEqual(
+            self._breakdown("", "dave"), [("dave", "dev"), ("dave", "hpc")]
+        )
+
+    def test_user_account_query_restricted_to_own_pair(self):
+        self.assertEqual(self._breakdown("account=hpc&", "dave"), [("dave", "hpc")])
+
+    def test_manager_account_query_sees_all_account_users(self):
+        self._grant_manager("carol", "hpc")
+        self.assertEqual(
+            self._breakdown("account=hpc&", "carol"),
+            [("(unattributed)", "hpc"), ("bob", "hpc"), ("dave", "hpc")],
+        )
+
+    def test_manager_personal_account_restricted_to_own_pair(self):
+        self._grant_manager("carol", "hpc")
+        update_user_and_account_resources("carol", "dev", 10, None, 0)
+        self.assertEqual(self._breakdown("account=dev&", "carol"), [("carol", "dev")])
+
+    def test_manager_member_query_restricted_to_assigned_accounts(self):
+        self._grant_manager("carol", "hpc")
+        self.assertEqual(self._breakdown("username=bob&", "carol"), [("bob", "hpc")])
+
+    def test_manager_unfiltered_sees_own_and_assigned_pairs(self):
+        self._grant_manager("carol", "hpc")
+        update_user_and_account_resources("carol", "dev", 10, None, 0)
+        self.assertEqual(
+            self._breakdown("", "carol"),
+            [
+                ("(unattributed)", "hpc"),
+                ("bob", "hpc"),
+                ("carol", "dev"),
+                ("dave", "hpc"),
+            ],
+        )
