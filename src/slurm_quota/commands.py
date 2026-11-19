@@ -525,22 +525,24 @@ def show_user_stats(
     account: Optional[str] = None,
     show_all: bool = False,
     display_unit: str = MINUTES,
-    show_breakdown: bool = False,
+    show_breakdown: Optional[bool] = None,
 ) -> None:
     """
     Display resource statistics for users in table format.
 
-    The consumption of a single user is broken down by account below the user
-    row, and the consumption of a single account is broken down by user below
-    the account row. With show_all, the breakdown is displayed below both user
-    and account rows only when show_breakdown is set.
+    When enabled, the consumption of users is broken down by account below user
+    rows, and the consumption of accounts is broken down by user below account
+    rows. For a single user, only user rows are broken down, and for a single
+    account only account rows. The breakdown is enabled by default for a single
+    user or account, and disabled by default with show_all.
 
     Args:
         username: The username to query (if None and not show_all, uses current user)
         account: The account to query in the accounts table.
         show_all: If True, show all users
         display_unit: Unit of displayed times.
-        show_breakdown: If True with show_all, show the consumption breakdown.
+        show_breakdown: True or False to enable or disable the consumption
+            breakdown, None for the default.
     """
     selected_username = username
     if not show_all and not selected_username and not account:
@@ -549,8 +551,9 @@ def show_user_stats(
         except KeyError:
             sys.exit(1)
 
-    breakdown_under_users = not account and (not show_all or show_breakdown)
-    breakdown_under_accounts = bool(account) or (show_all and show_breakdown)
+    breakdown = not show_all if show_breakdown is None else show_breakdown
+    breakdown_under_users = breakdown and not account
+    breakdown_under_accounts = breakdown and (bool(account) or show_all)
 
     def breakdown_label(name: Any) -> str:
         return f"  └ {name}"

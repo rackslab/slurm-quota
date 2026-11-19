@@ -360,6 +360,38 @@ class TestStatsCommand(FunctionalAPICliBase):
             ),
         )
 
+    def test_stats_with_alice_and_no_breakdown(self):
+        self._run_stats(
+            ["slurm-quota", "stats", "alice", "--no-breakdown"],
+            expected=dedent_lines(
+                "        |                                CPU                                 |                                GPU                                 |",
+                "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+                "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                "alice   |         120           60(2)      600 [██████░░░░░░░░░░░░░░]  30.0% |           0            0(2)        ∞                               | TS_FIXED                 ",
+                "",
+                "        |                                CPU                                 |                                GPU                                 |",
+                "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+                "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                "hpc     |         100            0(3)      500 [████░░░░░░░░░░░░░░░░]  20.0% |           0            0(3)        ∞                               | TS_FIXED                 ",
+            ),
+        )
+
+    def test_stats_with_account_and_no_breakdown(self):
+        self._run_stats(
+            ["slurm-quota", "stats", "--account", "hpc", "--no-breakdown"],
+            expected=dedent_lines(
+                "        |                                CPU                                 |                                GPU                                 |",
+                "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+                "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                "hpc     |         100            0(3)      500 [████░░░░░░░░░░░░░░░░]  20.0% |           0            0(3)        ∞                               | TS_FIXED                 ",
+            ),
+        )
+
+    def test_stats_rejects_breakdown_and_no_breakdown(self):
+        self.run_cli_main_exit(
+            ["slurm-quota", "stats", "--all", "--breakdown", "--no-breakdown"], 2
+        )
+
     def test_stats_rejects_seconds_and_hours(self):
         self.run_cli_main_exit(["slurm-quota", "stats", "--seconds", "--hours"], 2)
 

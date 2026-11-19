@@ -233,6 +233,26 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.assertEqual(labels[labels.index("alice") + 1], "  └ acct1")
         self.assertEqual(labels[labels.index("acct1") + 1], "  └ alice")
 
+    def test_user_breakdown_disabled(self):
+        self.env({"NO_COLOR": "1"})
+        users, accounts = _sample_users_and_accounts()
+        m_api = self._mock_stats(return_value=(users, accounts, []))
+        out = self._run_show(username="alice", show_breakdown=False)
+        m_api.return_value.stats.assert_called_once_with(
+            "alice", None, False, include_breakdown=False
+        )
+        self.assertNotIn("└", out)
+
+    def test_account_breakdown_disabled(self):
+        self.env({"NO_COLOR": "1"})
+        _, accounts = _sample_users_and_accounts()
+        m_api = self._mock_stats(return_value=([], accounts, []))
+        out = self._run_show(account="acct1", show_breakdown=False)
+        m_api.return_value.stats.assert_called_once_with(
+            None, "acct1", False, include_breakdown=False
+        )
+        self.assertNotIn("└", out)
+
     def test_display_hours_formats_numbers(self):
         self.env({"NO_COLOR": "1"})
         user = {

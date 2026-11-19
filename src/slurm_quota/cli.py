@@ -165,13 +165,22 @@ def main():
         action="store_true",
         help="Show all users (same as not specifying username)",
     )
-    stats_parser.add_argument(
+    stats_breakdown_group = stats_parser.add_mutually_exclusive_group()
+    stats_breakdown_group.add_argument(
         "--breakdown",
+        dest="breakdown",
         action="store_true",
+        default=None,
         help=(
-            "With --all, break down user consumption by account and account "
-            "consumption by user (always shown for a single user or account)"
+            "Break down user consumption by account and account consumption by "
+            "user (default for a single user or account, not with --all)"
         ),
+    )
+    stats_breakdown_group.add_argument(
+        "--no-breakdown",
+        dest="breakdown",
+        action="store_false",
+        help="Do not break down consumption of a single user or account",
     )
     stats_unit_group = stats_parser.add_mutually_exclusive_group()
     stats_unit_group.add_argument(
