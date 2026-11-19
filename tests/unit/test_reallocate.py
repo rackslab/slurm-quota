@@ -249,15 +249,15 @@ class TestReallocateUnattributed(SlurmQuotaTestCase):
         with self.db_connection() as conn:
             users = {
                 u["username"]: (
-                    u["total_consumed_cpu_minutes"],
-                    u["total_consumed_gpu_minutes"],
+                    u["total_consumed_cpu_seconds"],
+                    u["total_consumed_gpu_seconds"],
                 )
                 for u in query_users_aggregate(conn)
             }
             accounts = {
                 a["account"]: (
-                    a["total_consumed_cpu_minutes"],
-                    a["total_consumed_gpu_minutes"],
+                    a["total_consumed_cpu_seconds"],
+                    a["total_consumed_gpu_seconds"],
                 )
                 for a in query_accounts_aggregate(conn)
             }

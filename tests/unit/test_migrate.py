@@ -190,20 +190,20 @@ class TestMigrateConsumptionToPairs(SlurmQuotaTestCase):
             accounts = {a["account"]: a for a in query_accounts_aggregate(conn)}
         # Unattributed user and account are visible as regular entities
         self.assertEqual(
-            {k: v["total_consumed_cpu_minutes"] for k, v in users.items()},
-            {UNATTRIBUTED: 13, "u1": 7, "u2": 5, "u3": 1},
+            {k: v["total_consumed_cpu_seconds"] for k, v in users.items()},
+            {UNATTRIBUTED: 13 * 60, "u1": 7 * 60, "u2": 5 * 60, "u3": 60},
         )
         self.assertEqual(
-            {k: v["total_consumed_gpu_minutes"] for k, v in users.items()},
-            {UNATTRIBUTED: 4, "u1": 3, "u2": 0, "u3": 1},
+            {k: v["total_consumed_gpu_seconds"] for k, v in users.items()},
+            {UNATTRIBUTED: 4 * 60, "u1": 3 * 60, "u2": 0, "u3": 60},
         )
         self.assertEqual(
-            {k: v["total_consumed_cpu_minutes"] for k, v in accounts.items()},
-            {UNATTRIBUTED: 13, "a1": 3, "a2": 10},
+            {k: v["total_consumed_cpu_seconds"] for k, v in accounts.items()},
+            {UNATTRIBUTED: 13 * 60, "a1": 3 * 60, "a2": 10 * 60},
         )
         self.assertEqual(
-            {k: v["total_consumed_gpu_minutes"] for k, v in accounts.items()},
-            {UNATTRIBUTED: 4, "a1": 4, "a2": 0},
+            {k: v["total_consumed_gpu_seconds"] for k, v in accounts.items()},
+            {UNATTRIBUTED: 4 * 60, "a1": 4 * 60, "a2": 0},
         )
 
     def test_without_legacy_consumption_creates_no_unattributed_entities(self):
@@ -405,8 +405,8 @@ class TestMigratePreallocationsToSeconds(SlurmQuotaTestCase):
         migrate_database()
         with self.db_connection() as conn:
             (user,) = query_users_aggregate(conn, {"u1"})
-        self.assertEqual(user["total_preallocated_cpu_minutes"], 5 * 3 + 7)
-        self.assertEqual(user["total_preallocated_gpu_minutes"], 2 * 3)
+        self.assertEqual(user["total_preallocated_cpu_seconds"], (5 * 3 + 7) * 60)
+        self.assertEqual(user["total_preallocated_gpu_seconds"], 2 * 3 * 60)
         self.assertEqual(user["job_count"], 4)
 
     def test_migration_is_idempotent(self):

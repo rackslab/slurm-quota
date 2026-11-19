@@ -208,10 +208,12 @@ class TestServeCommand(FunctionalCLIBase):
                 body = json.loads(resp.read().decode("utf-8"))
                 self.assertEqual(len(body["users"]), 1)
                 self.assertEqual(body["users"][0]["username"], "alice")
-                self.assertEqual(body["users"][0]["total_consumed_cpu_minutes"], 120)
+                self.assertEqual(body["users"][0]["total_consumed_cpu_seconds"], 7200)
                 self.assertEqual(len(body["accounts"]), 1)
                 self.assertEqual(body["accounts"][0]["account"], "hpc")
-                self.assertEqual(body["accounts"][0]["total_consumed_cpu_minutes"], 100)
+                self.assertEqual(
+                    body["accounts"][0]["total_consumed_cpu_seconds"], 6000
+                )
             finally:
                 conn.close()
 

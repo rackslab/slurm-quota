@@ -151,11 +151,11 @@ def _stats_user_row(
         "username": name,
         "job_count": job_count,
         "last_updated": "2024-06-01T10:00:00",
-        "total_consumed_cpu_minutes": consumed_cpu,
-        "total_preallocated_cpu_minutes": prealloc_cpu,
+        "total_consumed_cpu_seconds": consumed_cpu * 60,
+        "total_preallocated_cpu_seconds": prealloc_cpu * 60,
         "quota_cpu_minutes": quota_cpu,
-        "total_consumed_gpu_minutes": consumed_gpu,
-        "total_preallocated_gpu_minutes": prealloc_gpu,
+        "total_consumed_gpu_seconds": consumed_gpu * 60,
+        "total_preallocated_gpu_seconds": prealloc_gpu * 60,
         "quota_gpu_minutes": quota_gpu,
     }
 
@@ -175,11 +175,11 @@ def _stats_account_row(
         "account": name,
         "job_count": job_count,
         "last_updated": "2024-06-01T10:00:00",
-        "total_consumed_cpu_minutes": consumed_cpu,
-        "total_preallocated_cpu_minutes": prealloc_cpu,
+        "total_consumed_cpu_seconds": consumed_cpu * 60,
+        "total_preallocated_cpu_seconds": prealloc_cpu * 60,
         "quota_cpu_minutes": quota_cpu,
-        "total_consumed_gpu_minutes": consumed_gpu,
-        "total_preallocated_gpu_minutes": prealloc_gpu,
+        "total_consumed_gpu_seconds": consumed_gpu * 60,
+        "total_preallocated_gpu_seconds": prealloc_gpu * 60,
         "quota_gpu_minutes": quota_gpu,
     }
 

@@ -652,7 +652,7 @@ class TestUserAccountConsumption(SlurmQuotaTestCase):
             self.assertEqual(self.pair_consumption(conn, "u1", "a1"), (100, 30))
             self.assertEqual(self.pair_consumption(conn, "u1", "a2"), (600, 0))
 
-    def test_aggregates_sum_pairs_in_floored_minutes(self):
+    def test_aggregates_sum_pairs_in_seconds(self):
         init_database()
         update_user_and_account_resources("u1", "a1", 90, None, 130)
         update_user_and_account_resources("u1", "a2", 600, None, 0)
@@ -660,13 +660,12 @@ class TestUserAccountConsumption(SlurmQuotaTestCase):
         with self.db_connection() as conn:
             users = {u["username"]: u for u in query_users_aggregate(conn)}
             accounts = {a["account"]: a for a in query_accounts_aggregate(conn)}
-        # u1: 690s -> 11 min, 130s GPU -> 2 min
-        self.assertEqual(users["u1"]["total_consumed_cpu_minutes"], 11)
-        self.assertEqual(users["u1"]["total_consumed_gpu_minutes"], 2)
-        self.assertEqual(users["u2"]["total_consumed_cpu_minutes"], 1)
-        # a1: 150s -> 2 min
-        self.assertEqual(accounts["a1"]["total_consumed_cpu_minutes"], 2)
-        self.assertEqual(accounts["a2"]["total_consumed_cpu_minutes"], 10)
+        # Sums are not rounded to minutes
+        self.assertEqual(users["u1"]["total_consumed_cpu_seconds"], 690)
+        self.assertEqual(users["u1"]["total_consumed_gpu_seconds"], 130)
+        self.assertEqual(users["u2"]["total_consumed_cpu_seconds"], 60)
+        self.assertEqual(accounts["a1"]["total_consumed_cpu_seconds"], 150)
+        self.assertEqual(accounts["a2"]["total_consumed_cpu_seconds"], 600)
 
     def test_aggregates_do_not_multiply_consumption_with_preallocations(self):
         init_database()
@@ -684,11 +683,11 @@ class TestUserAccountConsumption(SlurmQuotaTestCase):
             conn.commit()
             users = query_users_aggregate(conn, {"u1"})
             accounts = query_accounts_aggregate(conn, {"a1"})
-        self.assertEqual(users[0]["total_consumed_cpu_minutes"], 15)
-        self.assertEqual(users[0]["total_preallocated_cpu_minutes"], 11)
+        self.assertEqual(users[0]["total_consumed_cpu_seconds"], 900)
+        self.assertEqual(users[0]["total_preallocated_cpu_seconds"], 660)
         self.assertEqual(users[0]["job_count"], 3)
-        self.assertEqual(accounts[0]["total_consumed_cpu_minutes"], 10)
-        self.assertEqual(accounts[0]["total_preallocated_cpu_minutes"], 11)
+        self.assertEqual(accounts[0]["total_consumed_cpu_seconds"], 600)
+        self.assertEqual(accounts[0]["total_preallocated_cpu_seconds"], 660)
 
     def test_prune_removes_zero_pairs_with_user(self):
         init_database()
@@ -716,11 +715,11 @@ class TestQueryUsersAggregate(SlurmQuotaTestCase):
             )
             conn.commit()
             users = query_users_aggregate(conn)
-        self.assertEqual(users[0]["total_consumed_cpu_minutes"], 10)
-        self.assertEqual(users[0]["total_preallocated_cpu_minutes"], 10)
+        self.assertEqual(users[0]["total_consumed_cpu_seconds"], 600)
+        self.assertEqual(users[0]["total_preallocated_cpu_seconds"], 600)
         self.assertEqual(users[0]["job_count"], 2)
 
-    def test_query_users_aggregate_floors_preallocated_seconds(self):
+    def test_query_users_aggregate_sums_preallocated_seconds(self):
         init_database()
         with self.db_connection() as conn:
             self.insert_consumption(conn, "u1", "a1")
@@ -735,9 +734,9 @@ class TestQueryUsersAggregate(SlurmQuotaTestCase):
             )
             conn.commit()
             users = query_users_aggregate(conn)
-        # Seconds are summed over jobs before flooring to minutes
-        self.assertEqual(users[0]["total_preallocated_cpu_minutes"], 190 // 60)
-        self.assertEqual(users[0]["total_preallocated_gpu_minutes"], 95 // 60)
+        # Seconds are summed over jobs and array elements, not rounded
+        self.assertEqual(users[0]["total_preallocated_cpu_seconds"], 190)
+        self.assertEqual(users[0]["total_preallocated_gpu_seconds"], 95)
 
 
 class TestQueryAccountsAggregate(SlurmQuotaTestCase):
@@ -752,7 +751,7 @@ class TestQueryAccountsAggregate(SlurmQuotaTestCase):
             conn.commit()
             accounts = query_accounts_aggregate(conn, {"a1"})
         self.assertEqual(accounts[0]["account"], "a1")
-        self.assertEqual(accounts[0]["total_consumed_cpu_minutes"], 20)
+        self.assertEqual(accounts[0]["total_consumed_cpu_seconds"], 1200)
 
 
 class TestOperatorsAndManagers(SlurmQuotaTestCase):

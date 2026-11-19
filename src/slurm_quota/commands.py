@@ -17,6 +17,7 @@ from slurm_quota.database import (
     prune_resources,
 )
 from slurm_quota.token import ClientToken
+from slurm_quota.units import format_quota, format_seconds
 
 logger = logging.getLogger("slurm_quota")
 
@@ -528,11 +529,6 @@ def show_user_stats(
         except KeyError:
             sys.exit(1)
 
-    def format_value(value_minutes: int) -> str:
-        if display_hours:
-            return f"{value_minutes / 60:.2f}"
-        return f"{value_minutes}"
-
     def compute_first_column_width(
         users: list[dict[str, Any]],
         accounts: list[dict[str, Any]],
@@ -615,31 +611,33 @@ def show_user_stats(
                 last_updated = item.get("last_updated")
                 last_updated_str = format_timestamp_with_timezone(last_updated)
 
-                cpu_consumed = int(item.get("total_consumed_cpu_minutes", 0))
-                cpu_preallocated = int(item.get("total_preallocated_cpu_minutes", 0))
+                cpu_consumed = int(item.get("total_consumed_cpu_seconds", 0))
+                cpu_preallocated = int(item.get("total_preallocated_cpu_seconds", 0))
                 cpu_quota = int(item.get("quota_cpu_minutes", -1))
                 cpu_total_used = cpu_consumed + cpu_preallocated
+                cpu_quota_str = format_quota(cpu_quota, display_hours)
                 if cpu_quota == -1:
-                    cpu_quota_str = "∞"
                     cpu_status_bar = ""
                 else:
-                    cpu_quota_str = format_value(cpu_quota)
-                    cpu_status_bar = create_status_bar(cpu_total_used, cpu_quota)
-                cpu_consumed_str = format_value(cpu_consumed)
-                cpu_preallocated_str = f"{format_value(cpu_preallocated)}({job_count})"
+                    cpu_status_bar = create_status_bar(cpu_total_used, cpu_quota * 60)
+                cpu_consumed_str = format_seconds(cpu_consumed, display_hours)
+                cpu_preallocated_str = (
+                    f"{format_seconds(cpu_preallocated, display_hours)}({job_count})"
+                )
 
-                gpu_consumed = int(item.get("total_consumed_gpu_minutes", 0))
-                gpu_preallocated = int(item.get("total_preallocated_gpu_minutes", 0))
+                gpu_consumed = int(item.get("total_consumed_gpu_seconds", 0))
+                gpu_preallocated = int(item.get("total_preallocated_gpu_seconds", 0))
                 gpu_quota = int(item.get("quota_gpu_minutes", -1))
                 gpu_total_used = gpu_consumed + gpu_preallocated
+                gpu_quota_str = format_quota(gpu_quota, display_hours)
                 if gpu_quota == -1:
-                    gpu_quota_str = "∞"
                     gpu_status_bar = ""
                 else:
-                    gpu_quota_str = format_value(gpu_quota)
-                    gpu_status_bar = create_status_bar(gpu_total_used, gpu_quota)
-                gpu_consumed_str = format_value(gpu_consumed)
-                gpu_preallocated_str = f"{format_value(gpu_preallocated)}({job_count})"
+                    gpu_status_bar = create_status_bar(gpu_total_used, gpu_quota * 60)
+                gpu_consumed_str = format_seconds(gpu_consumed, display_hours)
+                gpu_preallocated_str = (
+                    f"{format_seconds(gpu_preallocated, display_hours)}({job_count})"
+                )
 
                 print(
                     format_stats_row(
@@ -670,31 +668,33 @@ def show_user_stats(
             last_updated = item.get("last_updated")
             last_updated_str = format_timestamp_with_timezone(last_updated)
 
-            cpu_consumed = int(item.get("total_consumed_cpu_minutes", 0))
-            cpu_preallocated = int(item.get("total_preallocated_cpu_minutes", 0))
+            cpu_consumed = int(item.get("total_consumed_cpu_seconds", 0))
+            cpu_preallocated = int(item.get("total_preallocated_cpu_seconds", 0))
             cpu_quota = int(item.get("quota_cpu_minutes", -1))
             cpu_total_used = cpu_consumed + cpu_preallocated
+            cpu_quota_str = format_quota(cpu_quota, display_hours)
             if cpu_quota == -1:
-                cpu_quota_str = "∞"
                 cpu_status_bar = " " * 25
             else:
-                cpu_quota_str = format_value(cpu_quota)
-                cpu_status_bar = create_status_bar(cpu_total_used, cpu_quota)
-            cpu_consumed_str = format_value(cpu_consumed)
-            cpu_preallocated_str = f"{format_value(cpu_preallocated)}({job_count})"
+                cpu_status_bar = create_status_bar(cpu_total_used, cpu_quota * 60)
+            cpu_consumed_str = format_seconds(cpu_consumed, display_hours)
+            cpu_preallocated_str = (
+                f"{format_seconds(cpu_preallocated, display_hours)}({job_count})"
+            )
 
-            gpu_consumed = int(item.get("total_consumed_gpu_minutes", 0))
-            gpu_preallocated = int(item.get("total_preallocated_gpu_minutes", 0))
+            gpu_consumed = int(item.get("total_consumed_gpu_seconds", 0))
+            gpu_preallocated = int(item.get("total_preallocated_gpu_seconds", 0))
             gpu_quota = int(item.get("quota_gpu_minutes", -1))
             gpu_total_used = gpu_consumed + gpu_preallocated
+            gpu_quota_str = format_quota(gpu_quota, display_hours)
             if gpu_quota == -1:
-                gpu_quota_str = "∞"
                 gpu_status_bar = " " * 25
             else:
-                gpu_quota_str = format_value(gpu_quota)
-                gpu_status_bar = create_status_bar(gpu_total_used, gpu_quota)
-            gpu_consumed_str = format_value(gpu_consumed)
-            gpu_preallocated_str = f"{format_value(gpu_preallocated)}({job_count})"
+                gpu_status_bar = create_status_bar(gpu_total_used, gpu_quota * 60)
+            gpu_consumed_str = format_seconds(gpu_consumed, display_hours)
+            gpu_preallocated_str = (
+                f"{format_seconds(gpu_preallocated, display_hours)}({job_count})"
+            )
 
             print(
                 format_stats_row(

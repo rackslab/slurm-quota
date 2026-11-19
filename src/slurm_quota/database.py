@@ -888,10 +888,9 @@ def _query_aggregate(
 ) -> list[dict[str, Any]]:
     """Return consumption, preallocation and quota aggregates of users or accounts.
 
-    Consumption is summed over user/account pairs, preallocations over jobs.
-    Both are stored in seconds and reported in whole minutes (floored).
-    Consumption sums are correlated subqueries so that the preallocations join
-    does not multiply them.
+    Consumption is summed over user/account pairs, preallocations over jobs,
+    both in seconds. Quotas are in minutes. Consumption sums are correlated
+    subqueries so that the preallocations join does not multiply them.
 
     Args:
         conn: Database connection.
@@ -915,22 +914,22 @@ def _query_aggregate(
                     FROM user_account_consumption c
                     WHERE c.{key} = e.{key}),
                    0
-               ) / 60 as total_consumed_cpu_minutes,
+               ) as total_consumed_cpu_seconds,
                COALESCE(
                    SUM(j.preallocated_cpu_seconds * COALESCE(j.array_size, 1)),
                    0
-               ) / 60 as total_preallocated_cpu_minutes,
+               ) as total_preallocated_cpu_seconds,
                e.quota_cpu_minutes,
                COALESCE(
                    (SELECT SUM(c.consumed_gpu_seconds)
                     FROM user_account_consumption c
                     WHERE c.{key} = e.{key}),
                    0
-               ) / 60 as total_consumed_gpu_minutes,
+               ) as total_consumed_gpu_seconds,
                COALESCE(
                    SUM(j.preallocated_gpu_seconds * COALESCE(j.array_size, 1)),
                    0
-               ) / 60 as total_preallocated_gpu_minutes,
+               ) as total_preallocated_gpu_seconds,
                e.quota_gpu_minutes, e.last_updated,
                COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
         FROM {table} e
@@ -957,11 +956,11 @@ def _query_aggregate(
         results.append(
             {
                 key: name,
-                "total_consumed_cpu_minutes": int(consumed_cpu or 0),
-                "total_preallocated_cpu_minutes": int(prealloc_cpu or 0),
+                "total_consumed_cpu_seconds": int(consumed_cpu or 0),
+                "total_preallocated_cpu_seconds": int(prealloc_cpu or 0),
                 "quota_cpu_minutes": int(quota_cpu if quota_cpu is not None else -1),
-                "total_consumed_gpu_minutes": int(consumed_gpu or 0),
-                "total_preallocated_gpu_minutes": int(prealloc_gpu or 0),
+                "total_consumed_gpu_seconds": int(consumed_gpu or 0),
+                "total_preallocated_gpu_seconds": int(prealloc_gpu or 0),
                 "quota_gpu_minutes": int(quota_gpu if quota_gpu is not None else -1),
                 "last_updated": last_updated,
                 "job_count": int(job_count or 0),

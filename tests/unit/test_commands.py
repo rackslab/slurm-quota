@@ -47,11 +47,11 @@ def _sample_users_and_accounts():
             "username": "alice",
             "job_count": 2,
             "last_updated": "2024-06-01T10:00:00",
-            "total_consumed_cpu_minutes": 120,
-            "total_preallocated_cpu_minutes": 60,
+            "total_consumed_cpu_seconds": 7200,
+            "total_preallocated_cpu_seconds": 3600,
             "quota_cpu_minutes": 600,
-            "total_consumed_gpu_minutes": 0,
-            "total_preallocated_gpu_minutes": 0,
+            "total_consumed_gpu_seconds": 0,
+            "total_preallocated_gpu_seconds": 0,
             "quota_gpu_minutes": -1,
         }
     ]
@@ -60,11 +60,11 @@ def _sample_users_and_accounts():
             "account": "acct1",
             "job_count": 0,
             "last_updated": None,
-            "total_consumed_cpu_minutes": 1,
-            "total_preallocated_cpu_minutes": 0,
+            "total_consumed_cpu_seconds": 60,
+            "total_preallocated_cpu_seconds": 0,
             "quota_cpu_minutes": -1,
-            "total_consumed_gpu_minutes": 0,
-            "total_preallocated_gpu_minutes": 0,
+            "total_consumed_gpu_seconds": 0,
+            "total_preallocated_gpu_seconds": 0,
             "quota_gpu_minutes": -1,
         }
     ]
@@ -157,11 +157,11 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "username": "u1",
             "job_count": 0,
             "last_updated": None,
-            "total_consumed_cpu_minutes": 120,
-            "total_preallocated_cpu_minutes": 0,
+            "total_consumed_cpu_seconds": 7200,
+            "total_preallocated_cpu_seconds": 0,
             "quota_cpu_minutes": -1,
-            "total_consumed_gpu_minutes": 0,
-            "total_preallocated_gpu_minutes": 0,
+            "total_consumed_gpu_seconds": 0,
+            "total_preallocated_gpu_seconds": 0,
             "quota_gpu_minutes": -1,
         }
         self._mock_stats(return_value=([user], []))
@@ -188,11 +188,11 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "username": "u1",
             "job_count": 0,
             "last_updated": None,
-            "total_consumed_cpu_minutes": 50,
-            "total_preallocated_cpu_minutes": 0,
+            "total_consumed_cpu_seconds": 3000,
+            "total_preallocated_cpu_seconds": 0,
             "quota_cpu_minutes": 100,
-            "total_consumed_gpu_minutes": 0,
-            "total_preallocated_gpu_minutes": 0,
+            "total_consumed_gpu_seconds": 0,
+            "total_preallocated_gpu_seconds": 0,
             "quota_gpu_minutes": -1,
         }
         self._mock_stats(return_value=([user], []))
@@ -213,6 +213,32 @@ class TestShowUserStats(SlurmQuotaTestCase):
         )
         self.assertEqual(out, expected)
 
+    def test_status_bar_is_computed_in_seconds(self):
+        self.env({"NO_COLOR": "1"})
+        # 9 min 59 s consumed + 30 s preallocated exceed the 10 min quota, while
+        # displayed floored minutes (9 + 0) would only fill 90%.
+        user = {
+            "username": "u1",
+            "job_count": 1,
+            "last_updated": None,
+            "total_consumed_cpu_seconds": 599,
+            "total_preallocated_cpu_seconds": 30,
+            "quota_cpu_minutes": 10,
+            "total_consumed_gpu_seconds": 0,
+            "total_preallocated_gpu_seconds": 0,
+            "quota_gpu_minutes": -1,
+        }
+        self._mock_stats(return_value=([user], []))
+        with patch(
+            "slurm_quota.commands.format_timestamp_with_timezone",
+            return_value="TS_FIXED",
+        ):
+            out = self._run_show(username="u1", show_all=False)
+        self.assertIn(
+            "u1      |           9            0(1)       10 [████████████████████] 100.0% |",
+            out,
+        )
+
     def test_first_column_cap_and_ellipsis_align_user_and_account_tables(self):
         self.env({"NO_COLOR": "1"})
         users = [
@@ -220,11 +246,11 @@ class TestShowUserStats(SlurmQuotaTestCase):
                 "username": "user_with_a_name_longer_than_thirty_chars",
                 "job_count": 1,
                 "last_updated": None,
-                "total_consumed_cpu_minutes": 1,
-                "total_preallocated_cpu_minutes": 1,
+                "total_consumed_cpu_seconds": 60,
+                "total_preallocated_cpu_seconds": 60,
                 "quota_cpu_minutes": -1,
-                "total_consumed_gpu_minutes": 0,
-                "total_preallocated_gpu_minutes": 0,
+                "total_consumed_gpu_seconds": 0,
+                "total_preallocated_gpu_seconds": 0,
                 "quota_gpu_minutes": -1,
             }
         ]
@@ -233,11 +259,11 @@ class TestShowUserStats(SlurmQuotaTestCase):
                 "account": "account_with_a_name_longer_than_thirty_chars",
                 "job_count": 1,
                 "last_updated": None,
-                "total_consumed_cpu_minutes": 1,
-                "total_preallocated_cpu_minutes": 1,
+                "total_consumed_cpu_seconds": 60,
+                "total_preallocated_cpu_seconds": 60,
                 "quota_cpu_minutes": -1,
-                "total_consumed_gpu_minutes": 0,
-                "total_preallocated_gpu_minutes": 0,
+                "total_consumed_gpu_seconds": 0,
+                "total_preallocated_gpu_seconds": 0,
                 "quota_gpu_minutes": -1,
             }
         ]
