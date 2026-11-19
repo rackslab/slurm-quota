@@ -17,7 +17,6 @@ from rfl.authentication.errors import LDAPAuthenticationError
 from rfl.web.tokens import check_jwt
 
 import slurm_quota
-from slurm_quota import slurm as slurm_integration
 from slurm_quota.database import (
     adjust_consumed_seconds as db_adjust_consumed_seconds,
     connect_database,
@@ -26,7 +25,9 @@ from slurm_quota.database import (
     grant_manager_account as db_grant_manager_account,
     grant_operator as db_grant_operator,
     is_manager,
+    list_account_users,
     list_manager_accounts,
+    list_user_accounts,
     list_users_with_roles,
     load_gpu_factors,
     query_accounts_aggregate,
@@ -59,11 +60,9 @@ _TRUE_QUERY_VALUES = ("1", "true", "yes")
 
 
 def _slurm_user_accounts(username: str) -> set[str]:
-    """Return the Slurm accounts of username, an empty set on failure."""
-    try:
-        return slurm_integration.get_user_accounts(username)
-    except Exception:
-        return set()
+    """Return the Slurm accounts of username from the associations cache."""
+    with connect_database() as conn:
+        return list_user_accounts(conn, username)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -214,7 +213,15 @@ class StatsScope:
         """
         with connect_database() as conn:
             assigned = set(list_manager_accounts(conn, login))
-        allowed_accounts = assigned | _slurm_user_accounts(login)
+            allowed_accounts = assigned | list_user_accounts(conn, login)
+            user_accounts = (
+                list_user_accounts(conn, username_param)
+                if username_param and username_param != login
+                else set()
+            )
+            members: set[str] = {login}
+            for account in assigned:
+                members.update(list_account_users(conn, account))
 
         if account_param:
             if account_param not in allowed_accounts:
@@ -228,7 +235,6 @@ class StatsScope:
                 return cls.for_user(
                     login, allowed_accounts, viewer=login, managed_accounts=assigned
                 )
-            user_accounts = _slurm_user_accounts(username_param)
             if not user_accounts.intersection(assigned):
                 abort(403, description="Not allowed to view stats for other users")
             return cls.for_user(
@@ -238,9 +244,6 @@ class StatsScope:
                 managed_accounts=assigned,
             )
 
-        members: set[str] = {login}
-        for account in assigned:
-            members.update(slurm_integration.get_account_users(account))
         return cls(
             usernames=members,
             accounts=allowed_accounts,

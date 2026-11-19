@@ -10,11 +10,9 @@ from slurm_quota.slurm import (
     calculate_consumed_gpu_seconds,
     collect_active_job_uuids,
     collect_pair_usage_from_sacct,
-    get_account_users,
     get_associations,
     get_job_info_from_environment,
     get_job_info_from_sacct,
-    get_user_accounts,
     parse_alloc_tres,
 )
 from tests.test_support import SlurmQuotaTestCase
@@ -62,43 +60,6 @@ class TestGetJobInfoFromSacct(SlurmQuotaTestCase):
         uuid, tres = get_job_info_from_sacct("123")
         self.assertEqual(uuid, "uuid-1")
         self.assertEqual(tres, "gres/gpu:a100=1")
-
-
-class TestGetUserAccounts(SlurmQuotaTestCase):
-    @patch("slurm_quota.slurm.subprocess.run")
-    def test_get_user_accounts(self, run_mock):
-        run_mock.return_value = subprocess.CompletedProcess(
-            ["sacctmgr"], 0, "acc1\nacc2\n", ""
-        )
-        self.assertEqual(get_user_accounts("u"), {"acc1", "acc2"})
-
-
-class TestGetAccountUsers(SlurmQuotaTestCase):
-    @patch("slurm_quota.slurm.subprocess.run")
-    def test_get_account_users(self, run_mock):
-        run_mock.return_value = subprocess.CompletedProcess(
-            ["sacctmgr"], 0, "alice\nbob\n", ""
-        )
-        self.assertEqual(get_account_users("hpc"), {"alice", "bob"})
-        run_mock.assert_called_once()
-        args = run_mock.call_args[0][0]
-        self.assertEqual(args[0], "sacctmgr")
-        self.assertIn("account=hpc", args)
-
-    @patch("slurm_quota.slurm.subprocess.run")
-    def test_get_account_users_empty_stdout(self, run_mock):
-        run_mock.return_value = subprocess.CompletedProcess(["sacctmgr"], 0, "", "")
-        self.assertEqual(get_account_users("hpc"), set())
-
-    @patch("slurm_quota.slurm.subprocess.run")
-    def test_get_account_users_sacctmgr_failure_returns_empty_set(self, run_mock):
-        run_mock.side_effect = subprocess.CalledProcessError(1, "sacctmgr")
-        self.assertEqual(get_account_users("hpc"), set())
-
-    @patch("slurm_quota.slurm.subprocess.run")
-    def test_get_account_users_missing_sacctmgr_returns_empty_set(self, run_mock):
-        run_mock.side_effect = FileNotFoundError("sacctmgr")
-        self.assertEqual(get_account_users("hpc"), set())
 
 
 class TestCollectActiveJobUuids(SlurmQuotaTestCase):

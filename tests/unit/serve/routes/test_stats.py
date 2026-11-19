@@ -45,11 +45,11 @@ class TestStatsRoute(ServeRoutesTestCase):
                 "INSERT INTO accounts (account) VALUES (?)",
                 ("dev",),
             )
+            self.insert_associations(conn, ("alice", "hpc"))
             conn.commit()
 
-        with patch("slurm_quota.slurm.get_user_accounts", return_value={"hpc"}):
-            client = app.test_client()
-            resp = client.get("/stats?username=alice", headers=self._headers())
+        client = app.test_client()
+        resp = client.get("/stats?username=alice", headers=self._headers())
 
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
@@ -237,11 +237,11 @@ class TestStatsRoute(ServeRoutesTestCase):
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
+            self.insert_associations(conn, ("bob", "hpc"), ("bob", "dev"))
             conn.commit()
 
-        with patch("slurm_quota.slurm.get_user_accounts", return_value={"hpc", "dev"}):
-            client = app.test_client()
-            resp = client.get("/stats?username=bob", headers=self._headers("carol"))
+        client = app.test_client()
+        resp = client.get("/stats?username=bob", headers=self._headers("carol"))
 
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
@@ -259,16 +259,16 @@ class TestStatsRoute(ServeRoutesTestCase):
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
+            self.insert_associations(conn, ("bob", "dev"))
             conn.commit()
 
-        with patch("slurm_quota.slurm.get_user_accounts", return_value={"dev"}):
-            self._request_expecting_abort(
-                "GET",
-                "/stats?username=bob",
-                403,
-                description="Not allowed to view stats for other users",
-                headers=self._headers("carol"),
-            )
+        self._request_expecting_abort(
+            "GET",
+            "/stats?username=bob",
+            403,
+            description="Not allowed to view stats for other users",
+            headers=self._headers("carol"),
+        )
 
     def test_manager_unfiltered_stats_returns_assigned_scope(self):
         init_database()
@@ -295,14 +295,11 @@ class TestStatsRoute(ServeRoutesTestCase):
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
+            self.insert_associations(conn, ("bob", "hpc"))
             conn.commit()
 
-        with patch(
-            "slurm_quota.slurm.get_account_users",
-            side_effect=lambda account: {"bob"} if account == "hpc" else set(),
-        ):
-            client = app.test_client()
-            resp = client.get("/stats", headers=self._headers("carol"))
+        client = app.test_client()
+        resp = client.get("/stats", headers=self._headers("carol"))
 
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
@@ -328,11 +325,11 @@ class TestStatsRoute(ServeRoutesTestCase):
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
+            self.insert_associations(conn, ("bob", "hpc"))
             conn.commit()
 
-        with patch("slurm_quota.slurm.get_account_users", return_value={"bob"}):
-            client = app.test_client()
-            resp = client.get("/stats", headers=self._headers("carol"))
+        client = app.test_client()
+        resp = client.get("/stats", headers=self._headers("carol"))
 
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
@@ -354,9 +351,8 @@ class TestStatsRoute(ServeRoutesTestCase):
             grant_manager_account(conn, "carol", "hpc")
             conn.commit()
 
-        with patch("slurm_quota.slurm.get_user_accounts", return_value=set()):
-            client = app.test_client()
-            resp = client.get("/stats?username=carol", headers=self._headers("carol"))
+        client = app.test_client()
+        resp = client.get("/stats?username=carol", headers=self._headers("carol"))
 
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
@@ -381,19 +377,19 @@ class TestStatsRoute(ServeRoutesTestCase):
                 ("personal",),
             )
             grant_manager(conn, "carol")
+            self.insert_associations(conn, ("carol", "personal"))
             conn.commit()
 
-        with patch("slurm_quota.slurm.get_user_accounts", return_value={"personal"}):
-            client = app.test_client()
-            for path in ("/stats", "/stats?username=carol"):
-                with self.subTest(path=path):
-                    resp = client.get(path, headers=self._headers("carol"))
-                    self.assertEqual(resp.status_code, 200)
-                    body = json.loads(resp.data)
-                    self.assertEqual(len(body["users"]), 1)
-                    self.assertEqual(body["users"][0]["username"], "carol")
-                    self.assertEqual(len(body["accounts"]), 1)
-                    self.assertEqual(body["accounts"][0]["account"], "personal")
+        client = app.test_client()
+        for path in ("/stats", "/stats?username=carol"):
+            with self.subTest(path=path):
+                resp = client.get(path, headers=self._headers("carol"))
+                self.assertEqual(resp.status_code, 200)
+                body = json.loads(resp.data)
+                self.assertEqual(len(body["users"]), 1)
+                self.assertEqual(body["users"][0]["username"], "carol")
+                self.assertEqual(len(body["accounts"]), 1)
+                self.assertEqual(body["accounts"][0]["account"], "personal")
 
     def test_manager_can_query_personal_slurm_account(self):
         init_database()
@@ -408,11 +404,11 @@ class TestStatsRoute(ServeRoutesTestCase):
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
+            self.insert_associations(conn, ("carol", "personal"))
             conn.commit()
 
-        with patch("slurm_quota.slurm.get_user_accounts", return_value={"personal"}):
-            client = app.test_client()
-            resp = client.get("/stats?account=personal", headers=self._headers("carol"))
+        client = app.test_client()
+        resp = client.get("/stats?account=personal", headers=self._headers("carol"))
 
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
@@ -440,20 +436,11 @@ class TestStatsRoute(ServeRoutesTestCase):
             )
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
+            self.insert_associations(conn, ("bob", "hpc"), ("carol", "personal"))
             conn.commit()
 
-        with (
-            patch(
-                "slurm_quota.slurm.get_account_users",
-                side_effect=lambda account: {"bob"} if account == "hpc" else set(),
-            ),
-            patch(
-                "slurm_quota.slurm.get_user_accounts",
-                return_value={"personal"},
-            ),
-        ):
-            client = app.test_client()
-            resp = client.get("/stats", headers=self._headers("carol"))
+        client = app.test_client()
+        resp = client.get("/stats", headers=self._headers("carol"))
 
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
@@ -482,11 +469,11 @@ class TestStatsRoute(ServeRoutesTestCase):
             grant_manager(conn, "carol")
             grant_manager_account(conn, "carol", "hpc")
             grant_manager_account(conn, "carol", "dev")
+            self.insert_associations(conn, ("bob", "hpc"), ("bob", "dev"))
             conn.commit()
 
-        with patch("slurm_quota.slurm.get_account_users", return_value={"bob"}):
-            client = app.test_client()
-            resp = client.get("/stats", headers=self._headers("carol"))
+        client = app.test_client()
+        resp = client.get("/stats", headers=self._headers("carol"))
 
         self.assertEqual(resp.status_code, 200)
         body = json.loads(resp.data)
@@ -506,25 +493,16 @@ class TestStatsBreakdown(ServeRoutesTestCase):
         update_user_and_account_resources("bob", "hpc", 300, None, 0)
         update_user_and_account_resources("bob", "dev", 30, None, 0)
         update_user_and_account_resources("(unattributed)", "hpc", 45, None, 0)
-        self._slurm_accounts = {
-            "dave": {"hpc", "dev"},
-            "bob": {"hpc", "dev"},
-            "carol": {"dev"},
-        }
-        patcher = patch(
-            "slurm_quota.slurm.get_user_accounts",
-            side_effect=lambda user: self._slurm_accounts.get(user, set()),
-        )
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        patcher = patch(
-            "slurm_quota.slurm.get_account_users",
-            side_effect=lambda account: {
-                user for user, accts in self._slurm_accounts.items() if account in accts
-            },
-        )
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        with self.db_connection() as conn:
+            self.insert_associations(
+                conn,
+                ("dave", "hpc"),
+                ("dave", "dev"),
+                ("bob", "hpc"),
+                ("bob", "dev"),
+                ("carol", "dev"),
+            )
+            conn.commit()
 
     def _breakdown(self, query: str, username: str) -> list[tuple[str, str]]:
         resp = app.test_client().get(

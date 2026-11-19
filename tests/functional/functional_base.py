@@ -221,7 +221,7 @@ _STATS_BREAKDOWN: list[dict[str, Any]] = [
     },
 ]
 
-# Which accounts appear when ``GET /stats?username=`` is set (like ``get_user_accounts``).  # noqa: E501
+# Which accounts appear when ``GET /stats?username=`` is set (Slurm associations).
 _STATS_ACCOUNT_NAMES_BY_USER: dict[str, frozenset[str]] = {
     "alice": frozenset({"hpc"}),
     "bob": frozenset({"dev"}),

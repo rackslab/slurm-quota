@@ -190,34 +190,30 @@ class TestServeCommand(FunctionalCLIBase):
             self.insert_consumption(conn, "alice", "hpc", cpu_minutes=100)
             self.insert_consumption(conn, "alice", "dev", cpu_minutes=20)
             self.insert_consumption(conn, "bob", "dev", cpu_minutes=30)
+            self.insert_associations(conn, ("alice", "hpc"))
             conn.commit()
 
         host = "127.0.0.1"
         port = self._free_tcp_port()
-        with patch("slurm_quota.slurm.get_user_accounts", return_value={"hpc"}):
-            thread = self._start_serve_thread(host, port)
-            self._wait_until_ready(host, port)
+        thread = self._start_serve_thread(host, port)
+        self._wait_until_ready(host, port)
 
-            conn = http.client.HTTPConnection(host, port, timeout=2)
-            try:
-                conn.request(
-                    "GET", "/stats?username=alice", headers=self._auth_headers()
-                )
-                resp = conn.getresponse()
-                self.assertEqual(resp.status, 200)
-                body = json.loads(resp.read().decode("utf-8"))
-                self.assertEqual(len(body["users"]), 1)
-                self.assertEqual(body["users"][0]["username"], "alice")
-                self.assertEqual(body["users"][0]["total_consumed_cpu_seconds"], 7200)
-                self.assertEqual(len(body["accounts"]), 1)
-                self.assertEqual(body["accounts"][0]["account"], "hpc")
-                self.assertEqual(
-                    body["accounts"][0]["total_consumed_cpu_seconds"], 6000
-                )
-            finally:
-                conn.close()
+        conn = http.client.HTTPConnection(host, port, timeout=2)
+        try:
+            conn.request("GET", "/stats?username=alice", headers=self._auth_headers())
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            body = json.loads(resp.read().decode("utf-8"))
+            self.assertEqual(len(body["users"]), 1)
+            self.assertEqual(body["users"][0]["username"], "alice")
+            self.assertEqual(body["users"][0]["total_consumed_cpu_seconds"], 7200)
+            self.assertEqual(len(body["accounts"]), 1)
+            self.assertEqual(body["accounts"][0]["account"], "hpc")
+            self.assertEqual(body["accounts"][0]["total_consumed_cpu_seconds"], 6000)
+        finally:
+            conn.close()
 
-            self._join_after_idle(thread)
+        self._join_after_idle(thread)
 
     def test_serve_get_stats_supports_account_query_filter(self):
         init_database()
