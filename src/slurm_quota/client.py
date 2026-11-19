@@ -364,12 +364,12 @@ class APIClient:
         username: str,
         account: str,
         resource: Literal["cpu", "gpu"],
-        delta_minutes: int,
+        delta_seconds: int,
         *,
         reason: str | None = None,
     ) -> int:
         path = f"consumption/{_quote_name(username)}/{_quote_name(account)}/{resource}"
-        body: dict[str, Any] = {"delta_minutes": delta_minutes}
+        body: dict[str, Any] = {"delta_seconds": delta_seconds}
         if reason is not None:
             body["reason"] = reason
         payload = self._api_request(

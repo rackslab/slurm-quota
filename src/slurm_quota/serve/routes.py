@@ -18,7 +18,7 @@ from rfl.web.tokens import check_jwt
 import slurm_quota
 from slurm_quota import slurm as slurm_integration
 from slurm_quota.database import (
-    adjust_consumed_minutes as db_adjust_consumed_minutes,
+    adjust_consumed_seconds as db_adjust_consumed_seconds,
     connect_database,
     get_default_quota_settings,
     grant_manager as db_grant_manager,
@@ -520,24 +520,24 @@ def adjust_consumption(username: str, account: str, resource: str) -> Any:
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         abort(400, description="Invalid JSON body")
-    delta_minutes = payload.get("delta_minutes")
-    if not isinstance(delta_minutes, int):
-        abort(400, description="delta_minutes must be an integer")
+    delta_seconds = payload.get("delta_seconds")
+    if not isinstance(delta_seconds, int):
+        abort(400, description="delta_seconds must be an integer")
     reason = _parse_optional_reason(payload)
     try:
-        total = db_adjust_consumed_minutes(username, account, resource, delta_minutes)
+        total = db_adjust_consumed_seconds(username, account, resource, delta_seconds)
     except ValueError as exc:
         abort(400, description=str(exc))
     except sqlite3.Error as exc:
         logger.error("adjust %s consumption failed: %s", resource, exc)
         return jsonify({"error": "db_error"}), 500
     logger.info(
-        "consumption %s: manager=%s user=%s account=%s delta=%+d total=%ds reason=%s",
+        "consumption %s: manager=%s user=%s account=%s delta=%+ds total=%ds reason=%s",
         resource,
         cast(str, request.user.login),
         username,
         account,
-        delta_minutes,
+        delta_seconds,
         total,
         "n/a" if reason is None else repr(reason),
     )

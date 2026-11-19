@@ -888,7 +888,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
             )
         self.assertEqual(resp.status_code, 302)
         m_client.return_value.adjust_consumption.assert_called_once_with(
-            "alice", "hpc", "cpu", -15, reason=None
+            "alice", "hpc", "cpu", -900, reason=None
         )
 
     def test_consumption_post_forwards_reason_when_provided(self):
@@ -916,7 +916,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                 follow_redirects=False,
             )
         m_client.return_value.adjust_consumption.assert_called_once_with(
-            "alice", "hpc", "cpu", -15, reason="correct billing error"
+            "alice", "hpc", "cpu", -900, reason="correct billing error"
         )
 
     def test_consumption_post_shows_success_message(self):

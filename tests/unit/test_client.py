@@ -673,13 +673,13 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse({"total_consumed_seconds": 7800}),
         ) as m_urlopen:
-            total = APIClient(token="jwt").adjust_consumption("bob", "hpc", "cpu", 30)
+            total = APIClient(token="jwt").adjust_consumption("bob", "hpc", "cpu", 1800)
         self.assertEqual(total, 7800)
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.method, "PATCH")
         self.assertIn("/consumption/bob/hpc/cpu", req.full_url)
         body = json.loads(req.data.decode("utf-8"))
-        self.assertEqual(body, {"delta_minutes": 30})
+        self.assertEqual(body, {"delta_seconds": 1800})
 
     def test_adjust_consumption_sends_reason_when_provided(self):
         with patch(
@@ -687,23 +687,25 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
             return_value=_FakeUrlopenResponse({"total_consumed_seconds": 7800}),
         ) as m_urlopen:
             APIClient(token="jwt").adjust_consumption(
-                "bob", "hpc", "cpu", 30, reason="correct billing error"
+                "bob", "hpc", "cpu", 1800, reason="correct billing error"
             )
         req = m_urlopen.call_args[0][0]
         body = json.loads(req.data.decode("utf-8"))
-        self.assertEqual(body, {"delta_minutes": 30, "reason": "correct billing error"})
+        self.assertEqual(
+            body, {"delta_seconds": 1800, "reason": "correct billing error"}
+        )
 
     def test_adjust_consumption_sends_patch_for_pair_gpu(self):
         with patch(
             "slurm_quota.client.urlopen",
             return_value=_FakeUrlopenResponse({"total_consumed_seconds": 0}),
         ) as m_urlopen:
-            total = APIClient(token="jwt").adjust_consumption("bob", "hpc", "gpu", -10)
+            total = APIClient(token="jwt").adjust_consumption("bob", "hpc", "gpu", -600)
         self.assertEqual(total, 0)
         req = m_urlopen.call_args[0][0]
         self.assertIn("/consumption/bob/hpc/gpu", req.full_url)
         body = json.loads(req.data.decode("utf-8"))
-        self.assertEqual(body, {"delta_minutes": -10})
+        self.assertEqual(body, {"delta_seconds": -600})
 
     def test_adjust_raises_service_http_error_on_bad_status(self):
         with (

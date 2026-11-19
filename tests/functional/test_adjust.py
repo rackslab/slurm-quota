@@ -20,11 +20,11 @@ class TestAdjustCommand(FunctionalAPICliBase):
         method = request.get_method()
         if method == "PATCH" and url.endswith("/consumption/alice/hpc/cpu"):
             body = json.loads(request.data.decode("utf-8"))
-            self.assertIn("delta_minutes", body)
+            self.assertIn("delta_seconds", body)
             return FakeJsonUrlopenResponse({"total_consumed_seconds": 7800})
         if method == "PATCH" and url.endswith("/consumption/alice/hpc/gpu"):
             body = json.loads(request.data.decode("utf-8"))
-            self.assertIn("delta_minutes", body)
+            self.assertIn("delta_seconds", body)
             return FakeJsonUrlopenResponse({"total_consumed_seconds": 12630})
         raise AssertionError(f"unexpected request: {method} {url}")
 
@@ -62,7 +62,7 @@ class TestAdjustCommand(FunctionalAPICliBase):
         self.assertTrue(req.full_url.endswith("/consumption/alice/hpc/cpu"))
         self.assertEqual(req.get_header("Authorization"), "Bearer saved-jwt")
         body = json.loads(req.data.decode("utf-8"))
-        self.assertEqual(body, {"delta_minutes": 30})
+        self.assertEqual(body, {"delta_seconds": 1800})
 
     def test_adjust_pair_gpu_hours(self):
         with (
@@ -96,7 +96,7 @@ class TestAdjustCommand(FunctionalAPICliBase):
         req = m_urlopen.call_args[0][0]
         self.assertTrue(req.full_url.endswith("/consumption/alice/hpc/gpu"))
         body = json.loads(req.data.decode("utf-8"))
-        self.assertEqual(body, {"delta_minutes": 120})
+        self.assertEqual(body, {"delta_seconds": 7200})
 
     def test_adjust_requires_token(self):
         ClientToken.path().unlink()

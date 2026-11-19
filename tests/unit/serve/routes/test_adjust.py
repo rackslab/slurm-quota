@@ -23,7 +23,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             resp = client.patch(
                 "/consumption/bob/hpc/cpu",
                 headers=self._headers("alice"),
-                json={"delta_minutes": 30},
+                json={"delta_seconds": 1800},
             )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"total_consumed_seconds": 7800})
@@ -31,7 +31,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             log_cm.output,
             [
                 "INFO:slurm_quota:consumption cpu: manager=alice user=bob "
-                "account=hpc delta=+30 total=7800s reason=n/a",
+                "account=hpc delta=+1800s total=7800s reason=n/a",
             ],
         )
         with self.db_connection() as conn:
@@ -49,7 +49,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             resp = client.patch(
                 "/consumption/bob/hpc/gpu",
                 headers=self._headers("carol"),
-                json={"delta_minutes": -20},
+                json={"delta_seconds": -1200},
             )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"total_consumed_seconds": 1800})
@@ -57,7 +57,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             log_cm.output,
             [
                 "INFO:slurm_quota:consumption gpu: manager=carol user=bob "
-                "account=hpc delta=-20 total=1800s reason=n/a",
+                "account=hpc delta=-1200s total=1800s reason=n/a",
             ],
         )
 
@@ -71,7 +71,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
         resp = client.patch(
             "/consumption/bob/dev/cpu",
             headers=self._headers("alice"),
-            json={"delta_minutes": 15},
+            json={"delta_seconds": 900},
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"total_consumed_seconds": 900})
@@ -85,7 +85,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
         resp = client.patch(
             "/consumption/bob/hpc/cpu",
             headers=self._headers("alice"),
-            json={"delta_minutes": -100},
+            json={"delta_seconds": -6000},
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"total_consumed_seconds": 0})
@@ -101,7 +101,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             403,
             description="Insufficient permissions",
             headers=self._headers("bob"),
-            json={"delta_minutes": 10},
+            json={"delta_seconds": 600},
         )
 
     def test_missing_user_returns_400(self):
@@ -115,7 +115,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             400,
             description="User not found: missing",
             headers=self._headers("alice"),
-            json={"delta_minutes": 10},
+            json={"delta_seconds": 600},
         )
 
     def test_missing_account_returns_400(self):
@@ -129,7 +129,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             400,
             description="Account not found: missing",
             headers=self._headers("alice"),
-            json={"delta_minutes": 10},
+            json={"delta_seconds": 600},
         )
 
     def test_invalid_username_returns_400(self):
@@ -139,7 +139,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             400,
             description="Invalid username",
             headers=self._headers("alice"),
-            json={"delta_minutes": 10},
+            json={"delta_seconds": 600},
         )
 
     def test_invalid_account_returns_400(self):
@@ -149,7 +149,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             400,
             description="Invalid account",
             headers=self._headers("alice"),
-            json={"delta_minutes": 10},
+            json={"delta_seconds": 600},
         )
 
     def test_admin_adjusts_consumption_with_at_sign(self):
@@ -161,7 +161,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
         resp = client.patch(
             "/consumption/alice@site/lab@site/cpu",
             headers=self._headers("alice"),
-            json={"delta_minutes": 30},
+            json={"delta_seconds": 1800},
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"total_consumed_seconds": 7800})
@@ -171,17 +171,17 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             "PATCH",
             "/consumption/bob/hpc/cpu",
             400,
-            description="delta_minutes must be an integer",
+            description="delta_seconds must be an integer",
             headers=self._headers("alice"),
-            json={"delta_minutes": "30"},
+            json={"delta_seconds": "30"},
         )
 
-    def test_missing_delta_minutes_returns_400(self):
+    def test_missing_delta_seconds_returns_400(self):
         self._request_expecting_abort(
             "PATCH",
             "/consumption/bob/hpc/cpu",
             400,
-            description="delta_minutes must be an integer",
+            description="delta_seconds must be an integer",
             headers=self._headers("alice"),
             json={},
         )
@@ -196,14 +196,14 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             resp = client.patch(
                 "/consumption/bob/hpc/cpu",
                 headers=self._headers("alice"),
-                json={"delta_minutes": 30, "reason": "correct billing error"},
+                json={"delta_seconds": 1800, "reason": "correct billing error"},
             )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(
             log_cm.output,
             [
                 "INFO:slurm_quota:consumption cpu: manager=alice user=bob "
-                "account=hpc delta=+30 total=7800s reason='correct billing error'",
+                "account=hpc delta=+1800s total=7800s reason='correct billing error'",
             ],
         )
 
@@ -218,7 +218,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             400,
             description="reason must not be empty",
             headers=self._headers("alice"),
-            json={"delta_minutes": 30, "reason": ""},
+            json={"delta_seconds": 1800, "reason": ""},
         )
         self.assertEqual(
             resp.get_json(),
@@ -236,7 +236,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             400,
             description="reason must be a single line",
             headers=self._headers("alice"),
-            json={"delta_minutes": 30, "reason": "line one\nline two"},
+            json={"delta_seconds": 1800, "reason": "line one\nline two"},
         )
         self.assertEqual(
             resp.get_json(),
@@ -250,7 +250,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             404,
             description=NotFound.description,
             headers=self._headers("alice"),
-            json={"delta_minutes": 10},
+            json={"delta_seconds": 600},
         )
 
     def test_invalid_resource_returns_400(self):
@@ -260,7 +260,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             400,
             description="Invalid resource",
             headers=self._headers("alice"),
-            json={"delta_minutes": 10},
+            json={"delta_seconds": 600},
         )
         self.assertEqual(
             resp.get_json(),
@@ -270,14 +270,14 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
     def test_db_error_returns_500(self):
         init_database()
         with patch(
-            "slurm_quota.serve.routes.db_adjust_consumed_minutes",
+            "slurm_quota.serve.routes.db_adjust_consumed_seconds",
             side_effect=sqlite3.Error("boom"),
         ):
             client = app.test_client()
             resp = client.patch(
                 "/consumption/bob/hpc/cpu",
                 headers=self._headers("alice"),
-                json={"delta_minutes": 10},
+                json={"delta_seconds": 600},
             )
         self.assertEqual(resp.status_code, 500)
         self.assertEqual(resp.get_json(), {"error": "db_error"})

@@ -6,7 +6,7 @@ import sqlite3
 from unittest.mock import patch
 
 from slurm_quota.database import (
-    adjust_consumed_minutes,
+    adjust_consumed_seconds,
     connect_database,
     grant_manager,
     grant_manager_account,
@@ -568,15 +568,15 @@ class TestSetAccountGpuQuota(SlurmQuotaTestCase):
         self.assertEqual(row, (250, 44))
 
 
-class TestAdjustConsumedMinutes(SlurmQuotaTestCase):
-    def test_adjust_pair_cpu_adds_minutes(self):
+class TestAdjustConsumedSeconds(SlurmQuotaTestCase):
+    def test_adjust_pair_cpu_adds_seconds(self):
         init_database()
         with self.db_connection() as conn:
             self.insert_consumption(conn, "alice", "hpc", cpu_minutes=100)
             self.insert_consumption(conn, "alice", "dev", cpu_minutes=7)
             conn.commit()
 
-        new_value = adjust_consumed_minutes("alice", "hpc", "cpu", 25)
+        new_value = adjust_consumed_seconds("alice", "hpc", "cpu", 1500)
         self.assertEqual(new_value, 7500)
 
         with self.db_connection() as conn:
@@ -590,7 +590,7 @@ class TestAdjustConsumedMinutes(SlurmQuotaTestCase):
             self.insert_consumption(conn, "bob", "dev", gpu_minutes=10)
             conn.commit()
 
-        new_value = adjust_consumed_minutes("alice", "dev", "gpu", 3)
+        new_value = adjust_consumed_seconds("alice", "dev", "gpu", 180)
         self.assertEqual(new_value, 180)
 
         with self.db_connection() as conn:
@@ -602,13 +602,13 @@ class TestAdjustConsumedMinutes(SlurmQuotaTestCase):
             self.insert_consumption(conn, "alice", "hpc", gpu_minutes=40)
             conn.commit()
 
-        new_value = adjust_consumed_minutes("alice", "hpc", "gpu", -100)
+        new_value = adjust_consumed_seconds("alice", "hpc", "gpu", -6000)
         self.assertEqual(new_value, 0)
 
         with self.db_connection() as conn:
             self.assertEqual(self.pair_consumption(conn, "alice", "hpc"), (0, 0))
 
-    def test_adjust_returns_seconds(self):
+    def test_adjust_adds_sub_minute_seconds(self):
         init_database()
         with self.db_connection() as conn:
             self.insert_consumption(conn, "alice", "hpc")
@@ -617,9 +617,9 @@ class TestAdjustConsumedMinutes(SlurmQuotaTestCase):
             )
             conn.commit()
 
-        self.assertEqual(adjust_consumed_minutes("alice", "hpc", "cpu", 1), 179)
+        self.assertEqual(adjust_consumed_seconds("alice", "hpc", "cpu", 1), 120)
         with self.db_connection() as conn:
-            self.assertEqual(self.pair_consumption(conn, "alice", "hpc"), (179, 0))
+            self.assertEqual(self.pair_consumption(conn, "alice", "hpc"), (120, 0))
 
     def test_adjust_raises_for_missing_user(self):
         init_database()
@@ -627,7 +627,7 @@ class TestAdjustConsumedMinutes(SlurmQuotaTestCase):
             conn.execute("INSERT INTO accounts (account) VALUES ('hpc')")
             conn.commit()
         with self.assertRaisesRegex(ValueError, "User not found: missing"):
-            adjust_consumed_minutes("missing", "hpc", "cpu", 1)
+            adjust_consumed_seconds("missing", "hpc", "cpu", 1)
 
     def test_adjust_raises_for_missing_account(self):
         init_database()
@@ -635,11 +635,11 @@ class TestAdjustConsumedMinutes(SlurmQuotaTestCase):
             conn.execute("INSERT INTO users (username) VALUES ('alice')")
             conn.commit()
         with self.assertRaisesRegex(ValueError, "Account not found: missing"):
-            adjust_consumed_minutes("alice", "missing", "cpu", 1)
+            adjust_consumed_seconds("alice", "missing", "cpu", 1)
 
     def test_adjust_rejects_invalid_resource_type(self):
         with self.assertRaisesRegex(ValueError, "Invalid resource type: mem"):
-            adjust_consumed_minutes("alice", "hpc", "mem", 1)
+            adjust_consumed_seconds("alice", "hpc", "mem", 1)
 
 
 class TestUserAccountConsumption(SlurmQuotaTestCase):

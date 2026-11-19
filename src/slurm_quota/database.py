@@ -817,13 +817,13 @@ def set_account_gpu_quota(account: str, quota_gpu_minutes: int) -> None:
         raise
 
 
-def adjust_consumed_minutes(
-    username: str, account: str, resource: str, delta_minutes: int
+def adjust_consumed_seconds(
+    username: str, account: str, resource: str, delta_seconds: int
 ) -> int:
     """
     Adjust consumed CPU/GPU time of a user/account pair.
 
-    Consumption is stored in seconds, the delta is expressed in minutes. The pair
+    Consumption is stored in seconds, the delta is expressed in seconds. The pair
     row is created when missing, provided both the user and the account exist.
     The resulting consumption is clamped at zero.
 
@@ -831,7 +831,7 @@ def adjust_consumed_minutes(
         username: Username of the pair
         account: Account of the pair
         resource: "cpu" or "gpu"
-        delta_minutes: Signed minutes to add/subtract
+        delta_seconds: Signed seconds to add/subtract
 
     Returns:
         New consumed time of the pair, in seconds
@@ -863,7 +863,7 @@ def adjust_consumed_minutes(
         )
         row = cursor.fetchone()
         current_value = int(row[0] or 0) if row is not None else 0
-        updated_value = max(0, current_value + delta_minutes * 60)
+        updated_value = max(0, current_value + delta_seconds)
         cursor.execute(
             f"""
             INSERT INTO user_account_consumption (

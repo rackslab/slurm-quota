@@ -427,7 +427,7 @@ def consumption_post() -> Any:
         api = api_client()
         reason = _optional_form_reason()
         api.adjust_consumption(
-            username, account, resource, delta_minutes, reason=reason
+            username, account, resource, delta_minutes * 60, reason=reason
         )
         flash(
             f"Consumption adjusted for user {username} on account {account}.",

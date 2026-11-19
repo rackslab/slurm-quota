@@ -206,18 +206,18 @@ def adjust_command(
     try:
         resource = "cpu" if cpu else "gpu"
         if minutes is not None:
-            delta_minutes = minutes
+            delta_seconds = minutes * 60
             unit_label = "minutes"
         else:
             if hours is None:
                 logger.error("adjust command requires --minutes or --hours")
                 sys.exit(1)
-            delta_minutes = hours * 60
+            delta_seconds = hours * 3600
             unit_label = "hours"
 
         api = _api_client_from_token()
         new_total = api.adjust_consumption(
-            username, account, resource, delta_minutes, reason=reason
+            username, account, resource, delta_seconds, reason=reason
         )
 
         delta_source = minutes if minutes is not None else hours
