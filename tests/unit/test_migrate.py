@@ -33,6 +33,20 @@ class TestMigrateDatabase(SlurmQuotaTestCase):
             mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
             self.assertEqual(mode.lower(), "wal")
 
+    def test_migrate_database_creates_associations_table(self):
+        with self.db_connection() as conn:
+            conn.executescript(V3_SCHEMA)
+            conn.commit()
+
+        migrate_database()
+
+        with self.db_connection() as conn:
+            self.insert_associations(conn, ("alice", "hpc"))
+            rows = conn.execute(
+                "SELECT username, account FROM slurm_associations"
+            ).fetchall()
+        self.assertEqual(rows, [("alice", "hpc")])
+
 
 V3_SCHEMA = """
 CREATE TABLE users (

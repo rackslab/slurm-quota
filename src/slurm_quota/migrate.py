@@ -17,6 +17,7 @@ from slurm_quota.auth import get_current_user
 from slurm_quota.cli import add_common_arguments
 from slurm_quota.database import (
     connect_database,
+    create_associations_table,
     create_consumption_table,
     create_preallocations_table,
     enable_wal_mode,
@@ -428,6 +429,10 @@ def migrate_database() -> None:
                 """)
                 conn.commit()
                 logger.info("Migration completed: manager_accounts table created")
+
+            # Ensure slurm_associations table exists (v4)
+            create_associations_table(cursor)
+            conn.commit()
 
             # Move consumption to user/account pairs and convert
             # preallocations, in seconds (v4)

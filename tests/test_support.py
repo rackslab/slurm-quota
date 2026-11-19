@@ -74,6 +74,15 @@ class SlurmQuotaTestCase(unittest.TestCase):
         )
 
     @staticmethod
+    def insert_associations(conn, *pairs: tuple[str, str]) -> None:
+        """Cache Slurm (username, account) associations, as slurm-quota-sync does."""
+        conn.executemany(
+            "INSERT OR IGNORE INTO slurm_associations (username, account) "
+            "VALUES (?, ?)",
+            pairs,
+        )
+
+    @staticmethod
     def pair_consumption(conn, username: str, account: str) -> tuple[int, int]:
         """Return (cpu_seconds, gpu_seconds) consumed by a user on an account."""
         row = conn.execute(

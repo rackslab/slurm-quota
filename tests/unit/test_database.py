@@ -14,9 +14,11 @@ from slurm_quota.database import (
     init_database,
     is_manager,
     is_operator,
+    list_account_users,
     list_manager_accounts,
     list_managers,
     list_operators,
+    list_user_accounts,
     list_users_with_roles,
     load_gpu_factors,
     prune_resources,
@@ -30,6 +32,7 @@ from slurm_quota.database import (
     set_account_quota,
     set_user_gpu_quota,
     set_user_quota,
+    sync_associations,
     update_user_and_account_resources,
 )
 from tests.test_support import SlurmQuotaTestCase
@@ -922,3 +925,41 @@ class TestDatabaseConfiguration(SlurmQuotaTestCase):
         with self.db_connection() as conn:
             mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
             self.assertEqual(mode.lower(), "wal")
+
+
+class TestSyncAssociations(SlurmQuotaTestCase):
+    def setUp(self):
+        super().setUp()
+        init_database()
+
+    def _associations(self) -> set[tuple[str, str]]:
+        with self.db_connection() as conn:
+            return set(conn.execute("SELECT username, account FROM slurm_associations"))
+
+    def test_sync_inserts_associations_in_empty_cache(self):
+        result = sync_associations({("alice", "hpc"), ("bob", "hpc")})
+        self.assertEqual(result.added, [("alice", "hpc"), ("bob", "hpc")])
+        self.assertEqual(result.removed, [])
+        self.assertEqual(self._associations(), {("alice", "hpc"), ("bob", "hpc")})
+
+    def test_sync_replaces_associations(self):
+        sync_associations({("alice", "hpc"), ("bob", "hpc")})
+        result = sync_associations({("alice", "hpc"), ("alice", "dev")})
+        self.assertEqual(result.added, [("alice", "dev")])
+        self.assertEqual(result.removed, [("bob", "hpc")])
+        self.assertEqual(self._associations(), {("alice", "hpc"), ("alice", "dev")})
+
+    def test_sync_empty_associations(self):
+        sync_associations({("alice", "hpc")})
+        result = sync_associations(set())
+        self.assertEqual(result.added, [])
+        self.assertEqual(result.removed, [("alice", "hpc")])
+        self.assertEqual(self._associations(), set())
+
+    def test_list_user_accounts_and_account_users(self):
+        sync_associations({("alice", "hpc"), ("alice", "dev"), ("bob", "hpc")})
+        with self.db_connection() as conn:
+            self.assertEqual(list_user_accounts(conn, "alice"), {"hpc", "dev"})
+            self.assertEqual(list_user_accounts(conn, "carol"), set())
+            self.assertEqual(list_account_users(conn, "hpc"), {"alice", "bob"})
+            self.assertEqual(list_account_users(conn, "other"), set())

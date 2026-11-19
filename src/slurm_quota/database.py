@@ -8,7 +8,7 @@ import logging
 import os
 import pwd
 import sqlite3
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 import slurm_quota
 from slurm_quota import auth, slurm as slurm_integration
@@ -21,6 +21,18 @@ DEFAULT_QUOTA_SETTINGS = {
     "default_account_quota_cpu_minutes": -1,
     "default_account_quota_gpu_minutes": -1,
 }
+
+
+class AssociationsSync(NamedTuple):
+    """Result of a synchronization of the Slurm associations cache.
+
+    Attributes:
+        added: Sorted (username, account) pairs added to the cache.
+        removed: Sorted (username, account) pairs removed from the cache.
+    """
+
+    added: list[tuple[str, str]]
+    removed: list[tuple[str, str]]
 
 
 def configure_connection(conn: sqlite3.Connection) -> None:
@@ -267,6 +279,27 @@ def create_preallocations_table(cursor: sqlite3.Cursor) -> None:
     """)
 
 
+def create_associations_table(cursor: sqlite3.Cursor) -> None:
+    """Create the slurm_associations table and its index.
+
+    The table caches the (user, account) associations defined in Slurm, as
+    synchronized by slurm-quota-sync. It is used by job_submit.lua to check job
+    accounts and by slurm-quota-serve to select stats, without querying Slurm
+    accounting. Account level associations (without user) are not stored.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS slurm_associations (
+            username TEXT NOT NULL,
+            account TEXT NOT NULL,
+            PRIMARY KEY (username, account)
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_slurm_associations_account
+        ON slurm_associations (account)
+    """)
+
+
 def init_database() -> None:
     """
     Initialize the SQLite database only if it doesn't exist yet. Set permissions on
@@ -314,6 +347,9 @@ def init_database() -> None:
             # Create jobs_preallocations table to track preallocated resources per
             # job (in seconds).
             create_preallocations_table(cursor)
+
+            # Create slurm_associations table to cache Slurm associations.
+            create_associations_table(cursor)
 
             # Create gpu_factors table to store GPU charging factors
             cursor.execute("""
@@ -399,6 +435,49 @@ def set_database_permissions() -> None:
     except OSError as e:
         logger.error(f"Failed to set database permissions: {e}")
         raise
+
+
+def sync_associations(associations: set[tuple[str, str]]) -> AssociationsSync:
+    """Replace the cached Slurm associations with the given associations.
+
+    Args:
+        associations: Set of (username, account) pairs defined in Slurm.
+
+    Returns:
+        The associations added to and removed from the cache.
+    """
+    with connect_database() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT username, account FROM slurm_associations")
+        current = {(str(user), str(account)) for user, account in cursor.fetchall()}
+        added = sorted(associations - current)
+        removed = sorted(current - associations)
+        cursor.executemany(
+            "DELETE FROM slurm_associations WHERE username = ? AND account = ?",
+            removed,
+        )
+        cursor.executemany(
+            "INSERT INTO slurm_associations (username, account) VALUES (?, ?)",
+            added,
+        )
+        conn.commit()
+    return AssociationsSync(added, removed)
+
+
+def list_user_accounts(conn: sqlite3.Connection, username: str) -> set[str]:
+    """Return the Slurm accounts of username from the associations cache."""
+    cursor = conn.execute(
+        "SELECT account FROM slurm_associations WHERE username = ?", (username,)
+    )
+    return {str(account) for (account,) in cursor.fetchall()}
+
+
+def list_account_users(conn: sqlite3.Connection, account: str) -> set[str]:
+    """Return the Slurm users of account from the associations cache."""
+    cursor = conn.execute(
+        "SELECT username FROM slurm_associations WHERE account = ?", (account,)
+    )
+    return {str(username) for (username,) in cursor.fetchall()}
 
 
 def prune_resources(
