@@ -15,6 +15,10 @@ local posix = require("posix")
 
 -- Configuration
 local DB_PATH = "/var/lib/state/slurm-quota/slurm-quota.db"
+-- Reject jobs whose user/account association is not defined in Slurm, based on
+-- the associations cache synchronized by slurm-quota-sync. Associations must be
+-- synchronized before enabling this script, otherwise all jobs are refused.
+local CHECK_ASSOCIATIONS = true
 
 -- Initialize random number generator
 math.randomseed(os.time())
@@ -227,6 +231,26 @@ local function execute_with_retry(stmt, ...)
         end
     end
     return nil, "database is locked"
+end
+
+-- Check the user/account association exists in the Slurm associations cache.
+-- Returns true or false, or nil when the check cannot be performed (database
+-- error).
+local function association_exists(conn, username, account)
+    local stmt, perr = conn:prepare("SELECT 1 AS found FROM slurm_associations WHERE username = ? AND account = ?")
+    if not stmt then
+        slurm.log_error("slurm_job_submit: failed to prepare statement: " .. tostring(perr))
+        return nil
+    end
+    local ok, exerr = execute_with_retry(stmt, username, account)
+    if not ok then
+        slurm.log_error("slurm_job_submit: failed to check association: " .. tostring(exerr))
+        stmt:close()
+        return nil
+    end
+    local row = stmt:fetch(true)
+    stmt:close()
+    return row ~= nil
 end
 
 -- Load default quotas used for newly created users/accounts
@@ -732,6 +756,17 @@ function slurm_job_submit(job_desc, part_list, submit_uid)
         return slurm.SUCCESS -- Allow job if DB unavailable
     end
 
+    -- Reject jobs with invalid accounts before recording anything in database
+    if CHECK_ASSOCIATIONS and association_exists(conn, username, account) == false then
+        conn:close()
+        slurm.log_info(
+            "slurm_job_submit: reject job submission for user %s: invalid account %s",
+            username, tostring(account)
+        )
+        slurm.log_user("job submission rejected: invalid account %s for user %s", tostring(account), username)
+        return slurm.ESLURM_INVALID_ACCOUNT
+    end
+
     local user_data = get_or_create_user(conn, username)
     if not user_data then
         conn:close()
@@ -881,6 +916,19 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
     if not conn then
         slurm.log_info("slurm_job_modify: database connection failed, allowing job modification")
         return slurm.SUCCESS
+    end
+
+    -- Reject modifications to invalid accounts before recording anything in
+    -- database. The account is checked only when modified.
+    if CHECK_ASSOCIATIONS and job_desc.account and job_desc.account ~= "" and username
+        and association_exists(conn, username, job_desc.account) == false then
+        conn:close()
+        slurm.log_info(
+            "slurm_job_modify: reject job modification for user %s: invalid account %s",
+            username, tostring(job_desc.account)
+        )
+        slurm.log_user("job modification rejected: invalid account %s for user %s", tostring(job_desc.account), username)
+        return slurm.ESLURM_INVALID_ACCOUNT
     end
 
     local user_data = get_or_create_user(conn, username)
