@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import sqlite3
@@ -52,6 +53,144 @@ if TYPE_CHECKING:
 logger = logging.getLogger("slurm_quota")
 
 _MAX_REASON_LENGTH = 500
+
+
+def _slurm_user_accounts(username: str) -> set[str]:
+    """Return the Slurm accounts of username, an empty set on failure."""
+    try:
+        return slurm_integration.get_user_accounts(username)
+    except Exception:
+        return set()
+
+
+@dataclasses.dataclass(frozen=True)
+class StatsScope:
+    """Users and accounts returned by a stats request.
+
+    Attributes:
+        usernames: Usernames of user stats, None for all users, an empty set
+            for none.
+        accounts: Accounts of account stats, None for all accounts, an empty
+            set for none.
+    """
+
+    usernames: set[str] | None = None
+    accounts: set[str] | None = None
+
+    @classmethod
+    def for_user(cls, username: str, accounts: set[str]) -> StatsScope:
+        """Return the scope of a single user and the given accounts."""
+        return cls(usernames={username}, accounts=accounts)
+
+    @classmethod
+    def for_account(cls, account: str) -> StatsScope:
+        """Return the scope of a single account."""
+        return cls(usernames=set(), accounts={account})
+
+    @classmethod
+    def resolve(
+        cls,
+        login: str,
+        role: str,
+        username_param: str | None,
+        account_param: str | None,
+    ) -> StatsScope:
+        """Return the stats scope of a request after the role of the user.
+
+        Requests outside the scope of the user raise HTTP 403.
+
+        Args:
+            login: Username of the authenticated user.
+            role: Role of the authenticated user.
+            username_param: Optional username query parameter, or None for no
+                filter.
+            account_param: Optional account query parameter, or None for no
+                filter.
+        """
+        if role in ("admin", "operator"):
+            return cls._resolve_privileged(username_param, account_param)
+        if role == "manager":
+            return cls._resolve_manager(login, username_param, account_param)
+        return cls._resolve_regular_user(login, username_param, account_param)
+
+    @classmethod
+    def _resolve_privileged(
+        cls, username_param: str | None, account_param: str | None
+    ) -> StatsScope:
+        """Return the stats scope of an admin or operator.
+
+        Admins and operators may view everything. With an account parameter,
+        only this account is returned. With a username parameter, this user and
+        their Slurm accounts are returned. Otherwise, all users and accounts are
+        returned.
+        """
+        if account_param:
+            return cls.for_account(account_param)
+        if username_param:
+            return cls.for_user(username_param, _slurm_user_accounts(username_param))
+        return cls()
+
+    @classmethod
+    def _resolve_manager(
+        cls, login: str, username_param: str | None, account_param: str | None
+    ) -> StatsScope:
+        """Return the stats scope of a manager.
+
+        Managers inherit regular user visibility (their own stats and Slurm
+        accounts they belong to) plus read access to assigned managed accounts
+        and their members. The users of the scope are a deduplicated set so
+        members of multiple managed accounts appear once.
+
+        With no assigned accounts, managers behave like regular users. With an
+        account parameter, the account must be assigned or a personal Slurm
+        account. With a username parameter, the manager may always query
+        themselves; other users are returned only when they belong to an
+        assigned account. Account stats for another user's query are limited to
+        the overlap between that user's Slurm accounts and the assigned set.
+        With neither parameter, users are the manager plus all members of
+        assigned accounts (deduplicated) and accounts are assigned accounts plus
+        personal Slurm accounts.
+        """
+        with connect_database() as conn:
+            assigned = set(list_manager_accounts(conn, login))
+        allowed_accounts = assigned | _slurm_user_accounts(login)
+
+        if account_param:
+            if account_param not in allowed_accounts:
+                abort(403, description="Not allowed to view stats for this account")
+            return cls.for_account(account_param)
+
+        if username_param:
+            if username_param == login:
+                return cls.for_user(login, allowed_accounts)
+            user_accounts = _slurm_user_accounts(username_param)
+            if not user_accounts.intersection(assigned):
+                abort(403, description="Not allowed to view stats for other users")
+            return cls.for_user(username_param, assigned.intersection(user_accounts))
+
+        members: set[str] = {login}
+        for account in assigned:
+            members.update(slurm_integration.get_account_users(account))
+        return cls(usernames=members, accounts=allowed_accounts)
+
+    @classmethod
+    def _resolve_regular_user(
+        cls, login: str, username_param: str | None, account_param: str | None
+    ) -> StatsScope:
+        """Return the stats scope of a regular user.
+
+        Regular users may only view themselves and their Slurm accounts. With an
+        account parameter, only this account is returned. Otherwise, the user
+        and their Slurm accounts are returned.
+        """
+        if username_param and username_param != login:
+            abort(403, description="Not allowed to view stats for other users")
+        user_accounts = _slurm_user_accounts(login)
+        if account_param:
+            if account_param not in user_accounts:
+                abort(403, description="Not allowed to view stats for this account")
+            return cls.for_account(account_param)
+        return cls.for_user(login, user_accounts)
 
 
 def _valid_name(value: str) -> bool:
@@ -102,22 +241,14 @@ def _parse_optional_reason(payload: dict[str, Any]) -> str | None:
 
 
 def fetch_stats(
-    usernames_filter: set[str] | None = None,
-    accounts_filter: set[str] | None = None,
+    scope: StatsScope,
 ) -> tuple[dict[str, Any] | None, tuple[Any, int] | None]:
     """Load aggregated user and account consumption stats from the database.
 
-    Applies optional username and account filters before querying. When the
-    database file is missing, returns empty lists without error. When exactly
-    one username is requested and no account filter is set, account stats are
-    scoped to that user's Slurm accounts.
+    When the database file is missing, returns empty lists without error.
 
     Args:
-        usernames_filter: Usernames to include. None selects all users, an empty
-            set selects none.
-        accounts_filter: Accounts to include. None selects all accounts unless
-            a single username is given, in which case that user's Slurm accounts
-            are used. An empty set selects none.
+        scope: Users and accounts to include.
 
     Returns:
         A pair of payload and error response. On success the payload is a dict
@@ -128,90 +259,13 @@ def fetch_stats(
         if not os.path.exists(slurm_quota.DB_PATH):
             return {"users": [], "accounts": []}, None
 
-        accounts_query = accounts_filter
-        if (
-            accounts_query is None
-            and usernames_filter is not None
-            and len(usernames_filter) == 1
-        ):
-            username = next(iter(usernames_filter))
-            try:
-                accounts_query = slurm_integration.get_user_accounts(username)
-            except Exception:
-                accounts_query = set()
-
         with connect_database() as conn:
-            users = query_users_aggregate(conn, usernames_filter)
-            accounts = query_accounts_aggregate(conn, accounts_query)
+            users = query_users_aggregate(conn, scope.usernames)
+            accounts = query_accounts_aggregate(conn, scope.accounts)
         return {"users": users, "accounts": accounts}, None
     except sqlite3.Error as exc:
         logger.error("/stats query failed: %s", exc)
         return None, (jsonify({"error": "db_error"}), 500)
-
-
-def _resolve_manager_stats_scope(
-    login: str,
-    username_param: str | None,
-    account_param: str | None,
-) -> tuple[set[str] | None, set[str] | None]:
-    """Build username and account filters for a manager viewing stats.
-
-    Managers inherit regular user visibility (their own stats and Slurm accounts
-    they belong to) plus read access to assigned managed accounts and their
-    members. Query parameters narrow that scope; requests outside it raise HTTP
-    403. The users filter is a deduplicated set so members of multiple managed
-    accounts appear once.
-
-    Args:
-        login: Username of the authenticated manager.
-        username_param: Optional username query parameter, or None for no filter.
-        account_param: Optional account query parameter, or None for no filter.
-
-    Returns:
-        A pair of usernames_filter and accounts_filter suitable for fetch_stats.
-        With no assigned accounts, managers behave like regular users. With an
-        account parameter, the account must be assigned or a personal Slurm
-        account. With a username parameter, the manager may always query
-        themselves; other users are returned only when they belong to an
-        assigned account. Account stats for another user's query are limited to
-        the overlap between that user's Slurm accounts and the assigned set.
-        With neither parameter, users are the manager plus all members of
-        assigned accounts (deduplicated) and accounts are assigned accounts plus
-        personal Slurm accounts.
-    """
-    with connect_database() as conn:
-        assigned = set(list_manager_accounts(conn, login))
-
-    try:
-        personal = slurm_integration.get_user_accounts(login)
-    except Exception:
-        personal = set()
-    allowed_accounts = assigned | personal
-
-    if account_param:
-        if account_param not in allowed_accounts:
-            abort(403, description="Not allowed to view stats for this account")
-        return set(), {account_param}
-
-    if username_param:
-        if username_param == login:
-            if assigned:
-                return {login}, allowed_accounts
-            return {login}, None
-        try:
-            user_accounts = slurm_integration.get_user_accounts(username_param)
-        except Exception:
-            user_accounts = set()
-        if not user_accounts.intersection(assigned):
-            abort(403, description="Not allowed to view stats for other users")
-        return {username_param}, assigned.intersection(user_accounts)
-
-    members: set[str] = {login}
-    for account in assigned:
-        members.update(slurm_integration.get_account_users(account))
-    if assigned:
-        return members, allowed_accounts
-    return members, None
 
 
 def health() -> Any:
@@ -272,38 +326,8 @@ def stats() -> Any:
         )
 
     login = cast(str, request.user.login)
-    role = login_role(login)
-    usernames_filter: set[str] | None = None
-    accounts_filter: set[str] | None = None
-
-    if role == "manager":
-        usernames_filter, accounts_filter = _resolve_manager_stats_scope(
-            login, username_param, account_param
-        )
-    elif role not in ("admin", "operator"):
-        if username_param and username_param != login:
-            abort(403, description="Not allowed to view stats for other users")
-        if account_param:
-            try:
-                user_accounts = slurm_integration.get_user_accounts(login)
-            except Exception:
-                user_accounts = set()
-            if account_param not in user_accounts:
-                abort(403, description="Not allowed to view stats for this account")
-        if username_param is None and account_param is None:
-            username_param = login
-        if account_param:
-            usernames_filter = set()
-            accounts_filter = {account_param}
-        elif username_param:
-            usernames_filter = {username_param}
-    elif account_param:
-        usernames_filter = set()
-        accounts_filter = {account_param}
-    elif username_param:
-        usernames_filter = {username_param}
-
-    payload, error = fetch_stats(usernames_filter, accounts_filter)
+    scope = StatsScope.resolve(login, login_role(login), username_param, account_param)
+    payload, error = fetch_stats(scope)
     if error is not None:
         response, status = error
         return response, status
