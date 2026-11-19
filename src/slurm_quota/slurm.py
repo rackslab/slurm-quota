@@ -415,7 +415,10 @@ def get_associations() -> set[tuple[str, str]]:
     Associations without user (account level associations) are ignored.
 
     Returns:
-        A set of (username, account) pairs (may be empty when none or on error)
+        A set of (username, account) pairs.
+
+    Raises:
+        SlurmQueryError: If sacctmgr fails.
     """
     try:
         result = subprocess.run(
@@ -431,9 +434,10 @@ def get_associations() -> set[tuple[str, str]]:
             text=True,
             check=True,
         )
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        logger.warning(f"Failed to get associations via sacctmgr: {e}")
-        return set()
+    except (subprocess.CalledProcessError, FileNotFoundError) as err:
+        raise SlurmQueryError(
+            f"Failed to query associations with sacctmgr: {err}"
+        ) from err
     associations: set[tuple[str, str]] = set()
     for line in result.stdout.splitlines():
         user, _, account = line.strip().partition("|")

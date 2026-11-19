@@ -17,6 +17,7 @@ from slurm_quota.reallocate import main as reallocate_main
 from slurm_quota.serve.cli import main as serve_main
 from slurm_quota.serve.prune import main as prune_main
 from slurm_quota.serve.token import main as token_main
+from slurm_quota.sync import main as sync_main
 from slurm_quota.token import ClientToken
 from tests.test_support import SlurmQuotaTestCase
 
@@ -68,6 +69,10 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
     def run_reallocate_main(self, argv):
         with patch.object(sys, "argv", argv):
             reallocate_main()
+
+    def run_sync_main(self, argv):
+        with patch.object(sys, "argv", argv):
+            sync_main()
 
     def run_serve_main(self, argv):
         with patch.object(sys, "argv", argv):

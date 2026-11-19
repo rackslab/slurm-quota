@@ -1,0 +1,27 @@
+[Unit]
+Description=Slurm Quota synchronization of Slurm associations
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/slurm-quota-sync
+User=slurm
+Group=slurm
+StateDirectory=slurm-quota
+ReadWritePaths=/var/lib/state/slurm-quota
+NoNewPrivileges=yes
+LockPersonality=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+MemoryDenyWriteExecute=yes
+AmbientCapabilities=
+CapabilityBoundingSet=

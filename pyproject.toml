@@ -21,6 +21,7 @@ slurm-quota-token = "slurm_quota.serve.token:main"
 slurm-quota-migrate = "slurm_quota.migrate:main"
 slurm-quota-reallocate = "slurm_quota.reallocate:main"
 slurm-quota-prune = "slurm_quota.serve.prune:main"
+slurm-quota-sync = "slurm_quota.sync:main"
 slurm-quota-web = "slurm_quota.web.cli:main"
 
 [project.optional-dependencies]

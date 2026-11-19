@@ -246,6 +246,6 @@ class TestGetAssociations(SlurmQuotaTestCase):
         "slurm_quota.slurm.subprocess.run",
         side_effect=FileNotFoundError("sacctmgr"),
     )
-    def test_get_associations_failure_returns_empty_set(self, _run_mock):
-        with self.assertLogs("slurm_quota", level="WARNING"):
-            self.assertEqual(get_associations(), set())
+    def test_get_associations_failure_raises(self, _run_mock):
+        with self.assertRaisesRegex(SlurmQueryError, "Failed to query associations"):
+            get_associations()
