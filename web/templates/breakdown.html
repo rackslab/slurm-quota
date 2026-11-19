@@ -1,0 +1,36 @@
+{#
+  Breakdown of a user or account row: consumption of each user/account pair of
+  the row, named after the other side of the pair. Rows are hidden until the
+  toggle button of the parent row is clicked.
+#}
+{% from "consumption.html" import consumption_cell with context %}
+
+{% macro breakdown_toggle(row, group, by) %}
+{% if row.breakdown %}
+<button
+  type="button"
+  class="breakdown-toggle"
+  aria-expanded="false"
+  data-breakdown-group="{{ group }}"
+  aria-label="Show {{ row.name }} consumption by {{ by }}"
+  title="Consumption by {{ by }}"
+></button>
+{% endif %}
+{% endmacro %}
+
+{% macro breakdown_rows(target, row, group) %}
+{% for entry in row.breakdown %}
+<tr class="breakdown-row" data-breakdown-group="{{ group }}" hidden>
+  <td class="col-name breakdown-name" title="{{ entry.name }}">{{ entry.name }}</td>
+  <td class="num">{{ consumption_cell(target, row.name, "cpu", entry.cpu, entry.username, entry.account) }}</td>
+  <td></td>
+  <td></td>
+  <td></td>
+  <td class="num">{{ consumption_cell(target, row.name, "gpu", entry.gpu, entry.username, entry.account) }}</td>
+  <td></td>
+  <td></td>
+  <td></td>
+  <td>{{ entry.last_updated }}</td>
+</tr>
+{% endfor %}
+{% endmacro %}

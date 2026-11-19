@@ -14,6 +14,7 @@ from tests.unit.web.support import (
     redirect_path,
     roles_users,
     stats_rows,
+    stats_rows_with_breakdown,
     web_app,
 )
 
@@ -40,7 +41,7 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
             resp = client.get("/?username=alice")
         self.assertEqual(resp.status_code, 200)
         m_client.return_value.stats.assert_called_once_with(
-            "alice", None, show_all=False
+            "alice", None, show_all=False, include_breakdown=True
         )
 
     def test_forwards_account_filter_to_stats_api(self):
@@ -49,7 +50,9 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
             client = web_app().test_client()
             resp = client.get("/?account=hpc")
         self.assertEqual(resp.status_code, 200)
-        m_client.return_value.stats.assert_called_once_with(None, "hpc", show_all=True)
+        m_client.return_value.stats.assert_called_once_with(
+            None, "hpc", show_all=True, include_breakdown=True
+        )
 
     def test_username_and_account_are_mutually_exclusive(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
@@ -117,7 +120,7 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
             m_client.return_value.stats.reset_mock()
             client.get("/")
         m_client.return_value.stats.assert_called_once_with(
-            "alice", None, show_all=False
+            "alice", None, show_all=False, include_breakdown=True
         )
 
     def test_dashboard_persists_account_filter_to_session(self):
@@ -128,7 +131,9 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
             m_client.return_value.stats.reset_mock()
             resp = client.get("/")
         self.assertEqual(resp.status_code, 200)
-        m_client.return_value.stats.assert_called_once_with(None, "hpc", show_all=True)
+        m_client.return_value.stats.assert_called_once_with(
+            None, "hpc", show_all=True, include_breakdown=True
+        )
 
 
 class TestAuthRoutes(SlurmQuotaTestCase):
@@ -193,7 +198,9 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             dashboard = client.get("/")
         self.assertEqual(dashboard.status_code, 200)
         self.assertIn("Signed in as", dashboard.get_data(as_text=True))
-        m_client.return_value.stats.assert_called_with(None, None, show_all=True)
+        m_client.return_value.stats.assert_called_with(
+            None, None, show_all=True, include_breakdown=True
+        )
 
     def test_login_rejects_bad_credentials(self):
         mock_api = MagicMock()
@@ -753,7 +760,9 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
                 },
                 follow_redirects=True,
             )
-        m_client.return_value.stats.assert_called_with(None, "hpc", show_all=True)
+        m_client.return_value.stats.assert_called_with(
+            None, "hpc", show_all=True, include_breakdown=True
+        )
 
     def test_quotas_post_unlimited_sets_minus_one(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
@@ -1151,3 +1160,59 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                 },
             )
         self.assertEqual(resp.status_code, 400)
+
+
+class TestDashboardBreakdown(SlurmQuotaTestCase):
+    def setUp(self):
+        super().setUp()
+        configure_web_app()
+
+    def _get(self, path: str = "/", role: str = "admin") -> str:
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value=role),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows_with_breakdown()
+            resp = web_app().test_client().get(path)
+        self.assertEqual(resp.status_code, 200)
+        return resp.get_data(as_text=True)
+
+    def test_unfiltered_breaks_down_users_and_accounts(self):
+        body = self._get("/")
+        self.assertIn('aria-label="Show alice consumption by account"', body)
+        self.assertIn('aria-label="Show hpc consumption by user"', body)
+        # alice by hpc and (unattributed), hpc by alice and bob
+        self.assertEqual(body.count('class="breakdown-row"'), 4)
+        self.assertIn('title="(unattributed)">(unattributed)</td>', body)
+
+    def test_username_filter_breaks_down_users_only(self):
+        body = self._get("/?username=alice")
+        self.assertIn("Show alice consumption by account", body)
+        self.assertNotIn("Show hpc consumption by user", body)
+
+    def test_account_filter_breaks_down_accounts_only(self):
+        body = self._get("/?account=hpc")
+        self.assertNotIn("Show alice consumption by account", body)
+        self.assertIn("Show hpc consumption by user", body)
+
+    def test_breakdown_rows_are_hidden_until_expanded(self):
+        body = self._get("/")
+        self.assertIn(
+            '<tr class="breakdown-row" data-breakdown-group="user-1" hidden>', body
+        )
+
+    def test_breakdown_rows_have_pair_edit_for_operator(self):
+        body = self._get("/", role="operator")
+        self.assertIn('data-username="alice"', body)
+        self.assertIn('data-account="hpc"', body)
+        self.assertIn('aria-label="Adjust cpu consumption of alice on hpc"', body)
+        self.assertIn('<script type="application/json" id="breakdown-data">', body)
+
+    def test_breakdown_rows_without_edit_for_user(self):
+        body = self._get("/", role="user")
+        self.assertIn('class="breakdown-row"', body)
+        self.assertNotIn("data-username=", body)
+        self.assertNotIn('id="breakdown-data"', body)

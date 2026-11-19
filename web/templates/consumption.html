@@ -1,4 +1,9 @@
-{% macro consumption_cell(target, name, resource, usage) %}
+{#
+  Consumed time of a user or account row. For admins and operators, an Edit
+  button opens the consumption adjustment dialog. On breakdown rows, username
+  and account give both sides of the adjusted user/account pair.
+#}
+{% macro consumption_cell(target, name, resource, usage, username=none, account=none) %}
 {% if user_role in ("admin", "operator") %}
 <span class="stat-with-edit">
   {{ usage.consumed }}
@@ -10,7 +15,13 @@
     data-name="{{ name }}"
     data-resource="{{ resource }}"
     data-consumed="{{ usage.consumed }}"
+    {% if username is not none and account is not none %}
+    data-username="{{ username }}"
+    data-account="{{ account }}"
+    aria-label="Adjust {{ resource }} consumption of {{ username }} on {{ account }}"
+    {% else %}
     aria-label="Adjust {{ resource }} consumption for {{ name }}"
+    {% endif %}
   >Edit</button>
 </span>
 {% else %}

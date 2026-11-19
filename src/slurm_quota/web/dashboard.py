@@ -33,9 +33,48 @@ def _status_class(percent: float | None) -> str:
     return "bar-ok"
 
 
-def decorate_rows(
-    rows: list[dict[str, Any]], name_key: str, display_unit: str
+def decorate_breakdown(
+    entries: list[dict[str, Any]], display_unit: str
 ) -> list[dict[str, Any]]:
+    """Format consumption breakdown entries of user/account pairs for display."""
+    return [
+        {
+            "username": str(entry.get("username", "?")),
+            "account": str(entry.get("account", "?")),
+            "last_updated": entry.get("last_updated") or "n/a",
+            "cpu": {
+                "consumed": format_seconds(
+                    _parse_int(entry.get("consumed_cpu_seconds")), display_unit
+                ),
+            },
+            "gpu": {
+                "consumed": format_seconds(
+                    _parse_int(entry.get("consumed_gpu_seconds")), display_unit
+                ),
+            },
+        }
+        for entry in entries
+    ]
+
+
+def decorate_rows(
+    rows: list[dict[str, Any]],
+    name_key: str,
+    display_unit: str,
+    breakdown: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Format user or account stats rows for display.
+
+    Args:
+        rows: User or account rows from the stats API.
+        name_key: "username" or "account".
+        display_unit: Unit of displayed times.
+        breakdown: Decorated breakdown entries (see decorate_breakdown()) to
+            attach to rows, or None. Each row then lists the entries of its user
+            or account under the breakdown key, named after the other side of
+            the pair.
+    """
+    other_key = "account" if name_key == "username" else "username"
     decorated: list[dict[str, Any]] = []
     for item in rows:
         cpu_consumed = _parse_int(item.get("total_consumed_cpu_seconds"))
@@ -48,9 +87,15 @@ def decorate_rows(
         gpu_quota = _parse_int(item.get("quota_gpu_minutes"), -1)
         gpu_percent = _usage_percent(gpu_consumed, gpu_preallocated, gpu_quota)
 
+        name = str(item.get(name_key, "?"))
         decorated.append(
             {
-                "name": str(item.get(name_key, "?")),
+                "name": name,
+                "breakdown": [
+                    dict(entry, name=entry[other_key])
+                    for entry in breakdown or []
+                    if entry[name_key] == name
+                ],
                 "job_count": _parse_int(item.get("job_count")),
                 "last_updated": item.get("last_updated") or "n/a",
                 "cpu": {

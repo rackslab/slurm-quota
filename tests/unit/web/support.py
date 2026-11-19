@@ -62,6 +62,37 @@ def payload() -> dict:
     }
 
 
+def breakdown_entries() -> list[dict]:
+    return [
+        {
+            "username": "alice",
+            "account": "hpc",
+            "consumed_cpu_seconds": 5400,
+            "consumed_gpu_seconds": 0,
+            "last_updated": "2024-06-01T10:00:00",
+        },
+        {
+            "username": "alice",
+            "account": "(unattributed)",
+            "consumed_cpu_seconds": 1800,
+            "consumed_gpu_seconds": 0,
+            "last_updated": "2024-05-01T10:00:00",
+        },
+        {
+            "username": "bob",
+            "account": "hpc",
+            "consumed_cpu_seconds": 600,
+            "consumed_gpu_seconds": 0,
+            "last_updated": "2024-06-01T10:00:00",
+        },
+    ]
+
+
+def stats_rows_with_breakdown():
+    data = payload()
+    return data["users"], data["accounts"], breakdown_entries()
+
+
 def stats_rows():
     data = payload()
     return data["users"], data["accounts"], data.get("breakdown", [])

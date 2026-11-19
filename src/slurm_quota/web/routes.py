@@ -203,6 +203,7 @@ def dashboard() -> Response | str:
 
     users: list[dict[str, Any]] = []
     accounts: list[dict[str, Any]] = []
+    breakdown: list[dict[str, Any]] = []
 
     logged_in_username = session.get("username")
     if isinstance(logged_in_username, str):
@@ -214,14 +215,27 @@ def dashboard() -> Response | str:
         flash("username and account filters are mutually exclusive.", "error")
     else:
         try:
-            users_raw, accounts_raw, _ = api_client().stats(
+            users_raw, accounts_raw, breakdown_raw = api_client().stats(
                 username,
                 account,
                 show_all=username is None,
+                include_breakdown=True,
             )
-            users = dashboard_view.decorate_rows(users_raw, "username", display_unit)
+            breakdown = dashboard_view.decorate_breakdown(breakdown_raw, display_unit)
+            # The breakdown is attached to the rows targeted by the filter: user
+            # rows for a username, account rows for an account, both without
+            # filter.
+            users = dashboard_view.decorate_rows(
+                users_raw,
+                "username",
+                display_unit,
+                breakdown=None if account else breakdown,
+            )
             accounts = dashboard_view.decorate_rows(
-                accounts_raw, "account", display_unit
+                accounts_raw,
+                "account",
+                display_unit,
+                breakdown=None if username else breakdown,
             )
         except ServiceHTTPError as exc:
             if exc.status == 401:
@@ -237,6 +251,7 @@ def dashboard() -> Response | str:
         "dashboard.html",
         users=users,
         accounts=accounts,
+        breakdown=breakdown,
         selected_username=username or "",
         selected_account=account or "",
         display_unit=display_unit,

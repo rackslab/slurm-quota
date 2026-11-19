@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "quota.html" import quota_cell with context %}
 {% from "consumption.html" import consumption_cell with context %}
+{% from "breakdown.html" import breakdown_toggle, breakdown_rows with context %}
 
 {% block title %}slurm-quota{% endblock %}
 
@@ -109,8 +110,9 @@
   </thead>
   <tbody>
     {% for row in users %}
+    {% set group = "user-" ~ loop.index %}
     <tr>
-      <td class="col-name">{{ row.name }}</td>
+      <td class="col-name">{{ breakdown_toggle(row, group, "account") }}{{ row.name }}</td>
       <td class="num">{{ consumption_cell("user", row.name, "cpu", row.cpu) }}</td>
       <td class="num">{{ row.cpu.preallocated }} ({{ row.job_count }})</td>
       <td class="num">{{ quota_cell("user", row.name, "cpu", row.cpu) }}</td>
@@ -127,6 +129,7 @@
       </td>
       <td>{{ row.last_updated }}</td>
     </tr>
+    {{ breakdown_rows("user", row, group) }}
     {% endfor %}
   </tbody>
 </table>
@@ -157,8 +160,9 @@
   </thead>
   <tbody>
     {% for row in accounts %}
+    {% set group = "account-" ~ loop.index %}
     <tr>
-      <td class="col-name">{{ row.name }}</td>
+      <td class="col-name">{{ breakdown_toggle(row, group, "user") }}{{ row.name }}</td>
       <td class="num">{{ consumption_cell("account", row.name, "cpu", row.cpu) }}</td>
       <td class="num">{{ row.cpu.preallocated }} ({{ row.job_count }})</td>
       <td class="num">{{ quota_cell("account", row.name, "cpu", row.cpu) }}</td>
@@ -175,6 +179,7 @@
       </td>
       <td>{{ row.last_updated }}</td>
     </tr>
+    {{ breakdown_rows("account", row, group) }}
     {% endfor %}
   </tbody>
 </table>
@@ -219,6 +224,7 @@
   </form>
 </dialog>
 
+<script type="application/json" id="breakdown-data">{{ breakdown | tojson }}</script>
 <dialog id="consumption-edit-dialog" class="edit-dialog">
   <form method="post" action="{{ url_for('consumption_post') }}" class="consumption-edit-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -353,6 +359,21 @@
   })();
 
   (function () {
+    document.querySelectorAll(".breakdown-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var expanded = btn.getAttribute("aria-expanded") !== "true";
+        btn.setAttribute("aria-expanded", expanded ? "true" : "false");
+        var group = btn.getAttribute("data-breakdown-group");
+        document.querySelectorAll("tr.breakdown-row").forEach(function (tr) {
+          if (tr.getAttribute("data-breakdown-group") === group) {
+            tr.hidden = !expanded;
+          }
+        });
+      });
+    });
+  })();
+
+  (function () {
     var quotaDialog = document.getElementById("quota-edit-dialog");
     var consumptionDialog = document.getElementById("consumption-edit-dialog");
     if (!quotaDialog && !consumptionDialog) {
@@ -420,14 +441,73 @@
       var usernameInput = consumptionForm.querySelector(".consumption-username-input");
       var accountInput = consumptionForm.querySelector(".consumption-account-input");
 
+      var breakdownData = [];
+      try {
+        breakdownData = JSON.parse(
+          document.getElementById("breakdown-data").textContent
+        );
+      } catch (e) {
+        /* ignore, current pair value is then not displayed */
+      }
+      // Current consumption of the edited row, completed with the consumption
+      // of the user/account pair once both sides are entered. null when the
+      // pair is fixed by the clicked row.
+      var currentBase = null;
+      var currentResource = null;
+
+      var updateCurrent = function () {
+        if (currentBase === null) {
+          return;
+        }
+        var username = usernameInput.value.trim();
+        var account = accountInput.value.trim();
+        var text = currentBase;
+        if (username && account) {
+          var entry = breakdownData.find(function (item) {
+            return item.username === username && item.account === account;
+          });
+          text += entry
+            ? " · by " + username + " on " + account + ": " +
+              entry[currentResource].consumed
+            : " · no consumption recorded by " + username + " on " + account;
+        }
+        consumptionCurrent.textContent = text;
+      };
+
+      usernameInput.addEventListener("input", updateCurrent);
+      accountInput.addEventListener("input", updateCurrent);
+
       document.querySelectorAll('.stat-edit-btn[data-edit="consumption"]').forEach(function (btn) {
         btn.addEventListener("click", function () {
           var target = btn.getAttribute("data-target");
           var name = btn.getAttribute("data-name");
           var resource = btn.getAttribute("data-resource");
           var consumed = btn.getAttribute("data-consumed");
+          var pairUsername = btn.getAttribute("data-username");
+          var pairAccount = btn.getAttribute("data-account");
 
           consumptionForm.querySelector('input[name="resource"]').value = resource;
+          var resourceLabel = resource.toUpperCase();
+          currentResource = resource;
+
+          if (pairUsername !== null && pairAccount !== null) {
+            // Breakdown row: both sides of the pair are known.
+            usernameInput.value = pairUsername;
+            usernameInput.readOnly = true;
+            accountInput.value = pairAccount;
+            accountInput.readOnly = true;
+            consumptionTitle.textContent =
+              "Adjust " + resourceLabel + " consumption of " + pairUsername +
+              " on " + pairAccount;
+            currentBase = null;
+            consumptionCurrent.textContent =
+              "Current consumed by " + pairUsername + " on " + pairAccount + ": " + consumed;
+            deltaInput.value = "";
+            deltaUnitSelect.value = "minutes";
+            consumptionDialog.showModal();
+            deltaInput.focus();
+            return;
+          }
 
           // Consumption is adjusted per user/account pair: the clicked row
           // gives one side of the pair, the other side must be entered.
@@ -438,12 +518,12 @@
           otherInput.value = "";
           otherInput.readOnly = false;
 
-          var resourceLabel = resource.toUpperCase();
           var targetLabel = target === "user" ? "user" : "account";
           consumptionTitle.textContent =
             "Adjust " + resourceLabel + " consumption for " + targetLabel + " " + name;
-          consumptionCurrent.textContent =
+          currentBase =
             "Current consumed (all " + (target === "user" ? "accounts" : "users") + "): " + consumed;
+          updateCurrent();
 
           deltaInput.value = "";
           deltaUnitSelect.value = "minutes";

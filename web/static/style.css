@@ -355,6 +355,48 @@ th {
   text-align: left;
 }
 
+.breakdown-toggle {
+  display: inline-block;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-right: 0.35rem;
+  padding: 0;
+  vertical-align: middle;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: #475569;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.breakdown-toggle::before {
+  content: "▸";
+}
+
+.breakdown-toggle[aria-expanded="true"]::before {
+  content: "▾";
+}
+
+.breakdown-toggle:hover {
+  color: #1d4ed8;
+}
+
+.stats-table tr.breakdown-row td {
+  font-size: 0.9em;
+  color: #475569;
+  background: #f8fafc;
+}
+
+.stats-table td.breakdown-name {
+  padding-left: 1.85rem;
+}
+
+.stats-table td.breakdown-name::before {
+  content: "└ ";
+  color: #94a3b8;
+}
+
 .stats-table.roles-table {
   table-layout: fixed;
 }
