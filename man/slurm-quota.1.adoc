@@ -90,10 +90,15 @@ slurm-quota token --save
 
 === stats
 
-*slurm-quota stats* [<username>] [*--user* <username>] [*--account* <account>] [*--all*] [*--hours* | *--seconds*]
+*slurm-quota stats* [<username>] [*--user* <username>] [*--account* <account>] [*--all* [*--breakdown*]] [*--hours* | *--seconds*]
 
 Display quota statistics (consumed, preallocated, quota, and status) for users
 and/or accounts using the HTTP service (`/stats`).
+
+The consumption of the selected user is broken down by account below the user
+row, and the consumption of the selected account is broken down by user below
+the account row. This breakdown is informational, quotas are defined for users
+and accounts.
 
 Options:
 
@@ -108,6 +113,10 @@ Options:
 
 *--all*::
   Show all users/accounts (no username filter).
+
+*--breakdown*::
+  With *--all*, break down the consumption of each user by account and the
+  consumption of each account by user.
 
 *--hours*::
   Display values in hours instead of minutes.
@@ -129,6 +138,7 @@ slurm-quota stats
 slurm-quota stats alice
 slurm-quota stats --account hpc
 slurm-quota stats --all --hours
+slurm-quota stats --all --breakdown
 slurm-quota stats alice --seconds
 ....
 

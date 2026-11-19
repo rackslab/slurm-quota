@@ -284,6 +284,13 @@ responses: `username` limits users and accounts to that user's Slurm association
 consumed and preallocated times in seconds (`total_consumed_cpu_seconds`, `total_preallocated_cpu_seconds` and their GPU
 counterparts) and quotas in minutes (`quota_cpu_minutes`, `quota_gpu_minutes`, `-1` means unlimited).
 
+With `breakdown=true` (e.g. `/stats?username=alice&breakdown=true`), the object also contains a `breakdown` array with
+the consumption of each user on each account: `username`, `account`, `consumed_cpu_seconds`, `consumed_gpu_seconds` and
+`last_updated`. It lists the user's consumption on each account with `username`, each user's consumption on the account
+with `account`, and all of them without filter. Users only get their own consumption, managers their own consumption and
+the consumption of their assigned accounts, operators and admins everything. The breakdown is informational, quotas
+remain defined for users and accounts.
+
 > [!NOTE]
 > The `username` and `account` query parameters are mutually exclusive.
 
@@ -329,9 +336,11 @@ with a service token (no per-user login).
 
 Users with the **user** role see only their own stats; managers have the same personal visibility plus stats for their
 assigned accounts; operators and admins see all data. Stats are displayed in minutes by default, or in hours or seconds
-with the units selector. Operators and admins can edit quotas and adjust consumption inline on the dashboard,
-consumption adjustments being entered in minutes or seconds. Admins can open **Manage roles** to list all users with
-their role, grant or revoke operator and manager access, and assign accounts to managers.
+with the units selector. User rows can be expanded to show the user's consumption on each account, and account rows to
+show each user's consumption on the account. Operators and admins can edit quotas and adjust consumption inline on the
+dashboard, consumption adjustments being entered in minutes or seconds for a user on an account. Admins can open
+**Manage roles** to list all users with their role, grant or revoke operator and manager access, and assign accounts to
+managers.
 
 It can run standalone with Flask's built-in HTTP server for local testing, or be launched by a production-ready HTTP
 server (for example Apache with mod_wsgi) as a WSGI application. See [Installation](#web-dashboard) for deployment
@@ -646,7 +655,8 @@ slurm-quota token --save
   ```
 
 - `stats`: Displays consumed CPU times, preallocated CPU times (with the number of jobs considered), and quotas for
-  users and accounts.
+  users and accounts. The consumption of a user is broken down by account below the user, and the consumption of an
+  account by user below the account. With `--all`, add `--breakdown` to display this breakdown.
 
 Examples:
 
@@ -656,6 +666,7 @@ slurm-quota stats alice           # details for user alice and their accounts
 slurm-quota stats --user alice    # same as positional username
 slurm-quota stats --account hpc   # only stats for account hpc
 slurm-quota stats --all           # lists all users and all accounts
+slurm-quota stats --all --breakdown  # same, with consumption of users on each account
 slurm-quota stats --hours         # same stats displayed in hours
 slurm-quota stats --seconds       # same stats displayed in seconds
 ```
