@@ -90,7 +90,7 @@ slurm-quota token --save
 
 === stats
 
-*slurm-quota stats* [<username>] [*--user* <username>] [*--account* <account>] [*--all*] [*--hours*]
+*slurm-quota stats* [<username>] [*--user* <username>] [*--account* <account>] [*--all*] [*--hours* | *--seconds*]
 
 Display quota statistics (consumed, preallocated, quota, and status) for users
 and/or accounts using the HTTP service (`/stats`).
@@ -112,10 +112,14 @@ Options:
 *--hours*::
   Display values in hours instead of minutes.
 
+*--seconds*::
+  Display values in seconds instead of minutes.
+
 Notes:
 
 - Positional `<username>` and `--user` are mutually exclusive.
 - User selection (`<username>` or `--user`) and `--account` are mutually exclusive.
+- `--hours` and `--seconds` are mutually exclusive.
 - If no selector is provided, the current OS user is used.
 
 Examples:
@@ -125,6 +129,7 @@ slurm-quota stats
 slurm-quota stats alice
 slurm-quota stats --account hpc
 slurm-quota stats --all --hours
+slurm-quota stats alice --seconds
 ....
 
 === role
@@ -171,7 +176,7 @@ slurm-quota role managers bob add hpc
 
 === adjust
 
-*slurm-quota adjust* *--user* <username> *--account* <account> (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int>)
+*slurm-quota adjust* *--user* <username> *--account* <account> (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int> | *--seconds* <signed_int>)
 
 Adjust consumed CPU/GPU time of one user on one account. Consumption is recorded
 per user/account pair: the adjustment changes both the user total and the account
@@ -196,7 +201,11 @@ Options:
   Signed delta in minutes, must include `+` or `-` (example: `+30`, `-120`).
 
 *--hours* <signed_int>::
-  Signed delta in hours, must include `+` or `-`. Converted to minutes internally.
+  Signed delta in hours, must include `+` or `-`.
+
+*--seconds* <signed_int>::
+  Signed delta in seconds, must include `+` or `-`. The new consumed total is
+  then reported in seconds instead of whole minutes.
 
 Notes:
 
@@ -208,6 +217,7 @@ Examples:
 ....
 slurm-quota adjust --user alice --account projX --cpu --minutes=+30
 slurm-quota adjust --user alice --account projX --gpu --hours=-1
+slurm-quota adjust --user alice --account projX --cpu --seconds=-45
 ....
 
 === user-quota

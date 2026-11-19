@@ -330,9 +330,10 @@ HttpOnly session cookie. Alternatively, set `SLURM_QUOTA_TOKEN` in the web serve
 with a service token (no per-user login).
 
 Users with the **user** role see only their own stats; managers have the same personal visibility plus stats for their
-assigned accounts; operators and admins see all data. Operators and admins can edit quotas and adjust consumption inline
-on the dashboard. Admins can open **Manage roles** to list all users with their role, grant or revoke operator and
-manager access, and assign accounts to managers.
+assigned accounts; operators and admins see all data. Stats are displayed in minutes by default, or in hours or seconds
+with the units selector. Operators and admins can edit quotas and adjust consumption inline on the dashboard,
+consumption adjustments being entered in minutes or seconds. Admins can open **Manage roles** to list all users with
+their role, grant or revoke operator and manager access, and assign accounts to managers.
 
 It can run standalone with Flask's built-in HTTP server for local testing, or be launched by a production-ready HTTP
 server (for example Apache with mod_wsgi) as a WSGI application. See [Installation](#web-dashboard) for deployment
@@ -658,6 +659,7 @@ slurm-quota stats --user alice    # same as positional username
 slurm-quota stats --account hpc   # only stats for account hpc
 slurm-quota stats --all           # lists all users and all accounts
 slurm-quota stats --hours         # same stats displayed in hours
+slurm-quota stats --seconds       # same stats displayed in seconds
 ```
 
 > [!NOTE]
@@ -665,9 +667,9 @@ slurm-quota stats --hours         # same stats displayed in hours
 
 > [!NOTE]
 > Color display of the status bar can be disabled by setting the `NO_COLOR` environment variable. Consumed and
-> preallocated times are displayed in whole minutes (rounded down), or in hours with `--hours`. The `--hours` option
-> changes only the displayed unit: the REST API reports consumed and preallocated times in seconds, and quotas in
-> minutes. Status bars are computed in seconds, like the quota check at job submission.
+> preallocated times are displayed in whole minutes (rounded down) by default, in hours with `--hours` or in seconds
+> with `--seconds`. These options change only the displayed unit: the REST API reports consumed and preallocated times
+> in seconds, and quotas in minutes. Status bars are computed in seconds, like the quota check at job submission.
 
 - `role`: Show or manage REST API roles (requires a saved token or `SLURM_QUOTA_TOKEN`).
 
@@ -730,6 +732,7 @@ slurm-quota adjust --user alice --cpu --minutes=+30     # add 30 consumed CPU mi
 slurm-quota adjust --user alice --gpu --minutes=-120    # subtract 120 consumed GPU minutes
 slurm-quota adjust --account projX --cpu --hours=+2     # add 2 consumed CPU hours (120 minutes)
 slurm-quota adjust --account projX --gpu --hours=-1     # subtract 1 consumed GPU hour (60 minutes)
+slurm-quota adjust --user alice --cpu --seconds=-45     # subtract 45 consumed CPU seconds
 ```
 
 > [!NOTE]

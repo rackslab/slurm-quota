@@ -94,7 +94,7 @@ _slurm_quota() {
             COMPREPLY=($(_slurm_quota_complete_accounts "$cur"))
             return 0
             ;;
-        --minutes|--hours|--user-cpu|--user-gpu|--account-cpu|--account-gpu|--reason)
+        --minutes|--hours|--seconds|--user-cpu|--user-gpu|--account-cpu|--account-gpu|--reason)
             return 0
             ;;
     esac
@@ -115,11 +115,11 @@ _slurm_quota() {
             COMPREPLY=($(compgen -W "$base_opts --save" -- "$cur"))
             ;;
         stats)
-            COMPREPLY=($(compgen -W "$base_opts --user --account --all --hours" -- "$cur"))
+            COMPREPLY=($(compgen -W "$base_opts --user --account --all --hours --seconds" -- "$cur"))
             COMPREPLY+=($(_slurm_quota_complete_users "$cur"))
             ;;
         adjust)
-            COMPREPLY=($(compgen -W "$base_opts --user --account --cpu --gpu --minutes --hours --reason" -- "$cur"))
+            COMPREPLY=($(compgen -W "$base_opts --user --account --cpu --gpu --minutes --hours --seconds --reason" -- "$cur"))
             ;;
         user-quota|user-gpu-quota)
             if [[ "$cur" == -* ]]; then
