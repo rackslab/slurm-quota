@@ -60,3 +60,21 @@ class TestDecorateRows(SlurmQuotaTestCase):
         self.assertEqual(row["gpu"]["quota"], "∞")
         self.assertIsNone(row["gpu"]["percent"])
         self.assertEqual(row["gpu"]["status_class"], "bar-unlimited")
+
+    def test_seconds(self):
+        (row,) = decorate_rows(
+            [
+                _row(
+                    total_consumed_cpu_seconds=599,
+                    total_preallocated_cpu_seconds=30,
+                    quota_cpu_minutes=10,
+                )
+            ],
+            "username",
+            display_unit="seconds",
+        )
+        self.assertEqual(row["cpu"]["consumed"], "599")
+        self.assertEqual(row["cpu"]["preallocated"], "30")
+        self.assertEqual(row["cpu"]["quota"], "600")
+        self.assertEqual(row["cpu"]["quota_minutes"], 10)
+        self.assertEqual(row["gpu"]["quota"], "∞")

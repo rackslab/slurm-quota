@@ -80,6 +80,35 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
         self.assertIn('name="unit"', body)
         self.assertIn('value="hours"', body)
 
+    def test_unit_seconds_displays_seconds(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            resp = client.get("/?unit=seconds")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_data(as_text=True)
+        self.assertIn("7200", body)
+        self.assertIn("36000", body)
+        self.assertRegex(body, r'value="seconds"\s+checked')
+
+    def test_unit_seconds_is_restored_from_session(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            client.get("/?unit=s")
+            resp = client.get("/")
+        body = resp.get_data(as_text=True)
+        self.assertRegex(body, r'value="seconds"\s+checked')
+        self.assertIn("36000", body)
+
+    def test_default_unit_is_minutes(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            resp = client.get("/")
+        body = resp.get_data(as_text=True)
+        self.assertRegex(body, r'value="minutes"\s+checked')
+
     def test_dashboard_restores_filters_from_session(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
             m_client.return_value.stats.return_value = stats_rows()

@@ -59,7 +59,7 @@
         type="radio"
         name="unit"
         value="minutes"
-        {% if not display_hours %}checked{% endif %}
+        {% if display_unit == "minutes" %}checked{% endif %}
       >
       Minutes
     </label>
@@ -68,9 +68,18 @@
         type="radio"
         name="unit"
         value="hours"
-        {% if display_hours %}checked{% endif %}
+        {% if display_unit == "hours" %}checked{% endif %}
       >
       Hours
+    </label>
+    <label class="unit-radio">
+      <input
+        type="radio"
+        name="unit"
+        value="seconds"
+        {% if display_unit == "seconds" %}checked{% endif %}
+      >
+      Seconds
     </label>
   </fieldset>
   <button type="submit">Apply</button>

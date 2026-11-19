@@ -23,7 +23,7 @@ from flask import (
 )
 
 from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableError
-from slurm_quota.units import HOURS, MINUTES
+from slurm_quota.units import HOURS, MINUTES, SECONDS, UNITS
 from slurm_quota.web import dashboard as dashboard_view
 from slurm_quota.web.auth import (
     api_client,
@@ -49,21 +49,26 @@ def _web_app() -> SlurmQuotaWebApp:
     return cast("SlurmQuotaWebApp", current_app)
 
 
-def _display_hours_from_unit(unit: str, hours_legacy: str) -> bool:
-    """Return whether stats should be shown in hours from query parameters.
+def _display_unit_from_query(unit: str, hours_legacy: str) -> str:
+    """Return the unit in which stats are shown from query parameters.
 
-    The unit argument accepts hours/h or minutes/m/min. When unit is absent,
-    the legacy hours flag (1, true, etc.) is consulted. Defaults to minutes.
+    The unit argument accepts seconds/s/sec, minutes/m/min or hours/h. When unit
+    is absent or unknown, the legacy hours flag (1, true, etc.) is consulted.
+    Defaults to minutes.
     """
     normalized = unit.strip().lower()
+    if normalized in ("seconds", "s", "sec"):
+        return SECONDS
     if normalized in ("hours", "h"):
-        return True
+        return HOURS
     if normalized in ("minutes", "m", "min"):
-        return False
-    return hours_legacy.lower() in {"1", "true", "yes", "on"}
+        return MINUTES
+    if hours_legacy.lower() in {"1", "true", "yes", "on"}:
+        return HOURS
+    return MINUTES
 
 
-def _resolve_dashboard_filters() -> tuple[str | None, str | None, bool]:
+def _resolve_dashboard_filters() -> tuple[str | None, str | None, str]:
     """Resolve dashboard filter state using query parameters and session.
 
     When the request includes any of username, account, unit, or hours query
@@ -72,32 +77,33 @@ def _resolve_dashboard_filters() -> tuple[str | None, str | None, bool]:
     last saved session filters are restored. With neither query parameters nor a
     saved session, all filters are cleared and minutes are used.
 
-    Returns (username, account, display_hours). username and account are None
+    Returns (username, account, display_unit). username and account are None
     when unset; they are mutually exclusive when both are set by the user
     (handled by the caller).
     """
     if any(key in request.args for key in ("username", "account", "unit", "hours")):
         username = (request.args.get("username") or "").strip() or None
         account = (request.args.get("account") or "").strip() or None
-        display_hours = _display_hours_from_unit(
+        display_unit = _display_unit_from_query(
             request.args.get("unit") or "",
             request.args.get("hours") or "",
         )
         session["dashboard_filters"] = {
             "username": username or "",
             "account": account or "",
-            "unit": "hours" if display_hours else "minutes",
+            "unit": display_unit,
         }
-        return username, account, display_hours
+        return username, account, display_unit
 
     stored = session.get("dashboard_filters")
     if isinstance(stored, dict):
         username = (stored.get("username") or "").strip() or None
         account = (stored.get("account") or "").strip() or None
-        display_hours = stored.get("unit") == "hours"
-        return username, account, display_hours
+        stored_unit = stored.get("unit")
+        display_unit = stored_unit if stored_unit in UNITS else MINUTES
+        return username, account, display_unit
 
-    return None, None, False
+    return None, None, MINUTES
 
 
 def login() -> Response | str:
@@ -193,8 +199,7 @@ def logout() -> Any:
 
 def dashboard() -> Response | str:
     role = current_role()
-    username, account, display_hours = _resolve_dashboard_filters()
-    display_unit = HOURS if display_hours else MINUTES
+    username, account, display_unit = _resolve_dashboard_filters()
 
     users: list[dict[str, Any]] = []
     accounts: list[dict[str, Any]] = []
@@ -234,8 +239,7 @@ def dashboard() -> Response | str:
         accounts=accounts,
         selected_username=username or "",
         selected_account=account or "",
-        display_hours=display_hours,
-        unit_label="hours" if display_hours else "minutes",
+        display_unit=display_unit,
         auth_required=True,
         logged_in_username=logged_in_username,
         user_role=role,
