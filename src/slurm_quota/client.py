@@ -378,9 +378,9 @@ class APIClient:
             body=body,
             require_token=True,
         )
-        total = payload.get("total_consumed_minutes")
+        total = payload.get("total_consumed_seconds")
         if not isinstance(total, int):
-            raise ValueError("adjust response did not contain total_consumed_minutes")
+            raise ValueError("adjust response did not contain total_consumed_seconds")
         return total
 
     def get_gpu_factors(self) -> dict[str, Any]:

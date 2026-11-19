@@ -26,12 +26,12 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
                 json={"delta_minutes": 30},
             )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get_json(), {"total_consumed_minutes": 130})
+        self.assertEqual(resp.get_json(), {"total_consumed_seconds": 7800})
         self.assertEqual(
             log_cm.output,
             [
                 "INFO:slurm_quota:consumption cpu: manager=alice user=bob "
-                "account=hpc delta=+30 total=130 reason=n/a",
+                "account=hpc delta=+30 total=7800s reason=n/a",
             ],
         )
         with self.db_connection() as conn:
@@ -52,12 +52,12 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
                 json={"delta_minutes": -20},
             )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get_json(), {"total_consumed_minutes": 30})
+        self.assertEqual(resp.get_json(), {"total_consumed_seconds": 1800})
         self.assertEqual(
             log_cm.output,
             [
                 "INFO:slurm_quota:consumption gpu: manager=carol user=bob "
-                "account=hpc delta=-20 total=30 reason=n/a",
+                "account=hpc delta=-20 total=1800s reason=n/a",
             ],
         )
 
@@ -74,7 +74,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             json={"delta_minutes": 15},
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get_json(), {"total_consumed_minutes": 15})
+        self.assertEqual(resp.get_json(), {"total_consumed_seconds": 900})
 
     def test_negative_delta_clamped_at_zero(self):
         init_database()
@@ -88,7 +88,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             json={"delta_minutes": -100},
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get_json(), {"total_consumed_minutes": 0})
+        self.assertEqual(resp.get_json(), {"total_consumed_seconds": 0})
 
     def test_user_cannot_adjust_consumption(self):
         init_database()
@@ -164,7 +164,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             json={"delta_minutes": 30},
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get_json(), {"total_consumed_minutes": 130})
+        self.assertEqual(resp.get_json(), {"total_consumed_seconds": 7800})
 
     def test_invalid_body_returns_400(self):
         self._request_expecting_abort(
@@ -203,7 +203,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
             log_cm.output,
             [
                 "INFO:slurm_quota:consumption cpu: manager=alice user=bob "
-                "account=hpc delta=+30 total=130 reason='correct billing error'",
+                "account=hpc delta=+30 total=7800s reason='correct billing error'",
             ],
         )
 

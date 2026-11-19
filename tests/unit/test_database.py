@@ -577,7 +577,7 @@ class TestAdjustConsumedMinutes(SlurmQuotaTestCase):
             conn.commit()
 
         new_value = adjust_consumed_minutes("alice", "hpc", "cpu", 25)
-        self.assertEqual(new_value, 125)
+        self.assertEqual(new_value, 7500)
 
         with self.db_connection() as conn:
             self.assertEqual(self.pair_consumption(conn, "alice", "hpc"), (7500, 0))
@@ -591,7 +591,7 @@ class TestAdjustConsumedMinutes(SlurmQuotaTestCase):
             conn.commit()
 
         new_value = adjust_consumed_minutes("alice", "dev", "gpu", 3)
-        self.assertEqual(new_value, 3)
+        self.assertEqual(new_value, 180)
 
         with self.db_connection() as conn:
             self.assertEqual(self.pair_consumption(conn, "alice", "dev"), (0, 180))
@@ -608,7 +608,7 @@ class TestAdjustConsumedMinutes(SlurmQuotaTestCase):
         with self.db_connection() as conn:
             self.assertEqual(self.pair_consumption(conn, "alice", "hpc"), (0, 0))
 
-    def test_adjust_returns_floored_minutes(self):
+    def test_adjust_returns_seconds(self):
         init_database()
         with self.db_connection() as conn:
             self.insert_consumption(conn, "alice", "hpc")
@@ -617,7 +617,7 @@ class TestAdjustConsumedMinutes(SlurmQuotaTestCase):
             )
             conn.commit()
 
-        self.assertEqual(adjust_consumed_minutes("alice", "hpc", "cpu", 1), 2)
+        self.assertEqual(adjust_consumed_minutes("alice", "hpc", "cpu", 1), 179)
         with self.db_connection() as conn:
             self.assertEqual(self.pair_consumption(conn, "alice", "hpc"), (179, 0))
 

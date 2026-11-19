@@ -671,10 +671,10 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
     def test_adjust_consumption_sends_patch_for_pair_cpu(self):
         with patch(
             "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({"total_consumed_minutes": 130}),
+            return_value=_FakeUrlopenResponse({"total_consumed_seconds": 7800}),
         ) as m_urlopen:
             total = APIClient(token="jwt").adjust_consumption("bob", "hpc", "cpu", 30)
-        self.assertEqual(total, 130)
+        self.assertEqual(total, 7800)
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.method, "PATCH")
         self.assertIn("/consumption/bob/hpc/cpu", req.full_url)
@@ -684,7 +684,7 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
     def test_adjust_consumption_sends_reason_when_provided(self):
         with patch(
             "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({"total_consumed_minutes": 130}),
+            return_value=_FakeUrlopenResponse({"total_consumed_seconds": 7800}),
         ) as m_urlopen:
             APIClient(token="jwt").adjust_consumption(
                 "bob", "hpc", "cpu", 30, reason="correct billing error"
@@ -696,7 +696,7 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
     def test_adjust_consumption_sends_patch_for_pair_gpu(self):
         with patch(
             "slurm_quota.client.urlopen",
-            return_value=_FakeUrlopenResponse({"total_consumed_minutes": 0}),
+            return_value=_FakeUrlopenResponse({"total_consumed_seconds": 0}),
         ) as m_urlopen:
             total = APIClient(token="jwt").adjust_consumption("bob", "hpc", "gpu", -10)
         self.assertEqual(total, 0)

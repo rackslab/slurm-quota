@@ -834,7 +834,7 @@ def adjust_consumed_minutes(
         delta_minutes: Signed minutes to add/subtract
 
     Returns:
-        New consumed time of the pair, in whole minutes (floored)
+        New consumed time of the pair, in seconds
 
     Raises:
         ValueError: If resource is invalid or user/account row is missing
@@ -877,7 +877,7 @@ def adjust_consumed_minutes(
             (username, account, updated_value),
         )
         conn.commit()
-        return updated_value // 60
+        return updated_value
 
 
 def _query_aggregate(

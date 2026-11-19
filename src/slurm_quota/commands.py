@@ -224,7 +224,7 @@ def adjust_command(
         print(
             f"Successfully adjusted {resource.upper()} consumed time "
             f"for user {username} on account {account}: "
-            f"{delta_source:+d} {unit_label} (new total: {new_total} minutes)"
+            f"{delta_source:+d} {unit_label} (new total: {new_total // 60} minutes)"
         )
 
     except ServiceHTTPError as exc:

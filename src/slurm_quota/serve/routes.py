@@ -532,7 +532,7 @@ def adjust_consumption(username: str, account: str, resource: str) -> Any:
         logger.error("adjust %s consumption failed: %s", resource, exc)
         return jsonify({"error": "db_error"}), 500
     logger.info(
-        "consumption %s: manager=%s user=%s account=%s delta=%+d total=%d reason=%s",
+        "consumption %s: manager=%s user=%s account=%s delta=%+d total=%ds reason=%s",
         resource,
         cast(str, request.user.login),
         username,
@@ -541,7 +541,7 @@ def adjust_consumption(username: str, account: str, resource: str) -> Any:
         total,
         "n/a" if reason is None else repr(reason),
     )
-    return jsonify({"total_consumed_minutes": total})
+    return jsonify({"total_consumed_seconds": total})
 
 
 @require_role("admin", "operator")

@@ -21,11 +21,11 @@ class TestAdjustCommand(FunctionalAPICliBase):
         if method == "PATCH" and url.endswith("/consumption/alice/hpc/cpu"):
             body = json.loads(request.data.decode("utf-8"))
             self.assertIn("delta_minutes", body)
-            return FakeJsonUrlopenResponse({"total_consumed_minutes": 130})
+            return FakeJsonUrlopenResponse({"total_consumed_seconds": 7800})
         if method == "PATCH" and url.endswith("/consumption/alice/hpc/gpu"):
             body = json.loads(request.data.decode("utf-8"))
             self.assertIn("delta_minutes", body)
-            return FakeJsonUrlopenResponse({"total_consumed_minutes": 210})
+            return FakeJsonUrlopenResponse({"total_consumed_seconds": 12630})
         raise AssertionError(f"unexpected request: {method} {url}")
 
     def test_adjust_pair_cpu_minutes(self):
