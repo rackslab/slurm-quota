@@ -90,15 +90,15 @@ slurm-quota token --save
 
 === stats
 
-*slurm-quota stats* [<username>] [*--user* <username>] [*--account* <account>] [*--all* [*--breakdown*]] [*--hours* | *--seconds*]
+*slurm-quota stats* [<username>] [*--user* <username>] [*--account* <account>] [*--all*] [*--breakdown* | *--no-breakdown*] [*--hours* | *--seconds*]
 
 Display quota statistics (consumed, preallocated, quota, and status) for users
 and/or accounts using the HTTP service (`/stats`).
 
-The consumption of the selected user is broken down by account below the user
-row, and the consumption of the selected account is broken down by user below
-the account row. This breakdown is informational, quotas are defined for users
-and accounts.
+By default, the consumption of the selected user is broken down by account
+below the user row, and the consumption of the selected account is broken down
+by user below the account row. This breakdown is informational, quotas are
+defined for users and accounts.
 
 Options:
 
@@ -115,8 +115,12 @@ Options:
   Show all users/accounts (no username filter).
 
 *--breakdown*::
-  With *--all*, break down the consumption of each user by account and the
-  consumption of each account by user.
+  Break down the consumption of users by account and the consumption of
+  accounts by user. This is the default for a single user or account. With
+  *--all*, both user and account rows are broken down.
+
+*--no-breakdown*::
+  Do not break down the consumption of the selected user or account.
 
 *--hours*::
   Display values in hours instead of minutes.
@@ -129,6 +133,7 @@ Notes:
 - Positional `<username>` and `--user` are mutually exclusive.
 - User selection (`<username>` or `--user`) and `--account` are mutually exclusive.
 - `--hours` and `--seconds` are mutually exclusive.
+- `--breakdown` and `--no-breakdown` are mutually exclusive.
 - If no selector is provided, the current OS user is used.
 
 Examples:
@@ -140,6 +145,7 @@ slurm-quota stats --account hpc
 slurm-quota stats --all --hours
 slurm-quota stats --all --breakdown
 slurm-quota stats alice --seconds
+slurm-quota stats alice --no-breakdown
 ....
 
 === role

@@ -656,7 +656,8 @@ slurm-quota token --save
 
 - `stats`: Displays consumed CPU times, preallocated CPU times (with the number of jobs considered), and quotas for
   users and accounts. The consumption of a user is broken down by account below the user, and the consumption of an
-  account by user below the account. With `--all`, add `--breakdown` to display this breakdown.
+  account by user below the account, unless `--no-breakdown` is given. With `--all`, add `--breakdown` to display this
+  breakdown.
 
 Examples:
 
@@ -667,6 +668,7 @@ slurm-quota stats --user alice    # same as positional username
 slurm-quota stats --account hpc   # only stats for account hpc
 slurm-quota stats --all           # lists all users and all accounts
 slurm-quota stats --all --breakdown  # same, with consumption of users on each account
+slurm-quota stats --no-breakdown  # current user without consumption on each account
 slurm-quota stats --hours         # same stats displayed in hours
 slurm-quota stats --seconds       # same stats displayed in seconds
 ```
