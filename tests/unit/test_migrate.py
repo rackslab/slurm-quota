@@ -165,10 +165,13 @@ class TestMigrateConsumptionToPairs(SlurmQuotaTestCase):
                 ("1700000000",),
             )
             self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
-            # Preallocations are untouched and foreign keys still enforced
+            # Preallocations are kept, converted to seconds, and foreign keys
+            # still enforced
             self.assertEqual(
-                conn.execute("SELECT COUNT(*) FROM jobs_preallocations").fetchone()[0],
-                1,
+                conn.execute(
+                    "SELECT job_uuid, preallocated_cpu_seconds FROM jobs_preallocations"
+                ).fetchall(),
+                [("j1", 300)],
             )
             with self.assertRaises(sqlite3.IntegrityError):
                 conn.execute(
@@ -272,6 +275,9 @@ class TestMigrateConsumptionToPairs(SlurmQuotaTestCase):
                 VALUES ('u1', 4);
                 INSERT INTO accounts (account, total_consumed_cpu_minutes)
                 VALUES ('a1', 4);
+                INSERT INTO jobs_preallocations (
+                    job_uuid, username, account, preallocated_cpu_minutes
+                ) VALUES ('j1', 'u1', 'a1', 3);
                 """
             )
         migrate_database()
@@ -279,10 +285,16 @@ class TestMigrateConsumptionToPairs(SlurmQuotaTestCase):
             self.assertEqual(self.pair_consumption(conn, "u1", UNATTRIBUTED), (240, 0))
             self.assertEqual(self.pair_consumption(conn, UNATTRIBUTED, "a1"), (240, 0))
             columns = [r[1] for r in conn.execute("PRAGMA table_info(users)")]
+            preallocations = conn.execute(
+                "SELECT job_uuid, preallocated_cpu_seconds, preallocated_gpu_seconds, "
+                "array_size FROM jobs_preallocations"
+            ).fetchall()
         self.assertEqual(
             columns,
             ["username", "quota_cpu_minutes", "quota_gpu_minutes", "last_updated"],
         )
+        # Columns added by intermediate steps are converted along
+        self.assertEqual(preallocations, [("j1", 180, 0, 1)])
 
     def test_new_database_needs_no_migration(self):
         init_database()
@@ -321,3 +333,144 @@ class TestMigrateConsumptionToPairs(SlurmQuotaTestCase):
                             "WHERE name = 'user_account_consumption'"
                         ).fetchone()
                     )
+
+
+PREALLOCATION_COLUMNS = [
+    "job_uuid",
+    "username",
+    "account",
+    "preallocated_cpu_seconds",
+    "preallocated_gpu_seconds",
+    "array_size",
+    "created_at",
+]
+
+
+class TestMigratePreallocationsToSeconds(SlurmQuotaTestCase):
+    def _create_v3_database(self):
+        with self.db_connection() as conn:
+            conn.executescript(V3_SCHEMA)
+            conn.execute("INSERT INTO users (username) VALUES ('u1')")
+            conn.execute("INSERT INTO accounts (account) VALUES ('a1')")
+            conn.executemany(
+                """
+                INSERT INTO jobs_preallocations (
+                    job_uuid, username, account, preallocated_cpu_minutes,
+                    preallocated_gpu_minutes, array_size, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    ("j1", "u1", "a1", 5, 2, 3, "2026-01-01 10:00:00"),
+                    ("j2", "u1", "a1", 7, None, None, "2026-01-02 10:00:00"),
+                ],
+            )
+            conn.commit()
+
+    def _preallocations(self, conn):
+        return conn.execute(
+            f"SELECT {', '.join(PREALLOCATION_COLUMNS)} "
+            "FROM jobs_preallocations ORDER BY job_uuid"
+        ).fetchall()
+
+    def test_converts_preallocations_to_seconds(self):
+        self._create_v3_database()
+        with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+            migrate_database()
+        self.assertIn(
+            "INFO:slurm_quota:Migration completed: 2 jobs preallocations converted "
+            "to seconds",
+            log_cm.output,
+        )
+        with self.db_connection() as conn:
+            columns = [
+                r[1] for r in conn.execute("PRAGMA table_info(jobs_preallocations)")
+            ]
+            self.assertEqual(columns, PREALLOCATION_COLUMNS)
+            self.assertEqual(
+                self._preallocations(conn),
+                [
+                    ("j1", "u1", "a1", 300, 120, 3, "2026-01-01 10:00:00"),
+                    ("j2", "u1", "a1", 420, 0, 1, "2026-01-02 10:00:00"),
+                ],
+            )
+            # Foreign keys to users and accounts are kept
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute(
+                    "INSERT INTO jobs_preallocations (job_uuid, username, account, "
+                    "preallocated_cpu_seconds) VALUES ('j3', 'nobody', 'a1', 60)"
+                )
+
+    def test_aggregates_match_legacy_preallocations(self):
+        self._create_v3_database()
+        migrate_database()
+        with self.db_connection() as conn:
+            (user,) = query_users_aggregate(conn, {"u1"})
+        self.assertEqual(user["total_preallocated_cpu_minutes"], 5 * 3 + 7)
+        self.assertEqual(user["total_preallocated_gpu_minutes"], 2 * 3)
+        self.assertEqual(user["job_count"], 4)
+
+    def test_migration_is_idempotent(self):
+        self._create_v3_database()
+        migrate_database()
+        with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+            migrate_database()
+        self.assertIn(
+            "INFO:slurm_quota:Migration not needed: preallocations already stored "
+            "in seconds",
+            log_cm.output,
+        )
+        with self.db_connection() as conn:
+            columns = [
+                r[1] for r in conn.execute("PRAGMA table_info(jobs_preallocations)")
+            ]
+            # Legacy minutes columns are not added back
+            self.assertEqual(columns, PREALLOCATION_COLUMNS)
+            self.assertEqual(len(self._preallocations(conn)), 2)
+
+    def test_new_database_needs_no_migration(self):
+        init_database()
+        with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+            migrate_database()
+        self.assertIn(
+            "INFO:slurm_quota:Migration not needed: preallocations already stored "
+            "in seconds",
+            log_cm.output,
+        )
+
+    def test_failure_rolls_back_all_v4_steps(self):
+        self._create_v3_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "UPDATE users SET total_consumed_cpu_minutes = 10 WHERE username = 'u1'"
+            )
+            conn.commit()
+        with (
+            patch(
+                "slurm_quota.migrate.create_preallocations_table",
+                side_effect=sqlite3.OperationalError("boom"),
+            ),
+            self.assertRaisesRegex(sqlite3.OperationalError, "boom"),
+        ):
+            migrate_database()
+        with self.db_connection() as conn:
+            # Consumption migration, run before, is rolled back too
+            user_columns = [r[1] for r in conn.execute("PRAGMA table_info(users)")]
+            self.assertIn("total_consumed_cpu_minutes", user_columns)
+            self.assertIsNone(
+                conn.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE name IN ('user_account_consumption', "
+                    "'jobs_preallocations_legacy')"
+                ).fetchone()
+            )
+            columns = [
+                r[1] for r in conn.execute("PRAGMA table_info(jobs_preallocations)")
+            ]
+            self.assertIn("preallocated_cpu_minutes", columns)
+            self.assertEqual(
+                conn.execute(
+                    "SELECT job_uuid, preallocated_cpu_minutes "
+                    "FROM jobs_preallocations ORDER BY job_uuid"
+                ).fetchall(),
+                [("j1", 5), ("j2", 7)],
+            )

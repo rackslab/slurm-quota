@@ -49,12 +49,12 @@ class TestPruneCommand(FunctionalCLIBase):
             conn.executemany(
                 """
                 INSERT INTO jobs_preallocations (
-                    job_uuid, username, account, preallocated_cpu_minutes
+                    job_uuid, username, account, preallocated_cpu_seconds
                 ) VALUES (?, ?, ?, ?)
                 """,
                 [
-                    ("uuid-orphan", "u_with_orphan", "a_with_orphan", 5),
-                    ("uuid-active", "u_active", "a_active", 5),
+                    ("uuid-orphan", "u_with_orphan", "a_with_orphan", 300),
+                    ("uuid-active", "u_active", "a_active", 300),
                 ],
             )
             conn.commit()
@@ -115,10 +115,10 @@ class TestPruneCommand(FunctionalCLIBase):
             conn.executemany(
                 """
                 INSERT INTO jobs_preallocations (
-                    job_uuid, username, account, preallocated_cpu_minutes
+                    job_uuid, username, account, preallocated_cpu_seconds
                 ) VALUES (?, ?, ?, ?)
                 """,
-                [("uuid-orphan", "u1", "a1", 5), ("uuid-active", "u2", "a2", 5)],
+                [("uuid-orphan", "u1", "a1", 300), ("uuid-active", "u2", "a2", 300)],
             )
             conn.commit()
         with (
@@ -222,10 +222,10 @@ class TestPruneCommand(FunctionalCLIBase):
             conn.execute(
                 """
                 INSERT INTO jobs_preallocations (
-                    job_uuid, username, account, preallocated_cpu_minutes
+                    job_uuid, username, account, preallocated_cpu_seconds
                 ) VALUES (?, ?, ?, ?)
                 """,
-                ("uuid-linked", "u_link", "a1", 5),
+                ("uuid-linked", "u_link", "a1", 300),
             )
             conn.commit()
 
@@ -269,10 +269,10 @@ class TestPruneCommand(FunctionalCLIBase):
             conn.execute(
                 """
                 INSERT INTO jobs_preallocations (
-                    job_uuid, username, account, preallocated_cpu_minutes
+                    job_uuid, username, account, preallocated_cpu_seconds
                 ) VALUES (?, ?, ?, ?)
                 """,
-                ("uuid-linked", "u1", "a_link", 5),
+                ("uuid-linked", "u1", "a_link", 300),
             )
             conn.commit()
 
@@ -317,10 +317,10 @@ class TestPruneCommand(FunctionalCLIBase):
             conn.execute(
                 """
                 INSERT INTO jobs_preallocations (
-                    job_uuid, username, account, preallocated_cpu_minutes
+                    job_uuid, username, account, preallocated_cpu_seconds
                 ) VALUES (?, ?, ?, ?)
                 """,
-                ("uuid1", "u2", "a1", 5),
+                ("uuid1", "u2", "a1", 300),
             )
             conn.commit()
 
@@ -548,10 +548,10 @@ class TestPruneCommand(FunctionalCLIBase):
             conn.execute(
                 """
                 INSERT INTO jobs_preallocations (
-                    job_uuid, username, account, preallocated_cpu_minutes
+                    job_uuid, username, account, preallocated_cpu_seconds
                 ) VALUES (?, ?, ?, ?)
                 """,
-                ("uuid-active", "u1", "a1", 5),
+                ("uuid-active", "u1", "a1", 300),
             )
             conn.commit()
 

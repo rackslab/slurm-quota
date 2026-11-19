@@ -18,6 +18,7 @@ from slurm_quota.cli import add_common_arguments
 from slurm_quota.database import (
     connect_database,
     create_consumption_table,
+    create_preallocations_table,
     enable_wal_mode,
     set_database_permissions,
 )
@@ -192,6 +193,38 @@ def migrate_consumption_to_pairs(cursor: sqlite3.Cursor) -> None:
     logger.info("Migration completed: consumption stored per user/account pair")
 
 
+def migrate_preallocations_to_seconds(cursor: sqlite3.Cursor) -> None:
+    """Convert jobs preallocations from minutes to seconds.
+
+    The table is rebuilt, as ALTER TABLE DROP COLUMN is not available with
+    SQLite < 3.35. It must run within _rebuild_transaction(). Nothing is done when
+    the table has no legacy preallocated minutes column.
+    """
+    if "preallocated_cpu_minutes" not in _table_columns(cursor, "jobs_preallocations"):
+        logger.info("Migration not needed: preallocations already stored in seconds")
+        return
+
+    cursor.execute(
+        "ALTER TABLE jobs_preallocations RENAME TO jobs_preallocations_legacy"
+    )
+    create_preallocations_table(cursor)
+    cursor.execute("""
+        INSERT INTO jobs_preallocations (
+            job_uuid, username, account, preallocated_cpu_seconds,
+            preallocated_gpu_seconds, array_size, created_at
+        )
+        SELECT job_uuid, username, account, preallocated_cpu_minutes * 60,
+               COALESCE(preallocated_gpu_minutes, 0) * 60,
+               COALESCE(array_size, 1), created_at
+        FROM jobs_preallocations_legacy
+    """)
+    converted = cursor.rowcount
+    cursor.execute("DROP TABLE jobs_preallocations_legacy")
+    logger.info(
+        "Migration completed: %d jobs preallocations converted to seconds", converted
+    )
+
+
 def migrate_database() -> None:
     """
     Migrate existing database schema to add new columns if needed.
@@ -285,7 +318,12 @@ def migrate_database() -> None:
                 )
 
             # Check and add GPU column to jobs_preallocations table
-            if "preallocated_gpu_minutes" not in columns:
+            # Preallocations columns are in minutes until they are converted
+            # to seconds. Once converted, they must not be added back.
+            if (
+                "preallocated_cpu_minutes" in columns
+                and "preallocated_gpu_minutes" not in columns
+            ):
                 logger.info(
                     "Adding preallocated_gpu_minutes column to "
                     "jobs_preallocations table"
@@ -391,9 +429,11 @@ def migrate_database() -> None:
                 conn.commit()
                 logger.info("Migration completed: manager_accounts table created")
 
-            # Move consumption to user/account pairs, in seconds (v4)
+            # Move consumption to user/account pairs and convert
+            # preallocations, in seconds (v4)
             with _rebuild_transaction(conn) as rebuild_cursor:
                 migrate_consumption_to_pairs(rebuild_cursor)
+                migrate_preallocations_to_seconds(rebuild_cursor)
 
             enable_wal_mode(conn)
             set_database_permissions()

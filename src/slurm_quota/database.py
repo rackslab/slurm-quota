@@ -246,6 +246,27 @@ def create_consumption_table(cursor: sqlite3.Cursor) -> None:
     """)
 
 
+def create_preallocations_table(cursor: sqlite3.Cursor) -> None:
+    """Create the jobs_preallocations table.
+
+    Resources are preallocated per job in seconds, for each element of the job
+    array (array_size elements), on the user/account pair of the job.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS jobs_preallocations (
+            job_uuid TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            account TEXT NOT NULL,
+            preallocated_cpu_seconds INTEGER NOT NULL,
+            preallocated_gpu_seconds INTEGER NOT NULL DEFAULT 0,
+            array_size INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (username) REFERENCES users (username),
+            FOREIGN KEY (account) REFERENCES accounts (account)
+        )
+    """)
+
+
 def init_database() -> None:
     """
     Initialize the SQLite database only if it doesn't exist yet. Set permissions on
@@ -290,20 +311,9 @@ def init_database() -> None:
             # for consumed resources (in seconds).
             create_consumption_table(cursor)
 
-            # Create jobs_preallocations table to track preallocated resources per job
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS jobs_preallocations (
-                    job_uuid TEXT PRIMARY KEY,
-                    username TEXT NOT NULL,
-                    account TEXT NOT NULL,
-                    preallocated_cpu_minutes INTEGER NOT NULL,
-                    preallocated_gpu_minutes INTEGER DEFAULT 0,
-                    array_size INTEGER DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (username) REFERENCES users (username),
-                    FOREIGN KEY (account) REFERENCES accounts (account)
-                )
-            """)
+            # Create jobs_preallocations table to track preallocated resources per
+            # job (in seconds).
+            create_preallocations_table(cursor)
 
             # Create gpu_factors table to store GPU charging factors
             cursor.execute("""
@@ -878,9 +888,10 @@ def _query_aggregate(
 ) -> list[dict[str, Any]]:
     """Return consumption, preallocation and quota aggregates of users or accounts.
 
-    Consumption is summed over user/account pairs, stored in seconds, and
-    reported in whole minutes (floored). Consumption sums are correlated
-    subqueries so that the preallocations join does not multiply them.
+    Consumption is summed over user/account pairs, preallocations over jobs.
+    Both are stored in seconds and reported in whole minutes (floored).
+    Consumption sums are correlated subqueries so that the preallocations join
+    does not multiply them.
 
     Args:
         conn: Database connection.
@@ -906,9 +917,9 @@ def _query_aggregate(
                    0
                ) / 60 as total_consumed_cpu_minutes,
                COALESCE(
-                   SUM(j.preallocated_cpu_minutes * COALESCE(j.array_size, 1)),
+                   SUM(j.preallocated_cpu_seconds * COALESCE(j.array_size, 1)),
                    0
-               ) as total_preallocated_cpu_minutes,
+               ) / 60 as total_preallocated_cpu_minutes,
                e.quota_cpu_minutes,
                COALESCE(
                    (SELECT SUM(c.consumed_gpu_seconds)
@@ -917,9 +928,9 @@ def _query_aggregate(
                    0
                ) / 60 as total_consumed_gpu_minutes,
                COALESCE(
-                   SUM(j.preallocated_gpu_minutes * COALESCE(j.array_size, 1)),
+                   SUM(j.preallocated_gpu_seconds * COALESCE(j.array_size, 1)),
                    0
-               ) as total_preallocated_gpu_minutes,
+               ) / 60 as total_preallocated_gpu_minutes,
                e.quota_gpu_minutes, e.last_updated,
                COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
         FROM {table} e

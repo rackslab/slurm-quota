@@ -70,12 +70,12 @@ class TestPruneResources(SlurmQuotaTestCase):
             conn.executemany(
                 """
                 INSERT INTO jobs_preallocations (
-                    job_uuid, username, account, preallocated_cpu_minutes
+                    job_uuid, username, account, preallocated_cpu_seconds
                 ) VALUES (?, ?, ?, ?)
                 """,
                 [
-                    ("uuid-orphan", "u_orphan_prealloc", "a_orphan_prealloc", 5),
-                    ("uuid-active", "u_active_prealloc", "a_active_prealloc", 5),
+                    ("uuid-orphan", "u_orphan_prealloc", "a_orphan_prealloc", 300),
+                    ("uuid-active", "u_active_prealloc", "a_active_prealloc", 300),
                 ],
             )
             conn.commit()
@@ -140,10 +140,10 @@ class TestPruneResources(SlurmQuotaTestCase):
             conn.execute(
                 """
                 INSERT INTO jobs_preallocations (
-                    job_uuid, username, account, preallocated_cpu_minutes
+                    job_uuid, username, account, preallocated_cpu_seconds
                 ) VALUES (?, ?, ?, ?)
                 """,
-                ("uuid-orphan", "u1", "a1", 5),
+                ("uuid-orphan", "u1", "a1", 300),
             )
             conn.commit()
 
@@ -208,10 +208,10 @@ class TestPruneResources(SlurmQuotaTestCase):
             conn.execute(
                 """
                 INSERT INTO jobs_preallocations (
-                    job_uuid, username, account, preallocated_cpu_minutes
+                    job_uuid, username, account, preallocated_cpu_seconds
                 ) VALUES (?, ?, ?, ?)
                 """,
-                ("uuid-orphan", "u_orphan_prealloc", "a1", 5),
+                ("uuid-orphan", "u_orphan_prealloc", "a1", 300),
             )
             conn.commit()
 
@@ -243,10 +243,10 @@ class TestPruneResources(SlurmQuotaTestCase):
             conn.execute(
                 """
                 INSERT INTO jobs_preallocations (
-                    job_uuid, username, account, preallocated_cpu_minutes
+                    job_uuid, username, account, preallocated_cpu_seconds
                 ) VALUES (?, ?, ?, ?)
                 """,
-                ("uuid-orphan", "u_orphan_prealloc", "a_orphan_prealloc", 5),
+                ("uuid-orphan", "u_orphan_prealloc", "a_orphan_prealloc", 300),
             )
             conn.commit()
 
@@ -420,8 +420,8 @@ class TestUpdateUserAndAccountResources(SlurmQuotaTestCase):
         self.assertEqual(status, "none")
         with self.db_connection() as conn:
             conn.execute(
-                "INSERT INTO jobs_preallocations (job_uuid, username, account, preallocated_cpu_minutes, array_size) VALUES (?, ?, ?, ?, ?)",
-                ("uuid1", "u1", "a1", 5, 1),
+                "INSERT INTO jobs_preallocations (job_uuid, username, account, preallocated_cpu_seconds, array_size) VALUES (?, ?, ?, ?, ?)",
+                ("uuid1", "u1", "a1", 300, 1),
             )
             conn.commit()
         status = update_user_and_account_resources("u1", "a1", 10, "uuid1", 0)
@@ -676,10 +676,10 @@ class TestUserAccountConsumption(SlurmQuotaTestCase):
             conn.executemany(
                 """
                 INSERT INTO jobs_preallocations (
-                    job_uuid, username, account, preallocated_cpu_minutes, array_size
+                    job_uuid, username, account, preallocated_cpu_seconds, array_size
                 ) VALUES (?, ?, ?, ?, ?)
                 """,
-                [("j1", "u1", "a1", 5, 2), ("j2", "u1", "a1", 1, 1)],
+                [("j1", "u1", "a1", 300, 2), ("j2", "u1", "a1", 60, 1)],
             )
             conn.commit()
             users = query_users_aggregate(conn, {"u1"})
@@ -711,14 +711,33 @@ class TestQueryUsersAggregate(SlurmQuotaTestCase):
         with self.db_connection() as conn:
             self.insert_consumption(conn, "u1", "a1", cpu_minutes=10)
             conn.execute(
-                "INSERT INTO jobs_preallocations (job_uuid, username, account, preallocated_cpu_minutes, array_size) VALUES (?, ?, ?, ?, ?)",
-                ("j1", "u1", "a1", 5, 2),
+                "INSERT INTO jobs_preallocations (job_uuid, username, account, preallocated_cpu_seconds, array_size) VALUES (?, ?, ?, ?, ?)",
+                ("j1", "u1", "a1", 300, 2),
             )
             conn.commit()
             users = query_users_aggregate(conn)
         self.assertEqual(users[0]["total_consumed_cpu_minutes"], 10)
         self.assertEqual(users[0]["total_preallocated_cpu_minutes"], 10)
         self.assertEqual(users[0]["job_count"], 2)
+
+    def test_query_users_aggregate_floors_preallocated_seconds(self):
+        init_database()
+        with self.db_connection() as conn:
+            self.insert_consumption(conn, "u1", "a1")
+            conn.executemany(
+                """
+                INSERT INTO jobs_preallocations (
+                    job_uuid, username, account, preallocated_cpu_seconds,
+                    preallocated_gpu_seconds, array_size
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [("j1", "u1", "a1", 90, 45, 1), ("j2", "u1", "a1", 50, 25, 2)],
+            )
+            conn.commit()
+            users = query_users_aggregate(conn)
+        # Seconds are summed over jobs before flooring to minutes
+        self.assertEqual(users[0]["total_preallocated_cpu_minutes"], 190 // 60)
+        self.assertEqual(users[0]["total_preallocated_gpu_minutes"], 95 // 60)
 
 
 class TestQueryAccountsAggregate(SlurmQuotaTestCase):
@@ -727,8 +746,8 @@ class TestQueryAccountsAggregate(SlurmQuotaTestCase):
         with self.db_connection() as conn:
             self.insert_consumption(conn, "u1", "a1", cpu_minutes=20)
             conn.execute(
-                "INSERT INTO jobs_preallocations (job_uuid, username, account, preallocated_cpu_minutes, array_size) VALUES (?, ?, ?, ?, ?)",
-                ("j1", "u1", "a1", 5, 2),
+                "INSERT INTO jobs_preallocations (job_uuid, username, account, preallocated_cpu_seconds, array_size) VALUES (?, ?, ?, ?, ?)",
+                ("j1", "u1", "a1", 300, 2),
             )
             conn.commit()
             accounts = query_accounts_aggregate(conn, {"a1"})
@@ -834,10 +853,10 @@ class TestDatabaseConfiguration(SlurmQuotaTestCase):
             conn.execute(
                 """
                     INSERT INTO jobs_preallocations (
-                        job_uuid, username, account, preallocated_cpu_minutes
+                        job_uuid, username, account, preallocated_cpu_seconds
                     ) VALUES (?, ?, ?, ?)
                     """,
-                ("job1", "missing_user", "missing_account", 10),
+                ("job1", "missing_user", "missing_account", 600),
             )
 
     def test_init_database_enables_wal(self):

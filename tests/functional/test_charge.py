@@ -180,10 +180,10 @@ class TestChargeCommand(FunctionalCLIBase):
             conn.execute(
                 """
                 INSERT INTO jobs_preallocations
-                    (job_uuid, username, account, preallocated_cpu_minutes, array_size)
+                    (job_uuid, username, account, preallocated_cpu_seconds, array_size)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (job_uuid, "u1", "a1", 100, 1),
+                (job_uuid, "u1", "a1", 6000, 1),
             )
             conn.commit()
         self.env(_SLURM_CHARGE_JOB_ENV)
