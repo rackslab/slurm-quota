@@ -273,10 +273,10 @@ Following routes are served by REST API:
 | `PUT /quotas/users/<username>/gpu`                     | Set GPU quota for a user                                                          | **operator**, **admin**                                                                     |
 | `PUT /quotas/accounts/<account>/cpu`                   | Set CPU quota for an account                                                      | **operator**, **admin**                                                                     |
 | `PUT /quotas/accounts/<account>/gpu`                   | Set GPU quota for an account                                                      | **operator**, **admin**                                                                     |
-| `PATCH /consumption/user/<username>/cpu`               | Adjust consumed CPU minutes for a user                                            | **operator**, **admin**                                                                     |
-| `PATCH /consumption/user/<username>/gpu`               | Adjust consumed GPU minutes for a user                                            | **operator**, **admin**                                                                     |
-| `PATCH /consumption/account/<account>/cpu`             | Adjust consumed CPU minutes for an account                                        | **operator**, **admin**                                                                     |
-| `PATCH /consumption/account/<account>/gpu`             | Adjust consumed GPU minutes for an account                                        | **operator**, **admin**                                                                     |
+| `PATCH /consumption/user/<username>/cpu`               | Adjust consumed CPU time for a user                                               | **operator**, **admin**                                                                     |
+| `PATCH /consumption/user/<username>/gpu`               | Adjust consumed GPU time for a user                                               | **operator**, **admin**                                                                     |
+| `PATCH /consumption/account/<account>/cpu`             | Adjust consumed CPU time for an account                                           | **operator**, **admin**                                                                     |
+| `PATCH /consumption/account/<account>/gpu`             | Adjust consumed GPU time for an account                                           | **operator**, **admin**                                                                     |
 | `GET /factors/gpu`                                     | List GPU load factors                                                             | **operator**, **admin**                                                                     |
 | `PUT /factors/gpu/<gpu_type>`                          | Set load factor for a GPU type                                                    | **operator**, **admin**                                                                     |
 
@@ -292,7 +292,7 @@ counterparts) and quotas in minutes (`quota_cpu_minutes`, `quota_gpu_minutes`, `
 Quota routes accept `{"quota_minutes": <int>}` (`-1` means unlimited), with an optional single-line
 `{"reason": "<string>"}`. Default quota routes accept a partial object with any of `user_cpu_minutes`,
 `user_gpu_minutes`, `account_cpu_minutes`, `account_gpu_minutes` (`-1` means unlimited); defaults apply only to newly
-auto-created users and accounts. Consumption routes accept `{"delta_minutes": <signed int>}` and return
+auto-created users and accounts. Consumption routes accept `{"delta_seconds": <signed int>}` and return
 `{"total_consumed_seconds": <int>}`, with an optional single-line `{"reason": "<string>"}`. GPU factor routes return
 `{"default_factor": <float>, "factors": {<gpu_type>: <float>, ...}}` or accept `{"factor": <positive float>}`.
 
