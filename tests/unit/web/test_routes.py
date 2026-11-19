@@ -855,7 +855,8 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
         body = resp.get_data(as_text=True)
         self.assertIn('data-edit="consumption"', body)
         self.assertIn('action="/consumption"', body)
-        self.assertIn('name="delta_minutes"', body)
+        self.assertIn('name="delta"', body)
+        self.assertIn('name="delta_unit"', body)
         self.assertIn('name="username"', body)
         self.assertIn('name="account"', body)
 
@@ -874,7 +875,8 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
         body = resp.get_data(as_text=True)
         self.assertIn('data-edit="consumption"', body)
         self.assertIn('action="/consumption"', body)
-        self.assertIn('name="delta_minutes"', body)
+        self.assertIn('name="delta"', body)
+        self.assertIn('name="delta_unit"', body)
         self.assertIn(">Edit</button>", body)
 
     def test_dashboard_hides_consumption_edit_for_user(self):
@@ -911,13 +913,61 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                     "username": "alice",
                     "account": "hpc",
                     "resource": "cpu",
-                    "delta_minutes": "-15",
+                    "delta": "-15",
                 },
                 follow_redirects=False,
             )
         self.assertEqual(resp.status_code, 302)
         m_client.return_value.adjust_consumption.assert_called_once_with(
             "alice", "hpc", "cpu", -900, reason=None
+        )
+
+    def _post_consumption(self, m_client, data):
+        m_client.return_value.stats.return_value = stats_rows()
+        client = web_app().test_client()
+        dashboard = client.get("/")
+        csrf = extract_csrf(dashboard.get_data(as_text=True))
+        return client.post(
+            "/consumption",
+            data={
+                "_csrf": csrf,
+                "username": "alice",
+                "account": "hpc",
+                "resource": "cpu",
+                **data,
+            },
+            follow_redirects=True,
+        )
+
+    def test_consumption_post_delta_in_seconds(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            self._post_consumption(m_client, {"delta": "-45", "delta_unit": "seconds"})
+        m_client.return_value.adjust_consumption.assert_called_once_with(
+            "alice", "hpc", "cpu", -45, reason=None
+        )
+
+    def test_consumption_post_delta_in_minutes(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            self._post_consumption(m_client, {"delta": "2", "delta_unit": "minutes"})
+        m_client.return_value.adjust_consumption.assert_called_once_with(
+            "alice", "hpc", "cpu", 120, reason=None
+        )
+
+    def test_consumption_post_legacy_delta_minutes(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            self._post_consumption(m_client, {"delta_minutes": "3"})
+        m_client.return_value.adjust_consumption.assert_called_once_with(
+            "alice", "hpc", "cpu", 180, reason=None
+        )
+
+    def test_consumption_post_rejects_invalid_unit(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            resp = self._post_consumption(
+                m_client, {"delta": "3", "delta_unit": "days"}
+            )
+        m_client.return_value.adjust_consumption.assert_not_called()
+        self.assertIn(
+            "Invalid consumption adjustment unit.", resp.get_data(as_text=True)
         )
 
     def test_consumption_post_forwards_reason_when_provided(self):
@@ -939,7 +989,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                     "username": "alice",
                     "account": "hpc",
                     "resource": "cpu",
-                    "delta_minutes": "-15",
+                    "delta": "-15",
                     "reason": "correct billing error",
                 },
                 follow_redirects=False,
@@ -967,7 +1017,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                     "username": "alice",
                     "account": "hpc",
                     "resource": "cpu",
-                    "delta_minutes": "-15",
+                    "delta": "-15",
                 },
                 follow_redirects=True,
             )
@@ -995,7 +1045,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                     "username": "alice",
                     "account": "  ",
                     "resource": "cpu",
-                    "delta_minutes": "-15",
+                    "delta": "-15",
                 },
                 follow_redirects=True,
             )
@@ -1025,7 +1075,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                     "username": "alice",
                     "account": "hpc",
                     "resource": "cpu",
-                    "delta_minutes": "-15",
+                    "delta": "-15",
                 },
                 follow_redirects=True,
             )
@@ -1055,7 +1105,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                     "username": "alice",
                     "account": "hpc",
                     "resource": "cpu",
-                    "delta_minutes": "-15",
+                    "delta": "-15",
                 },
                 follow_redirects=True,
             )
@@ -1080,7 +1130,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                     "username": "alice",
                     "account": "hpc",
                     "resource": "cpu",
-                    "delta_minutes": "10",
+                    "delta": "10",
                 },
                 follow_redirects=False,
             )
@@ -1097,7 +1147,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                     "username": "alice",
                     "account": "hpc",
                     "resource": "cpu",
-                    "delta_minutes": "10",
+                    "delta": "10",
                 },
             )
         self.assertEqual(resp.status_code, 400)

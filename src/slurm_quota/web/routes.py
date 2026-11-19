@@ -23,7 +23,7 @@ from flask import (
 )
 
 from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableError
-from slurm_quota.units import HOURS, MINUTES, SECONDS, UNITS
+from slurm_quota.units import HOURS, MINUTES, SECONDS, UNIT_SECONDS, UNITS
 from slurm_quota.web import dashboard as dashboard_view
 from slurm_quota.web.auth import (
     api_client,
@@ -417,23 +417,35 @@ def consumption_post() -> Any:
     username = (request.form.get("username") or "").strip()
     account = (request.form.get("account") or "").strip()
     resource = (request.form.get("resource") or "").strip()
-    delta_raw = (request.form.get("delta_minutes") or "").strip()
+    # Legacy forms post the delta in minutes in delta_minutes.
+    delta_raw = (
+        request.form.get("delta") or request.form.get("delta_minutes") or ""
+    ).strip()
+    delta_unit = (request.form.get("delta_unit") or MINUTES).strip().lower()
 
     if not username or not account or resource not in ("cpu", "gpu"):
         flash("Invalid consumption user, account or resource.", "error")
         return redirect(url_for("dashboard"))
 
     try:
-        delta_minutes = int(delta_raw)
+        delta = int(delta_raw)
     except ValueError:
         flash("Invalid consumption adjustment value.", "error")
+        return redirect(url_for("dashboard"))
+
+    if delta_unit not in (SECONDS, MINUTES):
+        flash("Invalid consumption adjustment unit.", "error")
         return redirect(url_for("dashboard"))
 
     try:
         api = api_client()
         reason = _optional_form_reason()
         api.adjust_consumption(
-            username, account, resource, delta_minutes * 60, reason=reason
+            username,
+            account,
+            resource,
+            delta * UNIT_SECONDS[delta_unit],
+            reason=reason,
         )
         flash(
             f"Consumption adjusted for user {username} on account {account}.",

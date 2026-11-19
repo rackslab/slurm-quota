@@ -234,15 +234,22 @@
       <input type="text" name="account" class="consumption-account-input" required>
     </label>
     <label class="edit-dialog-field">
-      Delta (minutes)
+      Delta
       <input
         type="number"
-        name="delta_minutes"
+        name="delta"
         class="consumption-delta-input"
         placeholder="e.g. 30 or -10"
-        title="Signed delta in minutes"
+        title="Signed delta in the selected unit"
         required
       >
+    </label>
+    <label class="edit-dialog-field">
+      Delta unit
+      <select name="delta_unit" class="consumption-delta-unit">
+        <option value="minutes" selected>Minutes</option>
+        <option value="seconds">Seconds</option>
+      </select>
     </label>
     <label class="edit-dialog-field">
       Reason (optional)
@@ -409,6 +416,7 @@
       var consumptionTitle = document.getElementById("consumption-dialog-title");
       var consumptionCurrent = document.getElementById("consumption-dialog-current");
       var deltaInput = consumptionForm.querySelector(".consumption-delta-input");
+      var deltaUnitSelect = consumptionForm.querySelector(".consumption-delta-unit");
       var usernameInput = consumptionForm.querySelector(".consumption-username-input");
       var accountInput = consumptionForm.querySelector(".consumption-account-input");
 
@@ -438,6 +446,7 @@
             "Current consumed (all " + (target === "user" ? "accounts" : "users") + "): " + consumed;
 
           deltaInput.value = "";
+          deltaUnitSelect.value = "minutes";
           consumptionDialog.showModal();
           otherInput.focus();
         });
