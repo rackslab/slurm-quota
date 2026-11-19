@@ -214,7 +214,7 @@ def dashboard() -> Response | str:
         flash("username and account filters are mutually exclusive.", "error")
     else:
         try:
-            users_raw, accounts_raw = api_client().stats(
+            users_raw, accounts_raw, _ = api_client().stats(
                 username,
                 account,
                 show_all=username is None,

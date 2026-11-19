@@ -94,19 +94,19 @@ class TestShowUserStats(SlurmQuotaTestCase):
         return m_api
 
     def test_no_data_for_explicit_username(self):
-        self._mock_stats(return_value=([], []))
+        self._mock_stats(return_value=([], [], []))
         out = self._run_show(username="bob", show_all=False)
         expected = dedent_lines("No data found for user: bob")
         self.assertEqual(out, expected)
 
     def test_no_data_for_explicit_account(self):
-        self._mock_stats(return_value=([], []))
+        self._mock_stats(return_value=([], [], []))
         out = self._run_show(account="projX", show_all=False)
         expected = dedent_lines("No data found for account: projX")
         self.assertEqual(out, expected)
 
     def test_no_users_when_show_all_empty(self):
-        self._mock_stats(return_value=([], []))
+        self._mock_stats(return_value=([], [], []))
         out = self._run_show(show_all=True)
         expected = dedent_lines("No users found in service")
         self.assertEqual(out, expected)
@@ -114,7 +114,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
     def test_prints_user_and_account_tables(self):
         self.env({"NO_COLOR": "1"})
         users, accounts = _sample_users_and_accounts()
-        self._mock_stats(return_value=(users, accounts))
+        self._mock_stats(return_value=(users, accounts, []))
         with patch(
             "slurm_quota.commands.format_timestamp_with_timezone",
             return_value="TS_FIXED",
@@ -137,7 +137,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
         """Account-filtered responses omit user rows; only the accounts table is printed."""
         self.env({"NO_COLOR": "1"})
         _, accounts = _sample_users_and_accounts()
-        self._mock_stats(return_value=([], accounts))
+        self._mock_stats(return_value=([], accounts, []))
         with patch(
             "slurm_quota.commands.format_timestamp_with_timezone",
             return_value="TS_FIXED",
@@ -164,7 +164,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "total_preallocated_gpu_seconds": 0,
             "quota_gpu_minutes": -1,
         }
-        self._mock_stats(return_value=([user], []))
+        self._mock_stats(return_value=([user], [], []))
         with patch(
             "slurm_quota.commands.format_timestamp_with_timezone",
             return_value="TS_FIXED",
@@ -195,7 +195,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "total_preallocated_gpu_seconds": 0,
             "quota_gpu_minutes": -1,
         }
-        self._mock_stats(return_value=([user], []))
+        self._mock_stats(return_value=([user], [], []))
         with patch(
             "slurm_quota.commands.format_timestamp_with_timezone",
             return_value="TS_FIXED",
@@ -220,7 +220,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "total_preallocated_gpu_seconds": 0,
             "quota_gpu_minutes": -1,
         }
-        self._mock_stats(return_value=([user], []))
+        self._mock_stats(return_value=([user], [], []))
         with patch(
             "slurm_quota.commands.format_timestamp_with_timezone",
             return_value="TS_FIXED",
@@ -253,7 +253,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "total_preallocated_gpu_seconds": 0,
             "quota_gpu_minutes": -1,
         }
-        self._mock_stats(return_value=([user], []))
+        self._mock_stats(return_value=([user], [], []))
         with patch(
             "slurm_quota.commands.format_timestamp_with_timezone",
             return_value="TS_FIXED",
@@ -292,7 +292,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
                 "quota_gpu_minutes": -1,
             }
         ]
-        self._mock_stats(return_value=(users, accounts))
+        self._mock_stats(return_value=(users, accounts, []))
         with patch(
             "slurm_quota.commands.format_timestamp_with_timezone",
             return_value="TS_FIXED",
@@ -314,7 +314,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
 
     def test_uses_get_current_user_when_username_omitted(self):
         with patch("slurm_quota.auth.get_current_user", return_value="carol") as m_gc:
-            m_api = self._mock_stats(return_value=([], []))
+            m_api = self._mock_stats(return_value=([], [], []))
             out = self._run_show(show_all=False)
         m_gc.assert_called_once()
         m_api.return_value.stats.assert_called_once_with("carol", None, False)
@@ -322,7 +322,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
 
     def test_skips_get_current_user_when_account_requested(self):
         with patch("slurm_quota.auth.get_current_user") as m_gc:
-            m_api = self._mock_stats(return_value=([], []))
+            m_api = self._mock_stats(return_value=([], [], []))
             out = self._run_show(account="hpc", show_all=False)
         m_gc.assert_not_called()
         m_api.return_value.stats.assert_called_once_with(None, "hpc", False)

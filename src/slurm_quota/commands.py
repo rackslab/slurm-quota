@@ -557,7 +557,7 @@ def show_user_stats(
 
     try:
         api = _api_client_from_token()
-        users_data, accounts_data = api.stats(selected_username, account, show_all)
+        users_data, accounts_data, _ = api.stats(selected_username, account, show_all)
 
         if not users_data and not accounts_data:
             if username:

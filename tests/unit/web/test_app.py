@@ -33,7 +33,7 @@ class TestSlurmQuotaWebApp(SlurmQuotaTestCase):
             patch("slurm_quota.web.app.ClientToken.load_value", return_value="env-jwt"),
             patch("slurm_quota.web.routes.api_client") as m_client,
         ):
-            m_client.return_value.stats.return_value = ([], [])
+            m_client.return_value.stats.return_value = ([], [], [])
             client = web_app().test_client()
             resp = client.get("/")
         self.assertEqual(resp.status_code, 200)

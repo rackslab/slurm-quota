@@ -176,9 +176,10 @@ class APIClient:
         selected_username: str | None,
         selected_account: str | None,
         show_all: bool,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        include_breakdown: bool = False,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         """
-        Request /stats and return user and account rows.
+        Request /stats and return user, account and breakdown rows.
 
         Sends self.token as a Bearer header when set.
 
@@ -186,9 +187,12 @@ class APIClient:
             selected_username: User filter when not show_all (may be None if show_all).
             selected_account: Account filter to apply on account stats.
             show_all: If True, do not add a username query parameter.
+            include_breakdown: If True, request the consumption breakdown per
+                user/account pair.
 
         Returns:
-            (users_data, accounts_data) lists from the JSON payload.
+            (users_data, accounts_data, breakdown_data) lists from the JSON
+            payload. breakdown_data is empty unless include_breakdown is True.
 
         Raises:
             ServiceHTTPError: Response status was not HTTP OK.
@@ -199,6 +203,8 @@ class APIClient:
             stats_params["username"] = selected_username
         if selected_account:
             stats_params["account"] = selected_account
+        if include_breakdown:
+            stats_params["breakdown"] = "true"
         stats_payload = self._api_request(
             "GET",
             "stats",
@@ -208,7 +214,8 @@ class APIClient:
 
         users_data: list[dict[str, Any]] = list(stats_payload.get("users", []))
         accounts_data: list[dict[str, Any]] = list(stats_payload.get("accounts", []))
-        return users_data, accounts_data
+        breakdown_data: list[dict[str, Any]] = list(stats_payload.get("breakdown", []))
+        return users_data, accounts_data, breakdown_data
 
     def me(self) -> dict[str, Any]:
         return self._api_request("GET", "me")

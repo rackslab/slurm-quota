@@ -68,7 +68,10 @@ class TestAPIClientStats(SlurmQuotaTestCase):
         with patch(
             "slurm_quota.client.urlopen", return_value=_FakeUrlopenResponse(payload)
         ):
-            users, accounts = APIClient(token="jwt").stats("alice", None, False)
+            users, accounts, breakdown = APIClient(token="jwt").stats(
+                "alice", None, False
+            )
+        self.assertEqual(breakdown, [])
         self.assertEqual(len(users), 1)
         self.assertEqual(users[0]["username"], "alice")
         self.assertEqual(len(accounts), 1)
@@ -76,9 +79,38 @@ class TestAPIClientStats(SlurmQuotaTestCase):
 
     def test_empty_payload_lists_when_keys_missing(self):
         with patch("slurm_quota.client.urlopen", return_value=_FakeUrlopenResponse({})):
-            users, accounts = APIClient(token="jwt").stats(None, None, True)
+            users, accounts, breakdown = APIClient(token="jwt").stats(None, None, True)
         self.assertEqual(users, [])
         self.assertEqual(accounts, [])
+        self.assertEqual(breakdown, [])
+
+    def test_returns_breakdown_when_requested(self):
+        payload = _sample_payload()
+        payload["breakdown"] = [
+            {
+                "username": "alice",
+                "account": "acct1",
+                "consumed_cpu_seconds": 60,
+                "consumed_gpu_seconds": 0,
+                "last_updated": None,
+            }
+        ]
+        with patch(
+            "slurm_quota.client.urlopen", return_value=_FakeUrlopenResponse(payload)
+        ) as m_urlopen:
+            _, _, breakdown = APIClient(token="jwt").stats(
+                "alice", None, False, include_breakdown=True
+            )
+        self.assertIn("breakdown=true", m_urlopen.call_args[0][0].full_url)
+        self.assertEqual(breakdown, payload["breakdown"])
+
+    def test_no_breakdown_query_by_default(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(_sample_payload()),
+        ) as m_urlopen:
+            APIClient(token="jwt").stats("alice", None, False)
+        self.assertNotIn("breakdown", m_urlopen.call_args[0][0].full_url)
 
     def test_adds_username_query_when_filtered(self):
         with patch(

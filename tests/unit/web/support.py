@@ -64,7 +64,7 @@ def payload() -> dict:
 
 def stats_rows():
     data = payload()
-    return data["users"], data["accounts"]
+    return data["users"], data["accounts"], data.get("breakdown", [])
 
 
 def roles_users() -> list[dict]:
