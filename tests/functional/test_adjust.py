@@ -98,6 +98,38 @@ class TestAdjustCommand(FunctionalAPICliBase):
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"delta_seconds": 7200})
 
+    def test_adjust_pair_cpu_seconds(self):
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                side_effect=self._adjust_urlopen_side_effect,
+            ) as m_urlopen,
+            self.capture_stdout() as out,
+        ):
+            self.run_cli_main(
+                [
+                    "slurm-quota",
+                    "adjust",
+                    "--user",
+                    "alice",
+                    "--account",
+                    "hpc",
+                    "--cpu",
+                    "--seconds",
+                    "-45",
+                ]
+            )
+        self.assertEqual(
+            out.getvalue(),
+            (
+                "Successfully adjusted CPU consumed time for user alice on "
+                "account hpc: "
+                "-45 seconds (new total: 7800 seconds)\n"
+            ),
+        )
+        body = json.loads(m_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertEqual(body, {"delta_seconds": -45})
+
     def test_adjust_requires_token(self):
         ClientToken.path().unlink()
         with self.assertLogs("slurm_quota", level="ERROR") as log_cm:

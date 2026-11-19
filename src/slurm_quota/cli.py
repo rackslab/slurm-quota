@@ -266,6 +266,11 @@ def main():
         type=parse_signed_int,
         help="Signed delta in hours (must include + or - sign)",
     )
+    adjust_delta_group.add_argument(
+        "--seconds",
+        type=parse_signed_int,
+        help="Signed delta in seconds (must include + or - sign)",
+    )
     adjust_parser.add_argument(
         "--reason",
         help="Optional reason for the adjustment (recorded in audit logs)",
@@ -428,6 +433,7 @@ def main():
             args.minutes,
             args.hours,
             args.reason,
+            seconds=args.seconds,
         )
     elif args.command == "user-quota":
         set_user_quota_command(args.username, args.quota, args.reason)

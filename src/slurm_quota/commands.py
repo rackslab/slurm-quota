@@ -17,7 +17,14 @@ from slurm_quota.database import (
     prune_resources,
 )
 from slurm_quota.token import ClientToken
-from slurm_quota.units import MINUTES, format_quota, format_seconds
+from slurm_quota.units import (
+    HOURS,
+    MINUTES,
+    SECONDS,
+    UNIT_SECONDS,
+    format_quota,
+    format_seconds,
+)
 
 logger = logging.getLogger("slurm_quota")
 
@@ -198,6 +205,7 @@ def adjust_command(
     minutes: Optional[int],
     hours: Optional[int],
     reason: Optional[str] = None,
+    seconds: Optional[int] = None,
 ) -> None:
     """Adjust consumed CPU/GPU time of a user on an account via the REST API.
 
@@ -206,25 +214,29 @@ def adjust_command(
     try:
         resource = "cpu" if cpu else "gpu"
         if minutes is not None:
-            delta_seconds = minutes * 60
-            unit_label = "minutes"
+            delta, unit = minutes, MINUTES
+        elif hours is not None:
+            delta, unit = hours, HOURS
+        elif seconds is not None:
+            delta, unit = seconds, SECONDS
         else:
-            if hours is None:
-                logger.error("adjust command requires --minutes or --hours")
-                sys.exit(1)
-            delta_seconds = hours * 3600
-            unit_label = "hours"
+            logger.error("adjust command requires --minutes, --hours or --seconds")
+            sys.exit(1)
+        delta_seconds = delta * UNIT_SECONDS[unit]
 
         api = _api_client_from_token()
         new_total = api.adjust_consumption(
             username, account, resource, delta_seconds, reason=reason
         )
 
-        delta_source = minutes if minutes is not None else hours
+        # New total is reported in seconds when the delta is given in seconds,
+        # in whole minutes otherwise.
+        total_unit = SECONDS if unit == SECONDS else MINUTES
         print(
             f"Successfully adjusted {resource.upper()} consumed time "
             f"for user {username} on account {account}: "
-            f"{delta_source:+d} {unit_label} (new total: {new_total // 60} minutes)"
+            f"{delta:+d} {unit} (new total: "
+            f"{format_seconds(new_total, total_unit)} {total_unit})"
         )
 
     except ServiceHTTPError as exc:
