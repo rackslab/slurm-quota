@@ -35,7 +35,7 @@ class TestDecorateRows(SlurmQuotaTestCase):
                 )
             ],
             "username",
-            display_hours=False,
+            display_unit="minutes",
         )
         self.assertEqual(row["cpu"]["consumed"], "9")
         self.assertEqual(row["cpu"]["preallocated"], "0")
@@ -53,7 +53,7 @@ class TestDecorateRows(SlurmQuotaTestCase):
                 )
             ],
             "username",
-            display_hours=True,
+            display_unit="hours",
         )
         self.assertEqual(row["gpu"]["consumed"], "1.50")
         self.assertEqual(row["gpu"]["preallocated"], "0.50")

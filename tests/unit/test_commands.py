@@ -169,7 +169,7 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "slurm_quota.commands.format_timestamp_with_timezone",
             return_value="TS_FIXED",
         ):
-            out = self._run_show(username="u1", show_all=False, display_hours=True)
+            out = self._run_show(username="u1", show_all=False, display_unit="hours")
         expected = dedent_lines(
             "        |                                CPU                                 |                                GPU                                 |",
             "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
@@ -181,6 +181,31 @@ class TestShowUserStats(SlurmQuotaTestCase):
             "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
         )
         self.assertEqual(out, expected)
+
+    def test_display_seconds_formats_numbers(self):
+        self.env({"NO_COLOR": "1"})
+        user = {
+            "username": "u1",
+            "job_count": 1,
+            "last_updated": None,
+            "total_consumed_cpu_seconds": 7259,
+            "total_preallocated_cpu_seconds": 30,
+            "quota_cpu_minutes": 100,
+            "total_consumed_gpu_seconds": 0,
+            "total_preallocated_gpu_seconds": 0,
+            "quota_gpu_minutes": -1,
+        }
+        self._mock_stats(return_value=([user], []))
+        with patch(
+            "slurm_quota.commands.format_timestamp_with_timezone",
+            return_value="TS_FIXED",
+        ):
+            out = self._run_show(username="u1", show_all=False, display_unit="seconds")
+        row = out.splitlines()[3]
+        self.assertTrue(
+            row.startswith("u1      |        7259           30(1)     6000 "), row
+        )
+        self.assertIn("|           0            0(1)        ∞ ", row)
 
     def test_finite_quota_shows_status_bar(self):
         self.env({"NO_COLOR": "1"})

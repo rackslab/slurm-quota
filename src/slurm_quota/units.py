@@ -11,19 +11,29 @@ seconds like the submission check in job_submit.lua.
 
 from __future__ import annotations
 
+SECONDS = "seconds"
+MINUTES = "minutes"
+HOURS = "hours"
+UNITS = (SECONDS, MINUTES, HOURS)
 
-def format_seconds(seconds: int, hours: bool) -> str:
-    """Format a time in seconds as whole minutes (floored) or hours."""
-    if hours:
+# Number of seconds in each unit, to convert adjustment deltas to seconds.
+UNIT_SECONDS = {SECONDS: 1, MINUTES: 60, HOURS: 3600}
+
+
+def format_seconds(seconds: int, unit: str) -> str:
+    """Format a time in seconds as seconds, whole minutes (floored) or hours."""
+    if unit == SECONDS:
+        return str(seconds)
+    if unit == HOURS:
         return f"{seconds / 3600:.2f}"
     return str(seconds // 60)
 
 
-def format_quota(quota_minutes: int, hours: bool) -> str:
-    """Format a quota in minutes as minutes or hours, ∞ when unlimited."""
+def format_quota(quota_minutes: int, unit: str) -> str:
+    """Format a quota in minutes as seconds, minutes or hours, ∞ when unlimited."""
     if quota_minutes < 0:
         return "∞"
-    return format_seconds(quota_minutes * 60, hours)
+    return format_seconds(quota_minutes * 60, unit)
 
 
 def usage_ratio(used_seconds: int, quota_minutes: int) -> float | None:

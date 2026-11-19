@@ -34,6 +34,7 @@ from slurm_quota.commands import (
 )
 from slurm_quota.log import setup_logging
 from slurm_quota.token import ClientToken
+from slurm_quota.units import HOURS, MINUTES, SECONDS
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -164,10 +165,16 @@ def main():
         action="store_true",
         help="Show all users (same as not specifying username)",
     )
-    stats_parser.add_argument(
+    stats_unit_group = stats_parser.add_mutually_exclusive_group()
+    stats_unit_group.add_argument(
         "--hours",
         action="store_true",
         help="Display stats values in hours instead of minutes",
+    )
+    stats_unit_group.add_argument(
+        "--seconds",
+        action="store_true",
+        help="Display stats values in seconds instead of minutes",
     )
 
     # Role commands
@@ -386,7 +393,13 @@ def main():
         selected_username = args.user or args.username
         if selected_username and args.account:
             parser.error("stats: user selection and --account are mutually exclusive")
-        show_user_stats(selected_username, args.account, args.all, args.hours)
+        if args.seconds:
+            display_unit = SECONDS
+        elif args.hours:
+            display_unit = HOURS
+        else:
+            display_unit = MINUTES
+        show_user_stats(selected_username, args.account, args.all, display_unit)
     elif args.command == "role":
         if args.role_command == "show":
             role_show_command()

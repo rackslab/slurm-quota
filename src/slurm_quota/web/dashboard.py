@@ -34,7 +34,7 @@ def _status_class(percent: float | None) -> str:
 
 
 def decorate_rows(
-    rows: list[dict[str, Any]], name_key: str, display_hours: bool
+    rows: list[dict[str, Any]], name_key: str, display_unit: str
 ) -> list[dict[str, Any]]:
     decorated: list[dict[str, Any]] = []
     for item in rows:
@@ -54,17 +54,17 @@ def decorate_rows(
                 "job_count": _parse_int(item.get("job_count")),
                 "last_updated": item.get("last_updated") or "n/a",
                 "cpu": {
-                    "consumed": format_seconds(cpu_consumed, display_hours),
-                    "preallocated": format_seconds(cpu_preallocated, display_hours),
-                    "quota": format_quota(cpu_quota, display_hours),
+                    "consumed": format_seconds(cpu_consumed, display_unit),
+                    "preallocated": format_seconds(cpu_preallocated, display_unit),
+                    "quota": format_quota(cpu_quota, display_unit),
                     "quota_minutes": cpu_quota,
                     "percent": cpu_percent,
                     "status_class": _status_class(cpu_percent),
                 },
                 "gpu": {
-                    "consumed": format_seconds(gpu_consumed, display_hours),
-                    "preallocated": format_seconds(gpu_preallocated, display_hours),
-                    "quota": format_quota(gpu_quota, display_hours),
+                    "consumed": format_seconds(gpu_consumed, display_unit),
+                    "preallocated": format_seconds(gpu_preallocated, display_unit),
+                    "quota": format_quota(gpu_quota, display_unit),
                     "quota_minutes": gpu_quota,
                     "percent": gpu_percent,
                     "status_class": _status_class(gpu_percent),

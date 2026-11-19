@@ -23,6 +23,7 @@ from flask import (
 )
 
 from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableError
+from slurm_quota.units import HOURS, MINUTES
 from slurm_quota.web import dashboard as dashboard_view
 from slurm_quota.web.auth import (
     api_client,
@@ -193,6 +194,7 @@ def logout() -> Any:
 def dashboard() -> Response | str:
     role = current_role()
     username, account, display_hours = _resolve_dashboard_filters()
+    display_unit = HOURS if display_hours else MINUTES
 
     users: list[dict[str, Any]] = []
     accounts: list[dict[str, Any]] = []
@@ -212,9 +214,9 @@ def dashboard() -> Response | str:
                 account,
                 show_all=username is None,
             )
-            users = dashboard_view.decorate_rows(users_raw, "username", display_hours)
+            users = dashboard_view.decorate_rows(users_raw, "username", display_unit)
             accounts = dashboard_view.decorate_rows(
-                accounts_raw, "account", display_hours
+                accounts_raw, "account", display_unit
             )
         except ServiceHTTPError as exc:
             if exc.status == 401:

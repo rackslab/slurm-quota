@@ -315,6 +315,25 @@ class TestStatsCommand(FunctionalAPICliBase):
             ),
         )
 
+    def test_stats_with_alice_and_seconds(self):
+        self._run_stats(
+            ["slurm-quota", "stats", "alice", "--seconds"],
+            expected=dedent_lines(
+                "        |                                CPU                                 |                                GPU                                 |",
+                "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+                "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                "alice   |        7200         3600(2)    36000 [██████░░░░░░░░░░░░░░]  30.0% |           0            0(2)        ∞                               | TS_FIXED                 ",
+                "",
+                "        |                                CPU                                 |                                GPU                                 |",
+                "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+                "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                "hpc     |        6000            0(3)    30000 [████░░░░░░░░░░░░░░░░]  20.0% |           0            0(3)        ∞                               | TS_FIXED                 ",
+            ),
+        )
+
+    def test_stats_rejects_seconds_and_hours(self):
+        self.run_cli_main_exit(["slurm-quota", "stats", "--seconds", "--hours"], 2)
+
     def test_stats_rejects_positional_and_user_option(self):
         self.run_cli_main_exit(["slurm-quota", "stats", "alice", "--user", "bob"], 2)
 
