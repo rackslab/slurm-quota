@@ -5,10 +5,12 @@
 """Database migration CLI for slurm-quota."""
 
 import argparse
+import contextlib
 import os
 import sqlite3
 import sys
 import time
+from collections.abc import Iterator
 
 import slurm_quota
 from slurm_quota.auth import get_current_user
@@ -48,7 +50,39 @@ def _table_columns(cursor: sqlite3.Cursor, table: str) -> list[str]:
     return [row[1] for row in cursor.fetchall()]
 
 
-def migrate_consumption_to_pairs(conn: sqlite3.Connection) -> None:
+@contextlib.contextmanager
+def _rebuild_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Cursor]:
+    """Run schema changes that rebuild tables in a single transaction.
+
+    Foreign keys are disabled, so that tables can be dropped, recreated and
+    renamed while other tables reference them, then checked before commit.
+    The database is left unchanged when any step run within fails.
+    """
+    conn.commit()
+    previous_isolation_level = conn.isolation_level
+    conn.isolation_level = None  # explicit transaction control
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA foreign_keys = OFF")
+    try:
+        cursor.execute("BEGIN")
+        yield cursor
+        cursor.execute("PRAGMA foreign_key_check")
+        violations = cursor.fetchall()
+        if violations:
+            raise sqlite3.IntegrityError(
+                f"Foreign key violations after migration: {violations}"
+            )
+        cursor.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            cursor.execute("ROLLBACK")
+        raise
+    finally:
+        cursor.execute("PRAGMA foreign_keys = ON")
+        conn.isolation_level = previous_isolation_level
+
+
+def migrate_consumption_to_pairs(cursor: sqlite3.Cursor) -> None:
     """Move legacy per-user and per-account consumption to user/account pairs.
 
     Which user consumed on which account is unknown, so legacy consumption (in
@@ -60,127 +94,102 @@ def migrate_consumption_to_pairs(conn: sqlite3.Connection) -> None:
 
     The consumption columns are then removed from users and accounts tables by
     rebuilding them, as ALTER TABLE DROP COLUMN is not available with
-    SQLite < 3.35. Everything runs in a single transaction. Nothing is done when
+    SQLite < 3.35. It must run within _rebuild_transaction(). Nothing is done when
     the users table has no legacy consumption column.
     """
-    cursor = conn.cursor()
     if "total_consumed_cpu_minutes" not in _table_columns(cursor, "users"):
         logger.info("Migration not needed: consumption already stored per pair")
         return
 
-    conn.commit()
-    previous_isolation_level = conn.isolation_level
-    conn.isolation_level = None  # explicit transaction control
-    cursor.execute("PRAGMA foreign_keys = OFF")
-    try:
-        cursor.execute("BEGIN")
-
-        for table, key in (("users", "username"), ("accounts", "account")):
-            cursor.execute(f"SELECT 1 FROM {table} WHERE {key} = ?", (UNATTRIBUTED,))
-            if cursor.fetchone() is not None:
-                raise sqlite3.IntegrityError(
-                    f"{table[:-1].capitalize()} {UNATTRIBUTED} already exists, "
-                    "this name is reserved to store unattributed consumption"
-                )
-
-        rows: list[tuple[str, str, int, int]] = []
-        for table, key in (("users", "username"), ("accounts", "account")):
-            cursor.execute(f"""
-                SELECT {key}, COALESCE(total_consumed_cpu_minutes, 0),
-                       COALESCE(total_consumed_gpu_minutes, 0)
-                FROM {table}
-                WHERE total_consumed_cpu_minutes > 0
-                   OR total_consumed_gpu_minutes > 0
-                ORDER BY {key}
-            """)
-            entries = cursor.fetchall()
-            for name, cpu, gpu in entries:
-                pair = (
-                    (name, UNATTRIBUTED) if table == "users" else (UNATTRIBUTED, name)
-                )
-                rows.append((*pair, int(cpu) * 60, int(gpu) * 60))
-            logger.info(
-                "Legacy consumption of %d %s: %d CPU min, %d GPU min",
-                len(entries),
-                table,
-                sum(int(cpu) for _, cpu, _ in entries),
-                sum(int(gpu) for _, _, gpu in entries),
-            )
-
-        if rows:
-            # Unlimited quotas, these entities are never submitted jobs.
-            cursor.execute(
-                "INSERT INTO users (username, quota_cpu_minutes, quota_gpu_minutes) "
-                "VALUES (?, -1, -1)",
-                (UNATTRIBUTED,),
-            )
-            cursor.execute(
-                "INSERT INTO accounts (account, quota_cpu_minutes, quota_gpu_minutes) "
-                "VALUES (?, -1, -1)",
-                (UNATTRIBUTED,),
-            )
-            cursor.execute(
-                """
-                INSERT INTO settings (key, value) VALUES (?, ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value
-                """,
-                (CONSUMPTION_MIGRATED_AT, str(int(time.time()))),
-            )
-
-        create_consumption_table(cursor)
-        cursor.executemany(
-            """
-            INSERT INTO user_account_consumption (
-                username, account, consumed_cpu_seconds, consumed_gpu_seconds
-            )
-            VALUES (?, ?, ?, ?)
-            """,
-            rows,
-        )
-        if rows:
-            logger.info(
-                "Stored legacy consumption on %d %s pairs, run "
-                "slurm-quota-reallocate to attribute it to actual user/account "
-                "pairs",
-                len(rows),
-                UNATTRIBUTED,
-            )
-
-        for table, key in (("users", "username"), ("accounts", "account")):
-            cursor.execute(f"""
-                CREATE TABLE {table}_new (
-                    {key} TEXT PRIMARY KEY,
-                    quota_cpu_minutes INTEGER DEFAULT -1,
-                    quota_gpu_minutes INTEGER DEFAULT -1,
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cursor.execute(f"""
-                INSERT INTO {table}_new (
-                    {key}, quota_cpu_minutes, quota_gpu_minutes, last_updated
-                )
-                SELECT {key}, quota_cpu_minutes, quota_gpu_minutes, last_updated
-                FROM {table}
-            """)
-            cursor.execute(f"DROP TABLE {table}")
-            cursor.execute(f"ALTER TABLE {table}_new RENAME TO {table}")
-            logger.info("Removed consumption columns from %s table", table)
-
-        cursor.execute("PRAGMA foreign_key_check")
-        violations = cursor.fetchall()
-        if violations:
+    for table, key in (("users", "username"), ("accounts", "account")):
+        cursor.execute(f"SELECT 1 FROM {table} WHERE {key} = ?", (UNATTRIBUTED,))
+        if cursor.fetchone() is not None:
             raise sqlite3.IntegrityError(
-                f"Foreign key violations after migration: {violations}"
+                f"{table[:-1].capitalize()} {UNATTRIBUTED} already exists, "
+                "this name is reserved to store unattributed consumption"
             )
-        cursor.execute("COMMIT")
-        logger.info("Migration completed: consumption stored per user/account pair")
-    except BaseException:
-        if conn.in_transaction:
-            cursor.execute("ROLLBACK")
-        raise
-    finally:
-        cursor.execute("PRAGMA foreign_keys = ON")
-        conn.isolation_level = previous_isolation_level
+
+    rows: list[tuple[str, str, int, int]] = []
+    for table, key in (("users", "username"), ("accounts", "account")):
+        cursor.execute(f"""
+            SELECT {key}, COALESCE(total_consumed_cpu_minutes, 0),
+                   COALESCE(total_consumed_gpu_minutes, 0)
+            FROM {table}
+            WHERE total_consumed_cpu_minutes > 0
+               OR total_consumed_gpu_minutes > 0
+            ORDER BY {key}
+        """)
+        entries = cursor.fetchall()
+        for name, cpu, gpu in entries:
+            pair = (name, UNATTRIBUTED) if table == "users" else (UNATTRIBUTED, name)
+            rows.append((*pair, int(cpu) * 60, int(gpu) * 60))
+        logger.info(
+            "Legacy consumption of %d %s: %d CPU min, %d GPU min",
+            len(entries),
+            table,
+            sum(int(cpu) for _, cpu, _ in entries),
+            sum(int(gpu) for _, _, gpu in entries),
+        )
+
+    if rows:
+        # Unlimited quotas, these entities are never submitted jobs.
+        cursor.execute(
+            "INSERT INTO users (username, quota_cpu_minutes, quota_gpu_minutes) "
+            "VALUES (?, -1, -1)",
+            (UNATTRIBUTED,),
+        )
+        cursor.execute(
+            "INSERT INTO accounts (account, quota_cpu_minutes, quota_gpu_minutes) "
+            "VALUES (?, -1, -1)",
+            (UNATTRIBUTED,),
+        )
+        cursor.execute(
+            """
+            INSERT INTO settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (CONSUMPTION_MIGRATED_AT, str(int(time.time()))),
+        )
+
+    create_consumption_table(cursor)
+    cursor.executemany(
+        """
+        INSERT INTO user_account_consumption (
+            username, account, consumed_cpu_seconds, consumed_gpu_seconds
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        rows,
+    )
+    if rows:
+        logger.info(
+            "Stored legacy consumption on %d %s pairs, run "
+            "slurm-quota-reallocate to attribute it to actual user/account "
+            "pairs",
+            len(rows),
+            UNATTRIBUTED,
+        )
+
+    for table, key in (("users", "username"), ("accounts", "account")):
+        cursor.execute(f"""
+            CREATE TABLE {table}_new (
+                {key} TEXT PRIMARY KEY,
+                quota_cpu_minutes INTEGER DEFAULT -1,
+                quota_gpu_minutes INTEGER DEFAULT -1,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute(f"""
+            INSERT INTO {table}_new (
+                {key}, quota_cpu_minutes, quota_gpu_minutes, last_updated
+            )
+            SELECT {key}, quota_cpu_minutes, quota_gpu_minutes, last_updated
+            FROM {table}
+        """)
+        cursor.execute(f"DROP TABLE {table}")
+        cursor.execute(f"ALTER TABLE {table}_new RENAME TO {table}")
+        logger.info("Removed consumption columns from %s table", table)
+    logger.info("Migration completed: consumption stored per user/account pair")
 
 
 def migrate_database() -> None:
@@ -383,7 +392,8 @@ def migrate_database() -> None:
                 logger.info("Migration completed: manager_accounts table created")
 
             # Move consumption to user/account pairs, in seconds (v4)
-            migrate_consumption_to_pairs(conn)
+            with _rebuild_transaction(conn) as rebuild_cursor:
+                migrate_consumption_to_pairs(rebuild_cursor)
 
             enable_wal_mode(conn)
             set_database_permissions()
