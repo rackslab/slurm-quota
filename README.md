@@ -129,14 +129,14 @@ script is automatically called during each job submission or modification (`sbat
 validate the request before it is accepted into the system. The script can thus apply custom rules (such as quota
 control for example) and reject jobs that do not comply with the defined policies.
 
-Slurm-quota provides a `job_submit.lua` script that calculates the requested CPU minutes from `num_tasks × time_limit`.
-It also calculates the requested GPU minutes from the GPU resources specified in the job's TRES fields (`tres_per_job`,
-`tres_per_task`, `tres_per_node`, `tres_per_socket`), taking into account the load factors configured by GPU type. It
-then checks if a numeric quota is set in the database (`quota_cpu_minutes != -1` for CPU, `quota_gpu_minutes != -1` for
-GPU). The plugin compares the calculated CPU and GPU minute value for the job to the available share, defined as the
-quota minus the sum of "already consumed" and "already preallocated". This check is performed for both the user and the
-account, for both CPU and GPU. If the request exceeds any of the available shares (CPU or GPU), the submission or
-modification is refused, with an explicit message to the user.
+Slurm-quota provides a `job_submit.lua` script that calculates the requested CPU seconds from `num_tasks × time_limit`.
+It also calculates the requested GPU seconds (rounded up) from the GPU resources specified in the job's TRES fields
+(`tres_per_job`, `tres_per_task`, `tres_per_node`, `tres_per_socket`), taking into account the load factors configured
+by GPU type. It then checks if a numeric quota is set in the database (`quota_cpu_minutes != -1` for CPU,
+`quota_gpu_minutes != -1` for GPU). The plugin compares the calculated CPU and GPU seconds for the job to the available
+share, defined as the quota minus the sum of "already consumed" and "already preallocated". This check is performed for
+both the user and the account, for both CPU and GPU. If the request exceeds any of the available shares (CPU or GPU),
+the submission or modification is refused, with an explicit message to the user.
 
 When a job submission is accepted, the Lua script creates a corresponding preallocation in the `jobs_preallocations`
 table and associates this preallocation with a generated unique UUID identifier, the Slurm `username`, and the Slurm
@@ -185,7 +185,7 @@ The SQLite database contains these tables:
 - `user_account_consumption`: consumed CPU and GPU seconds per user/account pair. After an upgrade from version 3,
   legacy consumption is held by temporary pairs with an `(unattributed)` user and account until
   [`slurm-quota-reallocate`](#slurm-quota-reallocate-command) is run.
-- `jobs_preallocations`: CPU and GPU minutes preallocated to non-completed jobs, with `job_uuid`, `username`, and
+- `jobs_preallocations`: CPU and GPU seconds preallocated to non-completed jobs, with `job_uuid`, `username`, and
   `account`.
 - `gpu_factors`: load factors by GPU type for billed GPU minute calculation.
 - `settings`: key/value configuration (default CPU and GPU quotas applied when a user or account is auto-created).
