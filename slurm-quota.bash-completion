@@ -115,7 +115,7 @@ _slurm_quota() {
             COMPREPLY=($(compgen -W "$base_opts --save" -- "$cur"))
             ;;
         stats)
-            COMPREPLY=($(compgen -W "$base_opts --user --account --all --hours --seconds" -- "$cur"))
+            COMPREPLY=($(compgen -W "$base_opts --user --account --all --breakdown --hours --seconds" -- "$cur"))
             COMPREPLY+=($(_slurm_quota_complete_users "$cur"))
             ;;
         adjust)

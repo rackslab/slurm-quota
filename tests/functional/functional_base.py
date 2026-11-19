@@ -122,7 +122,9 @@ class FunctionalCLIBase(SlurmQuotaTestCase):
         raw_account = qs.get("account", [None])[0]
         username: str | None = unquote(raw_username) if raw_username else None
         account: str | None = unquote(raw_account) if raw_account else None
-        payload = _stats_payload_filtered(username, account)
+        payload = dict(_stats_payload_filtered(username, account))
+        if qs.get("breakdown", [None])[0] == "true":
+            payload["breakdown"] = _stats_breakdown_filtered(username, account)
         return FakeJsonUrlopenResponse(payload)
 
 
@@ -196,6 +198,24 @@ _STATS_REST_PAYLOAD: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
+# Consumption breakdown per user/account pair, returned with ``?breakdown=true``.
+_STATS_BREAKDOWN: list[dict[str, Any]] = [
+    {
+        "username": "alice",
+        "account": "hpc",
+        "consumed_cpu_seconds": 7200,
+        "consumed_gpu_seconds": 0,
+        "last_updated": "2024-01-15T12:30:45",
+    },
+    {
+        "username": "bob",
+        "account": "dev",
+        "consumed_cpu_seconds": 1800,
+        "consumed_gpu_seconds": 0,
+        "last_updated": "2024-01-15T12:30:45",
+    },
+]
+
 # Which accounts appear when ``GET /stats?username=`` is set (like ``get_user_accounts``).  # noqa: E501
 _STATS_ACCOUNT_NAMES_BY_USER: dict[str, frozenset[str]] = {
     "alice": frozenset({"hpc"}),
@@ -248,6 +268,18 @@ def _stats_payload_filtered(
             if item["account"] in accounts_filter
         ]
     return {"users": users, "accounts": accounts}
+
+
+def _stats_breakdown_filtered(
+    username: str | None, account: str | None
+) -> list[dict[str, Any]]:
+    """Return breakdown entries of the requested user or account, or all entries."""
+    return [
+        entry
+        for entry in _STATS_BREAKDOWN
+        if (username is None or entry["username"] == username)
+        and (account is None or entry["account"] == account)
+    ]
 
 
 def stats_payload_full() -> dict[str, list[dict[str, Any]]]:

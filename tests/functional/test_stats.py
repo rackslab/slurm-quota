@@ -62,6 +62,7 @@ class TestStatsCommand(FunctionalAPICliBase):
                 "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
                 "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
                 "alice   |         120           60(2)      600 [██████░░░░░░░░░░░░░░]  30.0% |           0            0(2)        ∞                               | TS_FIXED                 ",
+                "  └ hpc |         120                                                        |           0                                                        | TS_FIXED                 ",
                 "",
                 "        |                                CPU                                 |                                GPU                                 |",
                 "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
@@ -78,6 +79,7 @@ class TestStatsCommand(FunctionalAPICliBase):
                 "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
                 "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
                 "alice   |         120           60(2)      600 [██████░░░░░░░░░░░░░░]  30.0% |           0            0(2)        ∞                               | TS_FIXED                 ",
+                "  └ hpc |         120                                                        |           0                                                        | TS_FIXED                 ",
                 "",
                 "        |                                CPU                                 |                                GPU                                 |",
                 "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
@@ -94,6 +96,7 @@ class TestStatsCommand(FunctionalAPICliBase):
                 "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
                 "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
                 "alice   |         120           60(2)      600 [██████░░░░░░░░░░░░░░]  30.0% |           0            0(2)        ∞                               | TS_FIXED                 ",
+                "  └ hpc |         120                                                        |           0                                                        | TS_FIXED                 ",
                 "",
                 "        |                                CPU                                 |                                GPU                                 |",
                 "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
@@ -110,6 +113,7 @@ class TestStatsCommand(FunctionalAPICliBase):
                 "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
                 "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
                 "bob     |          30            0(1)        ∞                               |           0            0(1)        ∞                               | TS_FIXED                 ",
+                "  └ dev |          30                                                        |           0                                                        | TS_FIXED                 ",
                 "",
                 "        |                                CPU                                 |                                GPU                                 |",
                 "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
@@ -133,6 +137,28 @@ class TestStatsCommand(FunctionalAPICliBase):
                 "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
                 "hpc     |         100            0(3)      500 [████░░░░░░░░░░░░░░░░]  20.0% |           0            0(3)        ∞                               | TS_FIXED                 ",
                 "dev     |          40            0(0)        ∞                               |           0            0(0)        ∞                               | TS_FIXED                 ",
+            ),
+        )
+
+    def test_stats_with_all_and_breakdown(self):
+        self._run_stats(
+            ["slurm-quota", "stats", "--all", "--breakdown"],
+            expected=dedent_lines(
+                "          |                                CPU                                 |                                GPU                                 |",
+                "USER      |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+                "------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                "alice     |         120           60(2)      600 [██████░░░░░░░░░░░░░░]  30.0% |           0            0(2)        ∞                               | TS_FIXED                 ",
+                "  └ hpc   |         120                                                        |           0                                                        | TS_FIXED                 ",
+                "bob       |          30            0(1)        ∞                               |           0            0(1)        ∞                               | TS_FIXED                 ",
+                "  └ dev   |          30                                                        |           0                                                        | TS_FIXED                 ",
+                "",
+                "          |                                CPU                                 |                                GPU                                 |",
+                "ACCOUNT   |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+                "------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                "hpc       |         100            0(3)      500 [████░░░░░░░░░░░░░░░░]  20.0% |           0            0(3)        ∞                               | TS_FIXED                 ",
+                "  └ alice |         120                                                        |           0                                                        | TS_FIXED                 ",
+                "dev       |          40            0(0)        ∞                               |           0            0(0)        ∞                               | TS_FIXED                 ",
+                "  └ bob   |          30                                                        |           0                                                        | TS_FIXED                 ",
             ),
         )
 
@@ -238,10 +264,11 @@ class TestStatsCommand(FunctionalAPICliBase):
         self._run_stats(
             ["slurm-quota", "stats", "--account", "hpc"],
             expected=dedent_lines(
-                "        |                                CPU                                 |                                GPU                                 |",
-                "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
-                "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
-                "hpc     |         100            0(3)      500 [████░░░░░░░░░░░░░░░░]  20.0% |           0            0(3)        ∞                               | TS_FIXED                 ",
+                "          |                                CPU                                 |                                GPU                                 |",
+                "ACCOUNT   |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
+                "------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                "hpc       |         100            0(3)      500 [████░░░░░░░░░░░░░░░░]  20.0% |           0            0(3)        ∞                               | TS_FIXED                 ",
+                "  └ alice |         120                                                        |           0                                                        | TS_FIXED                 ",
             ),
         )
 
@@ -289,6 +316,7 @@ class TestStatsCommand(FunctionalAPICliBase):
                 "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
                 "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
                 "alice   |        2.00         1.00(2)    10.00 [██████░░░░░░░░░░░░░░]  30.0% |        0.00         0.00(2)        ∞                               | TS_FIXED                 ",
+                "  └ hpc |        2.00                                                        |        0.00                                                        | TS_FIXED                 ",
                 "",
                 "        |                                CPU                                 |                                GPU                                 |",
                 "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
@@ -323,6 +351,7 @@ class TestStatsCommand(FunctionalAPICliBase):
                 "USER    |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",
                 "----------------------------------------------------------------------------------------------------------------------------------------------------------------",
                 "alice   |        7200         3600(2)    36000 [██████░░░░░░░░░░░░░░]  30.0% |           0            0(2)        ∞                               | TS_FIXED                 ",
+                "  └ hpc |        7200                                                        |           0                                                        | TS_FIXED                 ",
                 "",
                 "        |                                CPU                                 |                                GPU                                 |",
                 "ACCOUNT |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        |    CONSUMED  PREALLOC(JOBS)    QUOTA STATUS                        | LAST UPDATED             ",

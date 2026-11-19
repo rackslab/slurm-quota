@@ -525,14 +525,22 @@ def show_user_stats(
     account: Optional[str] = None,
     show_all: bool = False,
     display_unit: str = MINUTES,
+    show_breakdown: bool = False,
 ) -> None:
     """
     Display resource statistics for users in table format.
+
+    The consumption of a single user is broken down by account below the user
+    row, and the consumption of a single account is broken down by user below
+    the account row. With show_all, the breakdown is displayed below both user
+    and account rows only when show_breakdown is set.
 
     Args:
         username: The username to query (if None and not show_all, uses current user)
         account: The account to query in the accounts table.
         show_all: If True, show all users
+        display_unit: Unit of displayed times.
+        show_breakdown: If True with show_all, show the consumption breakdown.
     """
     selected_username = username
     if not show_all and not selected_username and not account:
@@ -541,9 +549,16 @@ def show_user_stats(
         except KeyError:
             sys.exit(1)
 
+    breakdown_under_users = not account and (not show_all or show_breakdown)
+    breakdown_under_accounts = bool(account) or (show_all and show_breakdown)
+
+    def breakdown_label(name: Any) -> str:
+        return f"  └ {name}"
+
     def compute_first_column_width(
         users: list[dict[str, Any]],
         accounts: list[dict[str, Any]],
+        breakdown: list[dict[str, Any]],
         max_width: int = 30,
     ) -> int:
         labels = [
@@ -552,12 +567,25 @@ def show_user_stats(
             *[str(item.get("username", "?")) for item in users],
             *[str(item.get("account", "?")) for item in accounts],
         ]
+        if breakdown_under_users:
+            labels.extend(
+                breakdown_label(item.get("account", "?")) for item in breakdown
+            )
+        if breakdown_under_accounts:
+            labels.extend(
+                breakdown_label(item.get("username", "?")) for item in breakdown
+            )
         longest_label = max(len(label) for label in labels)
         return min(longest_label, max_width)
 
     try:
         api = _api_client_from_token()
-        users_data, accounts_data, _ = api.stats(selected_username, account, show_all)
+        users_data, accounts_data, breakdown_data = api.stats(
+            selected_username,
+            account,
+            show_all,
+            include_breakdown=breakdown_under_users or breakdown_under_accounts,
+        )
 
         if not users_data and not accounts_data:
             if username:
@@ -568,7 +596,9 @@ def show_user_stats(
                 print("No users found in service")
             return
 
-        first_column_width = compute_first_column_width(users_data, accounts_data)
+        first_column_width = compute_first_column_width(
+            users_data, accounts_data, breakdown_data
+        )
 
         def format_first_column(value: str) -> str:
             value_str = str(value)
@@ -608,6 +638,29 @@ def show_user_stats(
                 f"{gpu_quota_str:>8} {gpu_status_bar:<29} | {last_updated_str:<25}"
             )
             return f"{format_first_column(label)} | {cpu} | {gpu}"
+
+        def print_breakdown(key: str, name: str, other_key: str) -> None:
+            for entry in breakdown_data:
+                if entry.get(key) != name:
+                    continue
+                print(
+                    format_stats_row(
+                        breakdown_label(entry.get(other_key, "?")),
+                        format_seconds(
+                            int(entry.get("consumed_cpu_seconds", 0)), display_unit
+                        ),
+                        "",
+                        "",
+                        "",
+                        format_seconds(
+                            int(entry.get("consumed_gpu_seconds", 0)), display_unit
+                        ),
+                        "",
+                        "",
+                        "",
+                        format_timestamp_with_timezone(entry.get("last_updated")),
+                    )
+                )
 
         if users_data:
             header = (
@@ -665,6 +718,8 @@ def show_user_stats(
                         last_updated_str,
                     )
                 )
+                if breakdown_under_users:
+                    print_breakdown("username", uname, "account")
             print()
 
         header = (
@@ -722,6 +777,8 @@ def show_user_stats(
                     last_updated_str,
                 )
             )
+            if breakdown_under_accounts:
+                print_breakdown("account", account_name, "username")
     except ServiceHTTPError as e:
         _handle_api_error(
             e,

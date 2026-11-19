@@ -165,6 +165,14 @@ def main():
         action="store_true",
         help="Show all users (same as not specifying username)",
     )
+    stats_parser.add_argument(
+        "--breakdown",
+        action="store_true",
+        help=(
+            "With --all, break down user consumption by account and account "
+            "consumption by user (always shown for a single user or account)"
+        ),
+    )
     stats_unit_group = stats_parser.add_mutually_exclusive_group()
     stats_unit_group.add_argument(
         "--hours",
@@ -404,7 +412,13 @@ def main():
             display_unit = HOURS
         else:
             display_unit = MINUTES
-        show_user_stats(selected_username, args.account, args.all, display_unit)
+        show_user_stats(
+            selected_username,
+            args.account,
+            args.all,
+            display_unit,
+            show_breakdown=args.breakdown,
+        )
     elif args.command == "role":
         if args.role_command == "show":
             role_show_command()

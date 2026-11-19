@@ -151,6 +151,88 @@ class TestShowUserStats(SlurmQuotaTestCase):
         )
         self.assertEqual(out, expected)
 
+    def _breakdown_entries(self):
+        return [
+            {
+                "username": "alice",
+                "account": "acct1",
+                "consumed_cpu_seconds": 3600,
+                "consumed_gpu_seconds": 60,
+                "last_updated": "2024-01-15T12:30:45",
+            },
+            {
+                "username": "alice",
+                "account": "(unattributed)",
+                "consumed_cpu_seconds": 3600,
+                "consumed_gpu_seconds": 0,
+                "last_updated": "2024-01-15T12:30:45",
+            },
+        ]
+
+    def test_user_consumption_broken_down_by_account(self):
+        self.env({"NO_COLOR": "1"})
+        users, accounts = _sample_users_and_accounts()
+        m_api = self._mock_stats(
+            return_value=(users, accounts, self._breakdown_entries())
+        )
+        with patch(
+            "slurm_quota.commands.format_timestamp_with_timezone",
+            return_value="TS_FIXED",
+        ):
+            out = self._run_show(username="alice", show_all=False)
+        m_api.return_value.stats.assert_called_once_with(
+            "alice", None, False, include_breakdown=True
+        )
+        lines = out.splitlines()
+        self.assertTrue(lines[3].startswith("alice              |"), lines[3])
+        label, cpu, gpu, last_updated = lines[4].split("|")
+        self.assertEqual(label, "  └ acct1          ")
+        # Only consumption is reported, no preallocation, quota nor status
+        self.assertEqual(cpu.split(), ["60"])
+        self.assertEqual(gpu.split(), ["1"])
+        self.assertEqual(last_updated.strip(), "TS_FIXED")
+        self.assertTrue(lines[5].startswith("  └ (unattributed) |          60 "))
+        # Account rows are not broken down for a user query
+        self.assertTrue(lines[-1].startswith("acct1              |"), lines[-1])
+
+    def test_account_consumption_broken_down_by_user(self):
+        self.env({"NO_COLOR": "1"})
+        _, accounts = _sample_users_and_accounts()
+        entries = self._breakdown_entries()[:1]
+        self._mock_stats(return_value=([], accounts, entries))
+        with patch(
+            "slurm_quota.commands.format_timestamp_with_timezone",
+            return_value="TS_FIXED",
+        ):
+            out = self._run_show(account="acct1", show_all=False)
+        lines = out.splitlines()
+        self.assertTrue(lines[3].startswith("acct1     |"), lines[3])
+        self.assertTrue(lines[4].startswith("  └ alice |          60 "), lines[4])
+        self.assertEqual(len(lines), 5)
+
+    def test_all_without_breakdown_option(self):
+        self.env({"NO_COLOR": "1"})
+        users, accounts = _sample_users_and_accounts()
+        m_api = self._mock_stats(return_value=(users, accounts, []))
+        out = self._run_show(show_all=True)
+        m_api.return_value.stats.assert_called_once_with(
+            None, None, True, include_breakdown=False
+        )
+        self.assertNotIn("└", out)
+
+    def test_all_with_breakdown_option(self):
+        self.env({"NO_COLOR": "1"})
+        users, accounts = _sample_users_and_accounts()
+        entries = self._breakdown_entries()[:1]
+        m_api = self._mock_stats(return_value=(users, accounts, entries))
+        out = self._run_show(show_all=True, show_breakdown=True)
+        m_api.return_value.stats.assert_called_once_with(
+            None, None, True, include_breakdown=True
+        )
+        labels = [line.split("|")[0].rstrip() for line in out.splitlines()]
+        self.assertEqual(labels[labels.index("alice") + 1], "  └ acct1")
+        self.assertEqual(labels[labels.index("acct1") + 1], "  └ alice")
+
     def test_display_hours_formats_numbers(self):
         self.env({"NO_COLOR": "1"})
         user = {
@@ -317,7 +399,9 @@ class TestShowUserStats(SlurmQuotaTestCase):
             m_api = self._mock_stats(return_value=([], [], []))
             out = self._run_show(show_all=False)
         m_gc.assert_called_once()
-        m_api.return_value.stats.assert_called_once_with("carol", None, False)
+        m_api.return_value.stats.assert_called_once_with(
+            "carol", None, False, include_breakdown=True
+        )
         self.assertEqual(out, dedent_lines("No users found in service"))
 
     def test_skips_get_current_user_when_account_requested(self):
@@ -325,7 +409,9 @@ class TestShowUserStats(SlurmQuotaTestCase):
             m_api = self._mock_stats(return_value=([], [], []))
             out = self._run_show(account="hpc", show_all=False)
         m_gc.assert_not_called()
-        m_api.return_value.stats.assert_called_once_with(None, "hpc", False)
+        m_api.return_value.stats.assert_called_once_with(
+            None, "hpc", False, include_breakdown=True
+        )
         self.assertEqual(out, dedent_lines("No data found for account: hpc"))
 
     def test_get_current_user_keyerror_exits(self):
