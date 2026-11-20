@@ -6,7 +6,9 @@ import sqlite3
 from unittest.mock import patch
 
 from slurm_quota.database import (
+    create_app_token,
     init_database,
+    list_app_tokens,
     query_accounts_aggregate,
     query_users_aggregate,
 )
@@ -46,6 +48,31 @@ class TestMigrateDatabase(SlurmQuotaTestCase):
                 "SELECT username, account FROM slurm_associations"
             ).fetchall()
         self.assertEqual(rows, [("alice", "hpc")])
+
+    def test_migrate_database_creates_app_tokens_table(self):
+        with self.db_connection() as conn:
+            conn.executescript(V3_SCHEMA)
+            conn.commit()
+
+        migrate_database()
+
+        with self.db_connection() as conn:
+            create_app_token(conn, "id1", "alice", "ci", ["stats:read"], 10, 20)
+            tokens = list_app_tokens(conn)
+        self.assertEqual(
+            tokens,
+            [
+                {
+                    "id": "id1",
+                    "username": "alice",
+                    "name": "ci",
+                    "scopes": ["stats:read"],
+                    "created_at": 10,
+                    "expires_at": 20,
+                    "revoked_at": None,
+                }
+            ],
+        )
 
 
 V3_SCHEMA = """
