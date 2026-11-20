@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from flask import abort, current_app, jsonify, request
 from rfl.authentication.errors import LDAPAuthenticationError
-from rfl.web.tokens import check_jwt
 
 import slurm_quota
 from slurm_quota.database import (
@@ -44,9 +43,9 @@ from slurm_quota.database import (
     set_user_quota as db_set_user_quota,
 )
 from slurm_quota.serve.authorization import (
+    authorize,
     config_admins,
     login_role,
-    require_role,
 )
 
 if TYPE_CHECKING:
@@ -406,7 +405,7 @@ def login() -> Any:
     )
 
 
-@check_jwt
+@authorize("stats:read")
 def stats() -> Any:
     username_param = (request.args.get("username") or "").strip() or None
     account_param = (request.args.get("account") or "").strip() or None
@@ -433,7 +432,7 @@ def stats() -> Any:
     return jsonify(payload)
 
 
-@check_jwt
+@authorize("stats:read")
 def me() -> Any:
     login = cast(str, request.user.login)
     role = login_role(login)
@@ -444,7 +443,7 @@ def me() -> Any:
     return jsonify(payload)
 
 
-@require_role("admin")
+@authorize("roles:read")
 def list_roles() -> Any:
     serve_app = cast("SlurmQuotaServeApp", current_app)
     assert serve_app.settings is not None
@@ -453,7 +452,7 @@ def list_roles() -> Any:
     return jsonify({"users": users})
 
 
-@require_role("admin")
+@authorize("roles:write")
 def grant_operator(username: str) -> Any:
     _validate_username(username)
     serve_app = cast("SlurmQuotaServeApp", current_app)
@@ -465,7 +464,7 @@ def grant_operator(username: str) -> Any:
     return "", 204
 
 
-@require_role("admin")
+@authorize("roles:write")
 def revoke_operator(username: str) -> Any:
     _validate_username(username)
     with connect_database() as conn:
@@ -473,7 +472,7 @@ def revoke_operator(username: str) -> Any:
     return "", 204
 
 
-@require_role("admin")
+@authorize("roles:write")
 def grant_manager(username: str) -> Any:
     _validate_username(username)
     serve_app = cast("SlurmQuotaServeApp", current_app)
@@ -485,7 +484,7 @@ def grant_manager(username: str) -> Any:
     return "", 204
 
 
-@require_role("admin")
+@authorize("roles:write")
 def revoke_manager(username: str) -> Any:
     _validate_username(username)
     with connect_database() as conn:
@@ -493,7 +492,7 @@ def revoke_manager(username: str) -> Any:
     return "", 204
 
 
-@require_role("admin")
+@authorize("roles:read")
 def list_manager_accounts_route(username: str) -> Any:
     _validate_username(username)
     with connect_database() as conn:
@@ -503,7 +502,7 @@ def list_manager_accounts_route(username: str) -> Any:
     return jsonify({"accounts": accounts})
 
 
-@require_role("admin")
+@authorize("roles:write")
 def grant_manager_account_route(username: str, account: str) -> Any:
     _validate_username(username)
     _validate_account(account)
@@ -514,7 +513,7 @@ def grant_manager_account_route(username: str, account: str) -> Any:
     return "", 204
 
 
-@require_role("admin")
+@authorize("roles:write")
 def revoke_manager_account_route(username: str, account: str) -> Any:
     _validate_username(username)
     _validate_account(account)
@@ -525,7 +524,7 @@ def revoke_manager_account_route(username: str, account: str) -> Any:
     return "", 204
 
 
-@require_role("admin", "operator")
+@authorize("quotas:read")
 def get_default_quotas() -> Any:
     try:
         with connect_database() as conn:
@@ -543,7 +542,7 @@ def get_default_quotas() -> Any:
     )
 
 
-@require_role("admin", "operator")
+@authorize("quotas:write")
 def set_default_quotas() -> Any:
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
@@ -591,7 +590,7 @@ def set_default_quotas() -> Any:
     return "", 204
 
 
-@require_role("admin", "operator")
+@authorize("quotas:write")
 def set_quota(entity: str, name: str, resource: str) -> Any:
     if resource not in ("cpu", "gpu"):
         abort(400, description="Invalid resource")
@@ -634,7 +633,7 @@ def set_quota(entity: str, name: str, resource: str) -> Any:
     return "", 204
 
 
-@require_role("admin", "operator")
+@authorize("quotas:write")
 def adjust_consumption(username: str, account: str, resource: str) -> Any:
     _validate_username(username)
     _validate_account(account)
@@ -667,7 +666,7 @@ def adjust_consumption(username: str, account: str, resource: str) -> Any:
     return jsonify({"total_consumed_seconds": total})
 
 
-@require_role("admin", "operator")
+@authorize("quotas:read")
 def get_gpu_factors() -> Any:
     try:
         factors = load_gpu_factors()
@@ -678,7 +677,7 @@ def get_gpu_factors() -> Any:
     return jsonify({"default_factor": default_factor, "factors": factors})
 
 
-@require_role("admin", "operator")
+@authorize("quotas:write")
 def set_gpu_factor(gpu_type: str) -> Any:
     if not gpu_type:
         abort(400, description="Invalid gpu_type")

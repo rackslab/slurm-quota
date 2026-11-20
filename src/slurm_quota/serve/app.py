@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from flask import Flask, jsonify, request
+from rfl.authentication.errors import JWTPrivateKeyLoaderError
 from rfl.authentication.ldap import LDAPAuthentifier
 from rfl.settings import RuntimeSettings
 from rfl.web.tokens import RFLTokenizedWebApp
@@ -20,6 +21,7 @@ from werkzeug.exceptions import BadRequest, Forbidden, HTTPException, Unauthoriz
 
 from slurm_quota import auth
 from slurm_quota.database import init_database
+from slurm_quota.serve.jwt import SlurmQuotaJWTManager
 from slurm_quota.serve.settings import (
     ServeSetupError,
     load_bind_password,
@@ -36,6 +38,7 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
         self.authentifier: LDAPAuthentifier | None = None
         self.ssl_context: ssl.SSLContext | None = None
         self._last_activity = time.monotonic()
+        self.jwt: SlurmQuotaJWTManager
 
     @property
     def scheme(self) -> str:
@@ -150,14 +153,18 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
                 ) from exc
             self.ssl_context = context
         self.authentifier = None
-        RFLTokenizedWebApp.__init__(
-            self,
-            audience=self.settings.jwt.audience,
-            algorithm=self.settings.jwt.algorithm,
-            key=self.settings.jwt.key,
-            create=self.settings.jwt.create,
-            create_parent=self.settings.jwt.create_parent,
-        )
+        try:
+            self.jwt = SlurmQuotaJWTManager.key(
+                audience=self.settings.jwt.audience,
+                algorithm=self.settings.jwt.algorithm,
+                path=self.settings.jwt.key,
+                create=self.settings.jwt.create,
+                create_parent=self.settings.jwt.create_parent,
+            )
+        except JWTPrivateKeyLoaderError as exc:
+            raise ServeSetupError(
+                f"Error while loading JWT private key {self.settings.jwt.key}: {exc}"
+            ) from exc
         method = self.settings.authentication.method
         if method == "ldap":
             load_bind_password(self.settings)

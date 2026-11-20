@@ -15,6 +15,8 @@ from rfl.settings import RuntimeSettings
 from rfl.web.tokens import check_jwt
 
 from slurm_quota.database import connect_database, is_manager, is_operator
+from slurm_quota.scopes import SCOPE_ROLES, SCOPES
+from slurm_quota.serve.jwt import TokenUser
 
 Role = Literal["admin", "operator", "manager", "user"]
 
@@ -46,19 +48,26 @@ def login_role(username: str) -> Role:
         return resolve_role(username, current_app.settings, conn)
 
 
-def require_role(*roles: Role) -> Callable[[F], F]:
-    allowed = set(roles)
+def authorize(scope: str) -> Callable[[F], F]:
+    """Require a valid token with the given scope.
+
+    The scope must be available for the current role of the token owner, and
+    carried by the token when it has a scopes claim.
+    """
+    assert scope in SCOPES, f"unknown scope {scope}"
+    roles = SCOPE_ROLES[scope]
 
     def decorator(view: F) -> F:
         @wraps(view)
-        def role_check(*args: Any, **kwargs: Any) -> Any:
+        def authorization_check(*args: Any, **kwargs: Any) -> Any:
             assert current_app.settings is not None
-            login = cast(str, request.user.login)
-            role = login_role(login)
-            if role not in allowed:
+            user = cast(TokenUser, request.user)
+            if login_role(user.login) not in roles:
                 abort(403, description="Insufficient permissions")
+            if user.scopes is not None and scope not in user.scopes:
+                abort(403, description="Token scope insufficient")
             return view(*args, **kwargs)
 
-        return check_jwt(role_check)  # type: ignore[return-value]
+        return check_jwt(authorization_check)  # type: ignore[return-value]
 
     return decorator
