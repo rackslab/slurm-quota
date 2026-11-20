@@ -18,9 +18,14 @@
   </div>
   {% endif %}
   <div class="page-header-actions">
-    {% if user_role == "admin" %}
+    {% if user_role == "admin" or (user_role and logged_in_username) %}
     <nav class="admin-nav">
+      {% if user_role == "admin" %}
       <a href="{{ url_for('roles') }}">Manage roles</a>
+      {% endif %}
+      {% if user_role and logged_in_username %}
+      <a href="{{ url_for('tokens') }}">API tokens</a>
+      {% endif %}
     </nav>
     {% endif %}
     <div class="refresh-standalone">

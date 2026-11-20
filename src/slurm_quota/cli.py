@@ -31,8 +31,12 @@ from slurm_quota.commands import (
     show_gpu_factors_command,
     show_user_stats,
     token_command,
+    token_create_command,
+    token_list_command,
+    token_revoke_command,
 )
 from slurm_quota.log import setup_logging
+from slurm_quota.scopes import SCOPES
 from slurm_quota.token import ClientToken
 from slurm_quota.units import HOURS, MINUTES, SECONDS
 
@@ -139,6 +143,52 @@ def main():
         "--save",
         action="store_true",
         help=f"Save SLURM_QUOTA_TOKEN to {ClientToken.path()}",
+    )
+    token_subparsers = token_parser.add_subparsers(dest="token_command")
+    token_create_parser = token_subparsers.add_parser(
+        "create",
+        help="Create an application token with restricted scopes",
+    )
+    token_create_parser.add_argument(
+        "name",
+        help="Name of the application token",
+    )
+    token_create_parser.add_argument(
+        "--scope",
+        dest="scopes",
+        action="append",
+        required=True,
+        choices=list(SCOPES),
+        help="Scope granted to the token (repeatable)",
+    )
+    token_create_parser.add_argument(
+        "--duration",
+        type=int,
+        metavar="DAYS",
+        help="Token validity in days (default: defined by the service)",
+    )
+    token_list_parser = token_subparsers.add_parser(
+        "list",
+        help="List application tokens",
+    )
+    token_list_selection = token_list_parser.add_mutually_exclusive_group()
+    token_list_selection.add_argument(
+        "--user",
+        help="List application tokens of this user (admin)",
+    )
+    token_list_selection.add_argument(
+        "--all",
+        action="store_true",
+        help="List application tokens of all users (admin)",
+    )
+    token_revoke_parser = token_subparsers.add_parser(
+        "revoke",
+        help="Revoke an application token",
+    )
+    token_revoke_parser.add_argument(
+        "token_id",
+        metavar="ID",
+        help="Identifier of the application token",
     )
 
     # Stats command
@@ -408,7 +458,14 @@ def main():
     if args.command == "login":
         login_command(args.username, args.save)
     elif args.command == "token":
-        token_command(save=args.save)
+        if args.token_command == "create":
+            token_create_command(args.name, args.scopes, args.duration)
+        elif args.token_command == "list":
+            token_list_command(args.user, args.all)
+        elif args.token_command == "revoke":
+            token_revoke_command(args.token_id)
+        else:
+            token_command(save=args.save)
     elif args.command == "stats":
         if args.username and args.user:
             parser.error("stats: positional username and --user are mutually exclusive")

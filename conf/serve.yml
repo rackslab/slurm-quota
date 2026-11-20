@@ -87,7 +87,15 @@ jwt:
   duration:
     type: int
     default: 7
-    doc: Token validity duration in days
+    doc: User token validity duration in days
+  app_duration:
+    type: int
+    default: 90
+    doc: Default application token validity duration in days
+  app_max_duration:
+    type: int
+    default: 365
+    doc: Maximum application token validity duration in days
   algorithm:
     type: str
     choices:

@@ -44,6 +44,12 @@ sudo slurm-quota-token alice
 sudo slurm-quota-token --duration 7 bob
 ```
 
+Issued tokens carry no [scopes](../README.md#token-scopes), their access is restricted by the current role of the user
+on every request, so role changes apply immediately.
+
+For scripts and integrations, users can create longer-lived [application tokens](application-tokens.md) with restricted
+scopes.
+
 ## Client token storage
 
 API clients must send a Bearer JWT header. The `slurm-quota stats` command reads a saved token from
@@ -93,6 +99,7 @@ When `SLURM_QUOTA_TOKEN` is set, the dashboard skips the browser login page.
 - `slurm-quota token`: saves the JWT from `SLURM_QUOTA_TOKEN` to the XDG config file (see
   [Usage](../README.md#slurm-quota-command) in the main README).
 - `slurm-quota-token`: issues tokens (documented above).
+- `slurm-quota token create|list|revoke`: manages [application tokens](application-tokens.md).
 
 > [!NOTE]
 > For LDAP-based login and `slurm-quota login`, see the [Installation](../README.md#controller-node) and

@@ -798,3 +798,50 @@ class TestAPIClientTls(SlurmQuotaTestCase):
                 APIClient(token="jwt").stats(None, None, True)
         context = m_urlopen.call_args.kwargs.get("context")
         self.assertIsInstance(context, ssl.SSLContext)
+
+
+class TestAPIClientAppTokens(SlurmQuotaTestCase):
+    def test_create_app_token(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"id": "abc", "token": "t"}, status=201),
+        ) as m_urlopen:
+            payload = APIClient(token="jwt").create_app_token("ci", ["stats:read"], 30)
+        self.assertEqual(payload["token"], "t")
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.get_method(), "POST")
+        self.assertTrue(req.full_url.endswith("/tokens"))
+        self.assertEqual(
+            json.loads(req.data.decode("utf-8")),
+            {"name": "ci", "scopes": ["stats:read"], "duration": 30},
+        )
+
+    def test_create_app_token_without_duration(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"id": "abc"}, status=201),
+        ) as m_urlopen:
+            APIClient(token="jwt").create_app_token("ci", ["stats:read"])
+        body = json.loads(m_urlopen.call_args[0][0].data.decode("utf-8"))
+        self.assertNotIn("duration", body)
+
+    def test_list_app_tokens_of_user(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"tokens": [{"id": "abc"}]}),
+        ) as m_urlopen:
+            tokens = APIClient(token="jwt").list_app_tokens("bob")
+        self.assertEqual(tokens, [{"id": "abc"}])
+        self.assertTrue(
+            m_urlopen.call_args[0][0].full_url.endswith("/tokens?username=bob")
+        )
+
+    def test_revoke_app_token(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse(status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").revoke_app_token("abc")
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.get_method(), "DELETE")
+        self.assertTrue(req.full_url.endswith("/tokens/abc"))

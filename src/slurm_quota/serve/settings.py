@@ -73,6 +73,17 @@ def validate_jwt_key(settings: RuntimeSettings) -> None:
     )
 
 
+def validate_app_token_settings(settings: RuntimeSettings) -> None:
+    app_duration = settings.jwt.app_duration
+    app_max_duration = settings.jwt.app_max_duration
+    if app_duration <= 0:
+        raise ServeSetupError("[jwt] app_duration must be positive")
+    if app_max_duration < app_duration:
+        raise ServeSetupError(
+            "[jwt] app_max_duration must be greater than or equal to [jwt] app_duration"
+        )
+
+
 def validate_auth_settings(settings: RuntimeSettings) -> None:
     method = settings.authentication.method
     if method == "ldap":
@@ -123,6 +134,7 @@ def validate_tls_settings(settings: RuntimeSettings) -> None:
 def validate_settings(settings: RuntimeSettings) -> None:
     """Validate authentication, JWT, and TLS configuration."""
     validate_auth_settings(settings)
+    validate_app_token_settings(settings)
     validate_tls_settings(settings)
 
 
