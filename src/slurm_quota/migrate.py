@@ -17,6 +17,7 @@ from slurm_quota.auth import get_current_user
 from slurm_quota.cli import add_common_arguments
 from slurm_quota.database import (
     connect_database,
+    create_app_tokens_table,
     create_associations_table,
     create_consumption_table,
     create_preallocations_table,
@@ -432,6 +433,10 @@ def migrate_database() -> None:
 
             # Ensure slurm_associations table exists (v4)
             create_associations_table(cursor)
+            conn.commit()
+
+            # Ensure app_tokens table exists (v4)
+            create_app_tokens_table(cursor)
             conn.commit()
 
             # Move consumption to user/account pairs and convert

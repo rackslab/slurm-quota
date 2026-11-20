@@ -300,6 +300,31 @@ def create_associations_table(cursor: sqlite3.Cursor) -> None:
     """)
 
 
+def create_app_tokens_table(cursor: sqlite3.Cursor) -> None:
+    """Create the app_tokens table and its index.
+
+    The table tracks the application tokens issued by slurm-quota-serve, so
+    they can be listed and revoked. Tokens are identified by their jti claim,
+    the tokens themselves are never stored as the database is world readable.
+    Scopes are stored space separated. Times are epoch seconds.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS app_tokens (
+            id TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            name TEXT NOT NULL,
+            scopes TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            revoked_at INTEGER
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_app_tokens_username
+        ON app_tokens (username)
+    """)
+
+
 def init_database() -> None:
     """
     Initialize the SQLite database only if it doesn't exist yet. Set permissions on
@@ -350,6 +375,9 @@ def init_database() -> None:
 
             # Create slurm_associations table to cache Slurm associations.
             create_associations_table(cursor)
+
+            # Create app_tokens table to track application tokens.
+            create_app_tokens_table(cursor)
 
             # Create gpu_factors table to store GPU charging factors
             cursor.execute("""
@@ -1262,3 +1290,89 @@ def list_users_with_roles(
             entry["accounts"] = manager_accounts.get(username, [])
         results.append(entry)
     return results
+
+
+def _app_token_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
+    token_id, username, name, scopes, created_at, expires_at, revoked_at = row
+    return {
+        "id": token_id,
+        "username": username,
+        "name": name,
+        "scopes": scopes.split(),
+        "created_at": created_at,
+        "expires_at": expires_at,
+        "revoked_at": revoked_at,
+    }
+
+
+_APP_TOKEN_COLUMNS = "id, username, name, scopes, created_at, expires_at, revoked_at"
+
+
+def create_app_token(
+    conn: sqlite3.Connection,
+    token_id: str,
+    username: str,
+    name: str,
+    scopes: list[str],
+    created_at: int,
+    expires_at: int,
+) -> None:
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO app_tokens (id, username, name, scopes, created_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (token_id, username, name, " ".join(scopes), created_at, expires_at),
+    )
+    conn.commit()
+
+
+def get_app_token(conn: sqlite3.Connection, token_id: str) -> Optional[dict[str, Any]]:
+    cursor = conn.cursor()
+    cursor.execute(
+        f"SELECT {_APP_TOKEN_COLUMNS} FROM app_tokens WHERE id = ?",
+        (token_id,),
+    )
+    row = cursor.fetchone()
+    return None if row is None else _app_token_from_row(row)
+
+
+def list_app_tokens(
+    conn: sqlite3.Connection, username: Optional[str] = None
+) -> list[dict[str, Any]]:
+    """Return application tokens of the given user, or of all users if None,
+    ordered by username and creation time."""
+    cursor = conn.cursor()
+    query = f"SELECT {_APP_TOKEN_COLUMNS} FROM app_tokens"
+    params: tuple[str, ...] = ()
+    if username is not None:
+        query += " WHERE username = ?"
+        params = (username,)
+    cursor.execute(query + " ORDER BY username, created_at, id", params)
+    return [_app_token_from_row(row) for row in cursor.fetchall()]
+
+
+def active_app_token_exists(
+    conn: sqlite3.Connection, username: str, name: str, now: int
+) -> bool:
+    """Return whether the user has an active (unrevoked and unexpired)
+    application token with this name."""
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT 1 FROM app_tokens
+        WHERE username = ? AND name = ? AND revoked_at IS NULL AND expires_at > ?
+        """,
+        (username, name, now),
+    )
+    return cursor.fetchone() is not None
+
+
+def revoke_app_token(conn: sqlite3.Connection, token_id: str, now: int) -> None:
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE app_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+        (now, token_id),
+    )
+    conn.commit()
