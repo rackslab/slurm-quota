@@ -23,6 +23,8 @@ from flask import (
 )
 
 from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableError
+from slurm_quota.scopes import SCOPES, scopes_for_role
+from slurm_quota.token import format_epoch
 from slurm_quota.units import HOURS, MINUTES, SECONDS, UNIT_SECONDS, UNITS
 from slurm_quota.web import dashboard as dashboard_view
 from slurm_quota.web.auth import (
@@ -361,6 +363,91 @@ def roles_manager_accounts_post() -> Any:
         flash(f"Failed to update manager account: {exc}", "error")
 
     return redirect(url_for("roles"))
+
+
+def _logged_in_username() -> str | None:
+    username = session.get("username")
+    if isinstance(username, str) and username:
+        return username
+    return None
+
+
+def _render_tokens(role: str, new_token: dict[str, Any] | None = None) -> Any:
+    tokens: list[dict[str, Any]] = []
+    try:
+        tokens = api_client().list_app_tokens()
+    except ServiceHTTPError as exc:
+        if exc.status == 401:
+            session.clear()
+            return redirect(login_url(message="session_expired"))
+        flash(_api_error_text("Failed to retrieve tokens from service", exc), "error")
+    except ServiceUnreachableError as exc:
+        flash(f"Failed to retrieve tokens from service: {exc}", "error")
+
+    for token in tokens:
+        token["created"] = format_epoch(token.get("created_at"))
+        token["expires"] = format_epoch(token.get("expires_at"))
+    if new_token is not None:
+        new_token["expires"] = format_epoch(new_token.get("expires_at"))
+
+    return render_template(
+        "tokens.html",
+        tokens=tokens,
+        new_token=new_token,
+        scopes=[(scope, SCOPES[scope]) for scope in scopes_for_role(role)],
+        csrf_token=csrf_token(),
+        auth_required=True,
+        logged_in_username=_logged_in_username(),
+    )
+
+
+def tokens() -> Any:
+    role = current_role()
+    if role is None:
+        return redirect(url_for("dashboard"))
+    return _render_tokens(role)
+
+
+def tokens_post() -> Any:
+    role = current_role()
+    if role is None:
+        return redirect(url_for("dashboard"))
+
+    if not validate_csrf():
+        abort(400, description="Invalid or missing CSRF token.")
+
+    action = (request.form.get("action") or "").strip()
+    try:
+        api = api_client()
+        if action == "create":
+            name = (request.form.get("name") or "").strip()
+            scopes = request.form.getlist("scopes")
+            raw_duration = (request.form.get("duration") or "").strip()
+            duration = int(raw_duration) if raw_duration else None
+            if not name or not scopes:
+                flash("A token name and at least one scope are required.", "error")
+                return redirect(url_for("tokens"))
+            new_token = api.create_app_token(name, scopes, duration)
+            flash(f"Application token {name} created.", "success")
+            return _render_tokens(role, new_token)
+        if action == "revoke":
+            token_id = (request.form.get("token_id") or "").strip()
+            if token_id:
+                api.revoke_app_token(token_id)
+                flash("Application token revoked.", "success")
+        else:
+            flash("Unknown or invalid token action.", "error")
+    except ValueError:
+        flash("Token duration must be a number of days.", "error")
+    except ServiceHTTPError as exc:
+        if exc.status == 401:
+            session.clear()
+            return redirect(login_url(message="session_expired"))
+        flash(_api_error_text("Failed to update application tokens", exc), "error")
+    except ServiceUnreachableError as exc:
+        flash(f"Failed to update application tokens: {exc}", "error")
+
+    return redirect(url_for("tokens"))
 
 
 def _optional_form_reason() -> str | None:

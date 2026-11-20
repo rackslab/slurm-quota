@@ -1216,3 +1216,168 @@ class TestDashboardBreakdown(SlurmQuotaTestCase):
         self.assertIn('class="breakdown-row"', body)
         self.assertNotIn("data-username=", body)
         self.assertNotIn('id="breakdown-data"', body)
+
+
+def _app_tokens() -> list[dict]:
+    return [
+        {
+            "id": "abc123",
+            "username": "bob",
+            "name": "ci",
+            "scopes": ["stats:read:own"],
+            "created_at": 1_700_000_000,
+            "expires_at": 1_707_776_000,
+            "revoked_at": None,
+            "status": "active",
+        },
+        {
+            "id": "def456",
+            "username": "bob",
+            "name": "old",
+            "scopes": ["stats:read:own"],
+            "created_at": 1_600_000_000,
+            "expires_at": 1_607_776_000,
+            "revoked_at": 1_600_000_100,
+            "status": "revoked",
+        },
+    ]
+
+
+class TestTokensRoutes(SlurmQuotaTestCase):
+    def setUp(self):
+        super().setUp()
+        configure_web_app()
+
+    def test_tokens_lists_tokens_and_role_scopes(self):
+        with (
+            auth_disabled(),
+            patch("slurm_quota.web.routes.current_role", return_value="operator"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.list_app_tokens.return_value = _app_tokens()
+            client = web_app().test_client()
+            resp = client.get("/tokens")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_data(as_text=True)
+        self.assertIn("abc123", body)
+        self.assertIn("def456", body)
+        self.assertEqual(body.count('name="token_id"'), 1)
+        self.assertIn('value="quotas:write"', body)
+        self.assertNotIn('value="roles:write"', body)
+
+    def test_tokens_redirects_without_role(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value=None),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            client = web_app().test_client()
+            resp = client.get("/tokens", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        m_client.return_value.list_app_tokens.assert_not_called()
+
+    def test_tokens_unauthorized_clears_session(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.list_app_tokens.side_effect = ServiceHTTPError(401)
+            client = web_app().test_client()
+            resp = client.get("/tokens", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("session_expired", resp.headers["Location"])
+
+    def test_tokens_post_create_shows_token_once(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.list_app_tokens.return_value = []
+            m_client.return_value.create_app_token.return_value = {
+                **_app_tokens()[0],
+                "token": "secret-app-jwt",
+            }
+            client = web_app().test_client()
+            csrf = extract_csrf(client.get("/tokens").get_data(as_text=True))
+            resp = client.post(
+                "/tokens",
+                data={
+                    "_csrf": csrf,
+                    "action": "create",
+                    "name": "ci",
+                    "scopes": ["stats:read:own", "quotas:read"],
+                    "duration": "30",
+                },
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("secret-app-jwt", resp.get_data(as_text=True))
+            again = client.get("/tokens")
+        self.assertNotIn("secret-app-jwt", again.get_data(as_text=True))
+        m_client.return_value.create_app_token.assert_called_once_with(
+            "ci", ["stats:read:own", "quotas:read"], 30
+        )
+
+    def test_tokens_post_create_reports_api_error(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.list_app_tokens.return_value = []
+            m_client.return_value.create_app_token.side_effect = ServiceHTTPError(
+                403, message="Scopes not allowed for user: quotas:write"
+            )
+            client = web_app().test_client()
+            csrf = extract_csrf(client.get("/tokens").get_data(as_text=True))
+            resp = client.post(
+                "/tokens",
+                data={
+                    "_csrf": csrf,
+                    "action": "create",
+                    "name": "ci",
+                    "scopes": ["quotas:write"],
+                },
+                follow_redirects=True,
+            )
+        self.assertIn(
+            "Scopes not allowed for user: quotas:write", resp.get_data(as_text=True)
+        )
+
+    def test_tokens_post_rejects_invalid_duration(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.list_app_tokens.return_value = []
+            client = web_app().test_client()
+            csrf = extract_csrf(client.get("/tokens").get_data(as_text=True))
+            resp = client.post(
+                "/tokens",
+                data={
+                    "_csrf": csrf,
+                    "action": "create",
+                    "name": "ci",
+                    "scopes": ["stats:read:own"],
+                    "duration": "abc",
+                },
+                follow_redirects=True,
+            )
+        self.assertIn("Token duration must be a number", resp.get_data(as_text=True))
+        m_client.return_value.create_app_token.assert_not_called()
+
+    def test_tokens_post_revoke_calls_api(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.list_app_tokens.return_value = _app_tokens()
+            client = web_app().test_client()
+            csrf = extract_csrf(client.get("/tokens").get_data(as_text=True))
+            resp = client.post(
+                "/tokens",
+                data={"_csrf": csrf, "action": "revoke", "token_id": "abc123"},
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 302)
+        m_client.return_value.revoke_app_token.assert_called_once_with("abc123")
+
+    def test_tokens_post_requires_csrf(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client"):
+            client = web_app().test_client()
+            resp = client.post("/tokens", data={"action": "revoke", "token_id": "x"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_dashboard_links_tokens_page_when_logged_in(self):
+        with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            with client.session_transaction() as sess:
+                sess["username"] = "alice"
+            resp = client.get("/")
+        self.assertIn("API tokens", resp.get_data(as_text=True))

@@ -70,6 +70,8 @@ class SlurmQuotaWebApp(Flask):
             view_func=routes.roles_manager_accounts_post,
             methods=["POST"],
         )
+        self.add_url_rule("/tokens", view_func=routes.tokens, methods=["GET"])
+        self.add_url_rule("/tokens", view_func=routes.tokens_post, methods=["POST"])
 
     def service_unavailable(self, error: HTTPException) -> tuple[str, int]:
         return render_template("error.html"), error.code

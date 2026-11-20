@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}slurm-quota{% endblock %}
+
+{% block body %}
+<div class="page-header">
+  <h1 class="page-title">slurm-quota</h1>
+  {% if auth_required and logged_in_username %}
+  <div class="user-session">
+    <span class="user-label">Signed in as <strong>{{ logged_in_username }}</strong></span>
+    <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <button type="submit" class="logout-button">Sign out</button>
+    </form>
+  </div>
+  {% endif %}
+  <div class="page-header-actions">
+    <nav class="admin-nav">
+      <a href="{{ url_for('dashboard') }}">Back to dashboard</a>
+    </nav>
+  </div>
+</div>
+
+<div class="dashboard-stats">
+{% if new_token %}
+<section class="stats-section new-token">
+  <h2>New application token {{ new_token.name }}</h2>
+  <p>
+    Copy this token now, it cannot be displayed again. It expires on
+    {{ new_token.expires }}.
+  </p>
+  <div class="new-token-value">
+    <input type="text" id="new-token-value" value="{{ new_token.token }}" readonly>
+    <button type="button" class="stat-edit-btn" data-action="copy-token">Copy</button>
+  </div>
+</section>
+{% endif %}
+
+<section class="stats-section">
+<h2>Create application token</h2>
+<form method="post" action="{{ url_for('tokens_post') }}" class="token-create-form">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  <input type="hidden" name="action" value="create">
+  <label class="edit-dialog-field">
+    Name
+    <input type="text" name="name" placeholder="monitoring" required>
+  </label>
+  <fieldset class="token-scopes">
+    <legend>Scopes</legend>
+    {% for scope, description in scopes %}
+    <label>
+      <input type="checkbox" name="scopes" value="{{ scope }}"{% if scope == "stats:read:own" %} checked{% endif %}>
+      <code>{{ scope }}</code> <span class="muted">{{ description }}</span>
+    </label>
+    {% endfor %}
+  </fieldset>
+  <label class="edit-dialog-field">
+    Validity in days
+    <input type="number" name="duration" min="1" placeholder="Service default">
+  </label>
+  <div>
+    <button type="submit">Create token</button>
+  </div>
+</form>
+</section>
+
+<section class="stats-section">
+<h2>Application tokens</h2>
+{% if tokens %}
+<table class="stats-table tokens-table">
+  <thead>
+    <tr>
+      <th class="col-name">Name</th>
+      <th>ID</th>
+      <th>Scopes</th>
+      <th>Created</th>
+      <th>Expires</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for token in tokens %}
+    <tr>
+      <td class="col-name">{{ token.name }}</td>
+      <td><code>{{ token.id }}</code></td>
+      <td>{{ token.scopes | join(", ") }}</td>
+      <td>{{ token.created }}</td>
+      <td>{{ token.expires }}</td>
+      <td>{{ token.status }}</td>
+      <td>
+        {% if token.status == "active" %}
+        <form method="post" action="{{ url_for('tokens_post') }}" class="inline-form">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <input type="hidden" name="action" value="revoke">
+          <input type="hidden" name="token_id" value="{{ token.id }}">
+          <button type="submit" class="stat-edit-btn">Revoke</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No application tokens.</p>
+{% endif %}
+</section>
+</div>
+
+<script>
+  (function () {
+    var copyButton = document.querySelector('[data-action="copy-token"]');
+    if (!copyButton) {
+      return;
+    }
+    copyButton.addEventListener("click", function () {
+      var input = document.getElementById("new-token-value");
+      input.select();
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(input.value);
+      } else {
+        document.execCommand("copy");
+      }
+      copyButton.textContent = "Copied";
+    });
+  })();
+</script>
+{% endblock %}
