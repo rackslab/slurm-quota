@@ -115,6 +115,21 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
             methods=["PATCH"],
         )
         self.add_url_rule(
+            "/tokens",
+            view_func=routes.create_app_token_route,
+            methods=["POST"],
+        )
+        self.add_url_rule(
+            "/tokens",
+            view_func=routes.list_app_tokens_route,
+            methods=["GET"],
+        )
+        self.add_url_rule(
+            "/tokens/<token_id>",
+            view_func=routes.revoke_app_token_route,
+            methods=["DELETE"],
+        )
+        self.add_url_rule(
             "/factors/gpu",
             view_func=routes.get_gpu_factors,
             methods=["GET"],

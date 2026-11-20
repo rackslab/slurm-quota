@@ -20,6 +20,7 @@ from slurm_quota.serve.settings import (
     load_log_settings,
     load_serve_settings,
     site_config_path,
+    validate_app_token_settings,
     validate_auth_settings,
     validate_tls_settings,
 )
@@ -160,6 +161,32 @@ class TestValidateAuthSettings(SlurmQuotaTestCase):
             settings = _load_settings(self.defs_path, site_ini)
             load_bind_password(settings)
         self.assertEqual(settings.ldap.bind_password, "s3cr3t")
+
+
+class TestValidateAppTokenSettings(SlurmQuotaTestCase):
+    def _settings(self, jwt_section: str):
+        with tempfile.TemporaryDirectory() as tmp:
+            site_ini = Path(tmp) / "serve.ini"
+            site_ini.write_text(f"[jwt]\n{jwt_section}", encoding="utf-8")
+            return _load_settings(serve_conf_defs(), site_ini)
+
+    def test_accepts_defaults(self):
+        settings = self._settings("")
+        validate_app_token_settings(settings)
+        self.assertEqual(settings.jwt.app_duration, 90)
+        self.assertEqual(settings.jwt.app_max_duration, 365)
+
+    def test_raises_when_app_duration_not_positive(self):
+        settings = self._settings("app_duration=0\n")
+        with self.assertRaisesRegex(ServeSetupError, "app_duration must be positive"):
+            validate_app_token_settings(settings)
+
+    def test_raises_when_app_max_duration_below_app_duration(self):
+        settings = self._settings("app_duration=100\napp_max_duration=50\n")
+        with self.assertRaisesRegex(
+            ServeSetupError, "app_max_duration must be greater than or equal"
+        ):
+            validate_app_token_settings(settings)
 
 
 class TestValidateTlsSettings(SlurmQuotaTestCase):
