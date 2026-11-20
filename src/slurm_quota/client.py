@@ -220,6 +220,38 @@ class APIClient:
     def me(self) -> dict[str, Any]:
         return self._api_request("GET", "me")
 
+    def create_app_token(
+        self, name: str, scopes: list[str], duration: int | None = None
+    ) -> dict[str, Any]:
+        """Create an application token, the response contains the token."""
+        body: dict[str, Any] = {"name": name, "scopes": scopes}
+        if duration is not None:
+            body["duration"] = duration
+        return self._api_request(
+            "POST", "tokens", body=body, success_status=HTTPStatus.CREATED
+        )
+
+    def list_app_tokens(
+        self, username: str | None = None, show_all: bool = False
+    ) -> list[dict[str, Any]]:
+        params: dict[str, str] = {}
+        if username:
+            params["username"] = username
+        if show_all:
+            params["all"] = "true"
+        payload = self._api_request("GET", "tokens", params=params or None)
+        tokens = payload.get("tokens", [])
+        if not isinstance(tokens, list):
+            return []
+        return list(tokens)
+
+    def revoke_app_token(self, token_id: str) -> None:
+        self._api_request(
+            "DELETE",
+            f"tokens/{_quote_name(token_id)}",
+            success_status=HTTPStatus.NO_CONTENT,
+        )
+
     def users_roles(self) -> list[dict[str, Any]]:
         payload = self._api_request("GET", "roles")
         users = payload.get("users", [])

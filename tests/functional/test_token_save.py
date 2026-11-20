@@ -34,6 +34,8 @@ class TestTokenCommand(FunctionalCLIBase):
             dedent_lines(
                 "Source: SLURM_QUOTA_TOKEN (environment)",
                 "Username: alice",
+                "Type: user",
+                "Scopes: all scopes of user role",
                 "Expires: 2099-12-31 23:59:59 UTC",
             ),
         )
@@ -57,6 +59,8 @@ class TestTokenCommand(FunctionalCLIBase):
             dedent_lines(
                 f"Source: {ClientToken.path()}",
                 "Username: bob",
+                "Type: user",
+                "Scopes: all scopes of user role",
                 "Expires: 2099-12-31 23:59:59 UTC",
             ),
         )

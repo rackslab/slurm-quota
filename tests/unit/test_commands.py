@@ -837,6 +837,8 @@ class TestTokenCommand(SlurmQuotaTestCase):
             dedent_lines(
                 f"Source: {ClientToken.path()}",
                 "Username: alice",
+                "Type: user",
+                "Scopes: all scopes of user role",
                 "Expires: 2099-12-31 23:59:59 UTC",
             ),
         )
