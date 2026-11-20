@@ -75,6 +75,10 @@ For new installations, follow the main [Installation](../README.md#installation)
   account once all their consumption is reallocated. It can be run any time after the upgrade, see
   [step 5](#5-reallocate-unattributed-consumption).
 
+- Users can create longer-lived [application tokens](application-tokens.md) with restricted
+  [scopes](../README.md#token-scopes) for scripts and integrations. Tokens issued by version 3 remain valid until they
+  expire.
+
 ## 1. Plan a maintenance reservation
 
 A maintenance reservation on all nodes is recommended for the controller upgrade. `slurm-quota-charge` runs on every job

@@ -12,6 +12,7 @@
   - [REST API](#rest-api)
     - [Authentication](#authentication)
     - [Roles](#roles)
+    - [Token scopes](#token-scopes)
     - [Routes](#routes)
     - [CLI client](#cli-client)
   - [Web application](#web-application)
@@ -256,34 +257,71 @@ view.
 The **admin** users are listed in `[authorization] admins` in `serve.ini` at install time, they are not stored in the
 database.
 
+#### Token scopes<a name="token-scopes"></a>
+
+REST API routes require a scope. The scopes of a token are the scopes available for the current role of its owner,
+restricted to the scopes carried by the token, if any:
+
+| Scope                | Access                                                                  | Roles                   |
+| -------------------- | ----------------------------------------------------------------------- | ----------------------- |
+| `stats:read:own`     | Read own statistics                                                     | all                     |
+| `stats:read:managed` | Read own statistics and statistics of assigned accounts and their users | **manager**             |
+| `stats:read:all`     | Read statistics of all users and accounts                               | **operator**, **admin** |
+| `quotas:read`        | Read default quotas and GPU factors                                     | **operator**, **admin** |
+| `quotas:write`       | Set quotas, default quotas and GPU factors, adjust consumption          | **operator**, **admin** |
+| `roles:read`         | Read users roles and managers accounts                                  | **admin**               |
+| `roles:write`        | Grant and revoke users roles and managers accounts                      | **admin**               |
+
+The stats scope with the highest visibility among the scopes of a token selects the statistics returned by `GET /stats`,
+as described for roles above. For example, an operator can restrict a token to their own statistics with
+`stats:read:own`. `GET /me` is available with any valid token.
+
+Two kinds of tokens exist:
+
+- **User tokens**, obtained with `POST /login` or issued by `slurm-quota-token`, carry no scopes. Their scopes are the
+  scopes of the current role of their owner, they follow role changes immediately. They are valid for `[jwt] duration`
+  days (7 by default).
+- **Application tokens**, created by users for scripts and integrations, carry only the scopes selected by their owner
+  among the scopes available for their role. They are valid longer, for `[jwt] app_duration` days by default (90) and at
+  most `[jwt] app_max_duration` days (365). They are recorded in the database, so they can be listed and revoked before
+  they expire, and they cannot be used to manage application tokens.
+
+The role of the owner is checked on every request for both kinds of tokens: application tokens lose access to the routes
+of a revoked role, even if they carry their scopes, and do not get access to the routes of a granted role.
+
+See [docs/application-tokens.md](docs/application-tokens.md) for application tokens usage.
+
 #### Routes<a name="routes"></a>
 
 Following routes are served by REST API:
 
-| Route                                                  | Purpose                                                                           | Role                                                                                        |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `GET /health`                                          | Service health check                                                              | none                                                                                        |
-| `POST /login`                                          | Authenticate with LDAP and obtain a JWT                                           | none                                                                                        |
-| `GET /me`                                              | Return the current username and role (includes assigned accounts for **manager**) | any authenticated user                                                                      |
-| `GET /stats`                                           | Return consumption, preallocation, and quota statistics                           | **user** (own stats), **manager** (user stats + assigned accounts), **operator**, **admin** |
-| `GET /roles`                                           | List all users with their roles                                                   | **admin**                                                                                   |
-| `PUT /roles/operators/<username>`                      | Grant operator role                                                               | **admin**                                                                                   |
-| `DELETE /roles/operators/<username>`                   | Revoke operator role                                                              | **admin**                                                                                   |
-| `PUT /roles/managers/<username>`                       | Grant manager role                                                                | **admin**                                                                                   |
-| `DELETE /roles/managers/<username>`                    | Revoke manager role                                                               | **admin**                                                                                   |
-| `GET /roles/managers/<username>/accounts`              | List accounts assigned to a manager                                               | **admin**                                                                                   |
-| `PUT /roles/managers/<username>/accounts/<account>`    | Assign an account to a manager                                                    | **admin**                                                                                   |
-| `DELETE /roles/managers/<username>/accounts/<account>` | Remove an account from a manager                                                  | **admin**                                                                                   |
-| `GET /quotas/defaults`                                 | Read default quotas applied to newly auto-created users/accounts                  | **operator**, **admin**                                                                     |
-| `PUT /quotas/defaults`                                 | Update default quotas for newly auto-created users/accounts                       | **operator**, **admin**                                                                     |
-| `PUT /quotas/users/<username>/cpu`                     | Set CPU quota for a user                                                          | **operator**, **admin**                                                                     |
-| `PUT /quotas/users/<username>/gpu`                     | Set GPU quota for a user                                                          | **operator**, **admin**                                                                     |
-| `PUT /quotas/accounts/<account>/cpu`                   | Set CPU quota for an account                                                      | **operator**, **admin**                                                                     |
-| `PUT /quotas/accounts/<account>/gpu`                   | Set GPU quota for an account                                                      | **operator**, **admin**                                                                     |
-| `PATCH /consumption/<username>/<account>/cpu`          | Adjust consumed CPU time of a user on an account                                  | **operator**, **admin**                                                                     |
-| `PATCH /consumption/<username>/<account>/gpu`          | Adjust consumed GPU time of a user on an account                                  | **operator**, **admin**                                                                     |
-| `GET /factors/gpu`                                     | List GPU load factors                                                             | **operator**, **admin**                                                                     |
-| `PUT /factors/gpu/<gpu_type>`                          | Set load factor for a GPU type                                                    | **operator**, **admin**                                                                     |
+| Route                                                  | Purpose                                                                           | Role                                                                                        | Scope                                                      |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `GET /health`                                          | Service health check                                                              | none                                                                                        | none                                                       |
+| `POST /login`                                          | Authenticate with LDAP and obtain a JWT                                           | none                                                                                        | none                                                       |
+| `GET /me`                                              | Return the current username and role (includes assigned accounts for **manager**) | any authenticated user                                                                      | none                                                       |
+| `GET /stats`                                           | Return consumption, preallocation, and quota statistics                           | **user** (own stats), **manager** (user stats + assigned accounts), **operator**, **admin** | `stats:read:own`, `stats:read:managed` or `stats:read:all` |
+| `GET /roles`                                           | List all users with their roles                                                   | **admin**                                                                                   | `roles:read`                                               |
+| `PUT /roles/operators/<username>`                      | Grant operator role                                                               | **admin**                                                                                   | `roles:write`                                              |
+| `DELETE /roles/operators/<username>`                   | Revoke operator role                                                              | **admin**                                                                                   | `roles:write`                                              |
+| `PUT /roles/managers/<username>`                       | Grant manager role                                                                | **admin**                                                                                   | `roles:write`                                              |
+| `DELETE /roles/managers/<username>`                    | Revoke manager role                                                               | **admin**                                                                                   | `roles:write`                                              |
+| `GET /roles/managers/<username>/accounts`              | List accounts assigned to a manager                                               | **admin**                                                                                   | `roles:read`                                               |
+| `PUT /roles/managers/<username>/accounts/<account>`    | Assign an account to a manager                                                    | **admin**                                                                                   | `roles:write`                                              |
+| `DELETE /roles/managers/<username>/accounts/<account>` | Remove an account from a manager                                                  | **admin**                                                                                   | `roles:write`                                              |
+| `GET /quotas/defaults`                                 | Read default quotas applied to newly auto-created users/accounts                  | **operator**, **admin**                                                                     | `quotas:read`                                              |
+| `PUT /quotas/defaults`                                 | Update default quotas for newly auto-created users/accounts                       | **operator**, **admin**                                                                     | `quotas:write`                                             |
+| `PUT /quotas/users/<username>/cpu`                     | Set CPU quota for a user                                                          | **operator**, **admin**                                                                     | `quotas:write`                                             |
+| `PUT /quotas/users/<username>/gpu`                     | Set GPU quota for a user                                                          | **operator**, **admin**                                                                     | `quotas:write`                                             |
+| `PUT /quotas/accounts/<account>/cpu`                   | Set CPU quota for an account                                                      | **operator**, **admin**                                                                     | `quotas:write`                                             |
+| `PUT /quotas/accounts/<account>/gpu`                   | Set GPU quota for an account                                                      | **operator**, **admin**                                                                     | `quotas:write`                                             |
+| `PATCH /consumption/<username>/<account>/cpu`          | Adjust consumed CPU time of a user on an account                                  | **operator**, **admin**                                                                     | `quotas:write`                                             |
+| `PATCH /consumption/<username>/<account>/gpu`          | Adjust consumed GPU time of a user on an account                                  | **operator**, **admin**                                                                     | `quotas:write`                                             |
+| `GET /factors/gpu`                                     | List GPU load factors                                                             | **operator**, **admin**                                                                     | `quotas:read`                                              |
+| `PUT /factors/gpu/<gpu_type>`                          | Set load factor for a GPU type                                                    | **operator**, **admin**                                                                     | `quotas:write`                                             |
+| `POST /tokens`                                         | Create an application token                                                       | any authenticated user (user token only)                                                    | none                                                       |
+| `GET /tokens`                                          | List own application tokens (`username` or `all` for **admin**)                   | any authenticated user (user token only)                                                    | none                                                       |
+| `DELETE /tokens/<id>`                                  | Revoke an application token                                                       | owner or **admin** (user token only)                                                        | none                                                       |
 
 `GET /stats` returns a JSON object of the form `{ users: [...], accounts: [...] }`. Optional query parameters filter
 responses: `username` limits users and accounts to that user's Slurm associations (e.g. `/stats?username=alice`), while
@@ -308,25 +346,30 @@ auto-created users and accounts. Consumption routes accept `{"delta_seconds": <s
 `{"total_consumed_seconds": <int>}`, with an optional single-line `{"reason": "<string>"}`. GPU factor routes return
 `{"default_factor": <float>, "factors": {<gpu_type>: <float>, ...}}` or accept `{"factor": <positive float>}`.
 
+`POST /tokens` accepts `{"name": <string>, "scopes": [<scope>, ...]}` with an optional `{"duration": <days>}` and
+returns the token description with the `token` itself, which is never returned again. `GET /tokens` returns
+`{"tokens": [...]}`. Token descriptions contain `id`, `username`, `name`, `scopes`, `created_at`, `expires_at` and
+`revoked_at` (epoch seconds) and `status` (`active`, `expired` or `revoked`).
+
 #### CLI client<a name="cli-client"></a>
 
 The `slurm-quota` CLI calls the REST API. It offers the following commands:
 
-| Command              | Purpose                                                                                           | Role                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `login`              | Authenticate with LDAP and obtain a JWT                                                           | _all_                                                      |
-| `token`              | Show current API token information; `--save` persists `SLURM_QUOTA_TOKEN` to the user config file | _all_                                                      |
-| `stats`              | Display consumption, preallocation, and quota statistics                                          | **user** (own stats), **manager**, **operator**, **admin** |
-| `role`               | Show or manage REST API user roles                                                                | show: any authenticated user; manage: **admin**            |
-| `user-quota`         | Set CPU quota for a user                                                                          | **operator**, **admin**                                    |
-| `user-gpu-quota`     | Set GPU quota for a user                                                                          | **operator**, **admin**                                    |
-| `account-quota`      | Set CPU quota for an account                                                                      | **operator**, **admin**                                    |
-| `account-gpu-quota`  | Set GPU quota for an account                                                                      | **operator**, **admin**                                    |
-| `default-quotas`     | Show default quotas applied to newly auto-created users/accounts                                  | **operator**, **admin**                                    |
-| `set-default-quotas` | Set default quotas for newly auto-created users/accounts                                          | **operator**, **admin**                                    |
-| `adjust`             | Adjust consumed CPU or GPU time for a user or account                                             | **operator**, **admin**                                    |
-| `gpu-factors`        | Show configured GPU load factors                                                                  | **operator**, **admin**                                    |
-| `set-gpu-factor`     | Set load factor for a GPU type                                                                    | **operator**, **admin**                                    |
+| Command              | Purpose                                                                                                               | Role                                                       |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `login`              | Authenticate with LDAP and obtain a JWT                                                                               | _all_                                                      |
+| `token`              | Show current API token information, `--save` persists `SLURM_QUOTA_TOKEN`; create, list and revoke application tokens | _all_                                                      |
+| `stats`              | Display consumption, preallocation, and quota statistics                                                              | **user** (own stats), **manager**, **operator**, **admin** |
+| `role`               | Show or manage REST API user roles                                                                                    | show: any authenticated user; manage: **admin**            |
+| `user-quota`         | Set CPU quota for a user                                                                                              | **operator**, **admin**                                    |
+| `user-gpu-quota`     | Set GPU quota for a user                                                                                              | **operator**, **admin**                                    |
+| `account-quota`      | Set CPU quota for an account                                                                                          | **operator**, **admin**                                    |
+| `account-gpu-quota`  | Set GPU quota for an account                                                                                          | **operator**, **admin**                                    |
+| `default-quotas`     | Show default quotas applied to newly auto-created users/accounts                                                      | **operator**, **admin**                                    |
+| `set-default-quotas` | Set default quotas for newly auto-created users/accounts                                                              | **operator**, **admin**                                    |
+| `adjust`             | Adjust consumed CPU or GPU time for a user or account                                                                 | **operator**, **admin**                                    |
+| `gpu-factors`        | Show configured GPU load factors                                                                                      | **operator**, **admin**                                    |
+| `set-gpu-factor`     | Set load factor for a GPU type                                                                                        | **operator**, **admin**                                    |
 
 > [!NOTE]
 > See the [`slurm-quota` command](#slurm-quota-command) section under [Usage](#usage) for authentication, examples, and
@@ -666,12 +709,16 @@ slurm-quota token --save
   slurm-quota login --save       # save token for automatic use by stats
   ```
 
-- `token`: Shows metadata about the current API token (source, username, expiration). Use `--save` to persist the JWT
-  from `SLURM_QUOTA_TOKEN` to the XDG config file (see JWT flow above).
+- `token`: Shows metadata about the current API token (source, username, type, scopes, expiration). Use `--save` to
+  persist the JWT from `SLURM_QUOTA_TOKEN` to the XDG config file (see JWT flow above). The `create`, `list` and
+  `revoke` subcommands manage [application tokens](docs/application-tokens.md).
 
   ```bash
   slurm-quota token              # show current token information
   slurm-quota token --save       # save SLURM_QUOTA_TOKEN for automatic use by stats
+  slurm-quota token create monitoring --scope stats:read:own --duration 180
+  slurm-quota token list         # list own application tokens (--all for all users, admin only)
+  slurm-quota token revoke <id>  # revoke an application token
   ```
 
 - `stats`: Displays consumed CPU times, preallocated CPU times (with the number of jobs considered), and quotas for

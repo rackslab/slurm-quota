@@ -21,6 +21,9 @@ by default) and requires `authentication.method=jwt`.
 
 The command must be run as the `root` user. Tokens are printed to stdout.
 
+Issued tokens carry no scopes, their access is restricted by the current role
+of the user on every request, so role changes apply immediately.
+
 == Options
 
 *-h*, *--help*::
