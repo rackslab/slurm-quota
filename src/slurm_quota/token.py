@@ -22,6 +22,14 @@ def _xdg_config_home() -> Path:
     return Path.home() / ".config"
 
 
+def format_epoch(timestamp: Any) -> str:
+    """Format epoch seconds as a date and time in the local timezone."""
+    if not isinstance(timestamp, int) or isinstance(timestamp, bool):
+        return "?"
+    dt = datetime.fromtimestamp(timestamp, tz=timezone.utc).astimezone()
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
 @dataclass(frozen=True)
 class TokenPayload:
     """Decoded JWT payload claims."""
@@ -39,6 +47,19 @@ class TokenPayload:
         if not isinstance(username, str) or not username:
             raise ValueError("missing username claim")
         return username
+
+    def kind(self) -> str:
+        """Return the token kind (user or application) from the typ claim."""
+        kind = self.claims.get("typ", "user")
+        return kind if isinstance(kind, str) else "user"
+
+    def scopes(self) -> list[str] | None:
+        """Return the scopes of the token, None when the token has no scopes
+        claim and its scopes are the scopes of the role of its owner."""
+        scopes = self.claims.get("scopes")
+        if not isinstance(scopes, list):
+            return None
+        return [scope for scope in scopes if isinstance(scope, str)]
 
     def expiry(self) -> str:
         """

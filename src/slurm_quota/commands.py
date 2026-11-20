@@ -16,7 +16,7 @@ from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableEr
 from slurm_quota.database import (
     prune_resources,
 )
-from slurm_quota.token import ClientToken
+from slurm_quota.token import ClientToken, format_epoch
 from slurm_quota.units import (
     HOURS,
     MINUTES,
@@ -506,6 +506,12 @@ def token_command(*, save: bool = False) -> None:
         payload = client_token.decode()
         print(f"Source: {client_token.source}")
         print(f"Username: {payload.username()}")
+        print(f"Type: {payload.kind()}")
+        scopes = payload.scopes()
+        if scopes is None:
+            print("Scopes: all scopes of user role")
+        else:
+            print(f"Scopes: {', '.join(scopes) or 'none'}")
         print(f"Expires: {payload.expiry()}")
     except ValueError as exc:
         message = str(exc)
@@ -518,6 +524,84 @@ def token_command(*, save: bool = False) -> None:
         else:
             logger.error("Invalid authentication token format")
         sys.exit(1)
+
+
+def _token_forbidden_message(exc: ServiceHTTPError) -> str:
+    return f"Access denied: {exc.message or 'not allowed to manage tokens'}"
+
+
+def token_create_command(
+    name: str, scopes: list[str], duration: Optional[int] = None
+) -> None:
+    """Create an application token, print the token on stdout and its details on
+    stderr, so the token can be captured by scripts."""
+    try:
+        payload = _api_client_from_token().create_app_token(name, scopes, duration)
+    except ServiceHTTPError as exc:
+        _handle_api_error(exc, forbidden_message=_token_forbidden_message(exc))
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
+
+    print(
+        f"Application token {payload.get('name')} created with ID {payload.get('id')}, "
+        f"scopes {', '.join(payload.get('scopes', []))}, "
+        f"expires {format_epoch(payload.get('expires_at'))}. "
+        "Store it now, it cannot be displayed again.",
+        file=sys.stderr,
+    )
+    print(payload.get("token"))
+
+
+def token_list_command(username: Optional[str] = None, show_all: bool = False) -> None:
+    try:
+        tokens = _api_client_from_token().list_app_tokens(username, show_all)
+    except ServiceHTTPError as exc:
+        _handle_api_error(exc, forbidden_message=_token_forbidden_message(exc))
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
+
+    if not tokens:
+        print("No application tokens found")
+        return
+
+    show_user = username is not None or show_all
+    headers = ["ID", "NAME"] + (["USER"] if show_user else [])
+    headers += ["SCOPES", "CREATED", "EXPIRES", "STATUS"]
+    rows = []
+    for token in tokens:
+        row = [str(token.get("id", "?")), str(token.get("name", "?"))]
+        if show_user:
+            row.append(str(token.get("username", "?")))
+        row += [
+            ",".join(token.get("scopes", [])),
+            format_epoch(token.get("created_at")),
+            format_epoch(token.get("expires_at")),
+            str(token.get("status", "?")),
+        ]
+        rows.append(row)
+    widths = [
+        max(len(header), *(len(row[index]) for row in rows))
+        for index, header in enumerate(headers)
+    ]
+    for row in [headers, *rows]:
+        print(
+            "  ".join(
+                f"{value:<{widths[index]}}" for index, value in enumerate(row)
+            ).rstrip()
+        )
+
+
+def token_revoke_command(token_id: str) -> None:
+    try:
+        _api_client_from_token().revoke_app_token(token_id)
+    except ServiceHTTPError as exc:
+        if exc.status == 404:
+            logger.error(f"Application token {token_id} not found")
+            sys.exit(1)
+        _handle_api_error(exc, forbidden_message=_token_forbidden_message(exc))
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
+    print(f"Revoked application token {token_id}")
 
 
 def show_user_stats(

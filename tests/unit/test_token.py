@@ -163,3 +163,16 @@ class TestTokenPayloadExpiry(SlurmQuotaTestCase):
         payload = ClientToken(f"{header}.{payload_b64}.{signature}", "test").decode()
         with self.assertRaises(ValueError):
             payload.expiry()
+
+
+class TestTokenPayloadKindAndScopes(SlurmQuotaTestCase):
+    def test_application_token(self):
+        token = craft_jwt(typ="application", scopes=["stats:read:own", "quotas:read"])
+        payload = ClientToken(token, "test").decode()
+        self.assertEqual(payload.kind(), "application")
+        self.assertEqual(payload.scopes(), ["stats:read:own", "quotas:read"])
+
+    def test_defaults_without_claims(self):
+        payload = ClientToken(craft_jwt(), "test").decode()
+        self.assertEqual(payload.kind(), "user")
+        self.assertIsNone(payload.scopes())
