@@ -6,11 +6,13 @@
 
 The scopes of a token are the scopes available for the current role of its
 owner, restricted to the scopes carried by the token when it has a scopes
-claim. Tokens obtained with POST /login or issued by slurm-quota-token have no
-scopes claim.
+claim. User tokens have no scopes claim, application tokens carry the scopes
+selected by their owner at creation.
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterable
 
 SCOPES: dict[str, str] = {
     "stats:read:own": "Read own resource statistics",
@@ -47,3 +49,8 @@ STATS_SCOPES: tuple[str, ...] = (
 def scopes_for_role(role: str) -> list[str]:
     """Return the scopes available for this role."""
     return [scope for scope in SCOPES if role in SCOPE_ROLES[scope]]
+
+
+def unknown_scopes(scopes: Iterable[str]) -> list[str]:
+    """Return the scopes of the given iterable that are not defined."""
+    return [scope for scope in scopes if scope not in SCOPES]

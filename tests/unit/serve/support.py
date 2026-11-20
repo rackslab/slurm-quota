@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import subprocess
 import textwrap
+import time
+import uuid
 from collections.abc import Iterable
 from pathlib import Path
 
 from rfl.authentication.jwt import JWTBaseManager
 from rfl.authentication.user import AuthenticatedUser
 
+from slurm_quota.database import connect_database, create_app_token
 from slurm_quota.serve.app import SlurmQuotaServeApp
 from slurm_quota.serve.jwt import SlurmQuotaJWTManager
 from slurm_quota.serve.settings import load_serve_settings
@@ -134,6 +137,29 @@ def issue_test_token(
         "scopes": list(scopes),
     }
     return JWTBaseManager.generate(jwt, settings.jwt.duration, claims)
+
+
+def issue_test_app_token(
+    site_ini: Path,
+    username: str,
+    scopes: Iterable[str],
+    *,
+    name: str = "app",
+    duration: int = 30,
+) -> tuple[str, str]:
+    """Return an application token and its identifier, recorded in database."""
+    scopes = list(scopes)
+    token_id = uuid.uuid4().hex
+    now = int(time.time())
+    user = AuthenticatedUser(login=username, groups=[])
+    token = _test_jwt_manager(site_ini).generate_application(
+        user, duration, token_id, scopes
+    )
+    with connect_database() as conn:
+        create_app_token(
+            conn, token_id, username, name, scopes, now, now + duration * 86400
+        )
+    return token, token_id
 
 
 def write_test_tls_certs(directory: Path) -> tuple[Path, Path]:

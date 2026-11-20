@@ -10,6 +10,8 @@ import dataclasses
 import logging
 import os
 import sqlite3
+import time
+import uuid
 from typing import TYPE_CHECKING, Any, cast
 
 from flask import abort, current_app, g, jsonify, request
@@ -17,14 +19,18 @@ from rfl.authentication.errors import LDAPAuthenticationError
 
 import slurm_quota
 from slurm_quota.database import (
+    active_app_token_exists,
     adjust_consumed_seconds as db_adjust_consumed_seconds,
     connect_database,
+    create_app_token,
+    get_app_token,
     get_default_quota_settings,
     grant_manager as db_grant_manager,
     grant_manager_account as db_grant_manager_account,
     grant_operator as db_grant_operator,
     is_manager,
     list_account_users,
+    list_app_tokens,
     list_manager_accounts,
     list_user_accounts,
     list_users_with_roles,
@@ -32,6 +38,7 @@ from slurm_quota.database import (
     query_accounts_aggregate,
     query_consumption_breakdown,
     query_users_aggregate,
+    revoke_app_token,
     revoke_manager as db_revoke_manager,
     revoke_manager_account as db_revoke_manager_account,
     revoke_operator as db_revoke_operator,
@@ -42,12 +49,14 @@ from slurm_quota.database import (
     set_user_gpu_quota as db_set_user_gpu_quota,
     set_user_quota as db_set_user_quota,
 )
-from slurm_quota.scopes import STATS_SCOPES
+from slurm_quota.scopes import STATS_SCOPES, scopes_for_role, unknown_scopes
 from slurm_quota.serve.authorization import (
     authorize,
     config_admins,
     login_role,
+    require_user_token,
 )
+from slurm_quota.serve.jwt import unverified_claims
 
 if TYPE_CHECKING:
     from slurm_quota.serve.app import SlurmQuotaServeApp
@@ -702,5 +711,138 @@ def set_gpu_factor(gpu_type: str) -> Any:
         cast(str, request.user.login),
         gpu_type,
         factor,
+    )
+    return "", 204
+
+
+def _app_token_status(token: dict[str, Any], now: int) -> str:
+    if token["revoked_at"] is not None:
+        return "revoked"
+    if token["expires_at"] <= now:
+        return "expired"
+    return "active"
+
+
+def _app_token_payload(token: dict[str, Any], now: int) -> dict[str, Any]:
+    return {**token, "status": _app_token_status(token, now)}
+
+
+def _parse_app_token_scopes(payload: dict[str, Any], role: str) -> list[str]:
+    scopes = payload.get("scopes")
+    if (
+        not isinstance(scopes, list)
+        or not scopes
+        or not all(isinstance(scope, str) for scope in scopes)
+    ):
+        abort(400, description="scopes must be a non-empty list of strings")
+    unknown = unknown_scopes(scopes)
+    if unknown:
+        abort(400, description=f"Unknown scopes: {', '.join(sorted(set(unknown)))}")
+    allowed = scopes_for_role(role)
+    denied = sorted({scope for scope in scopes if scope not in allowed})
+    if denied:
+        abort(403, description=f"Scopes not allowed for {role}: {', '.join(denied)}")
+    return [scope for scope in allowed if scope in scopes]
+
+
+def _parse_app_token_duration(payload: dict[str, Any]) -> int:
+    serve_app = cast("SlurmQuotaServeApp", current_app)
+    assert serve_app.settings is not None
+    duration = payload.get("duration", serve_app.settings.jwt.app_duration)
+    max_duration = serve_app.settings.jwt.app_max_duration
+    if isinstance(duration, bool) or not isinstance(duration, int) or duration <= 0:
+        abort(400, description="duration must be a positive integer")
+    if duration > max_duration:
+        abort(400, description=f"duration must be at most {max_duration} days")
+    return duration
+
+
+@require_user_token
+def create_app_token_route() -> Any:
+    serve_app = cast("SlurmQuotaServeApp", current_app)
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        abort(400, description="Invalid JSON body")
+    name = payload.get("name")
+    if not isinstance(name, str) or not _valid_name(name):
+        abort(400, description="Invalid token name")
+    login = cast(str, request.user.login)
+    role = login_role(login)
+    scopes = _parse_app_token_scopes(payload, role)
+    duration = _parse_app_token_duration(payload)
+
+    token_id = uuid.uuid4().hex
+    now = int(time.time())
+    with connect_database() as conn:
+        if active_app_token_exists(conn, login, name, now):
+            abort(400, description=f"An active token named {name} already exists")
+        token = serve_app.jwt.generate_application(
+            request.user, duration, token_id, scopes
+        )
+        # Record issue and expiration times of the token claims, which are
+        # enforced when the token is decoded.
+        claims = unverified_claims(token)
+        created_at, expires_at = claims["iat"], claims["exp"]
+        create_app_token(conn, token_id, login, name, scopes, created_at, expires_at)
+    logger.info(
+        "application token created: user=%s id=%s name=%s scopes=%s duration=%dd",
+        login,
+        token_id,
+        name,
+        ",".join(scopes),
+        duration,
+    )
+    response = _app_token_payload(
+        {
+            "id": token_id,
+            "username": login,
+            "name": name,
+            "scopes": scopes,
+            "created_at": created_at,
+            "expires_at": expires_at,
+            "revoked_at": None,
+        },
+        now,
+    )
+    response["token"] = token
+    return jsonify(response), 201
+
+
+@require_user_token
+def list_app_tokens_route() -> Any:
+    login = cast(str, request.user.login)
+    username_param = (request.args.get("username") or "").strip() or None
+    all_param = (request.args.get("all") or "").strip().lower() in _TRUE_QUERY_VALUES
+    if username_param and all_param:
+        abort(400, description="username and all are mutually exclusive")
+    username: str | None = login
+    if username_param or all_param:
+        if login_role(login) != "admin":
+            abort(403, description="Not allowed to view tokens of other users")
+        username = username_param
+    if username is not None:
+        _validate_username(username)
+    now = int(time.time())
+    with connect_database() as conn:
+        tokens = list_app_tokens(conn, username)
+    return jsonify({"tokens": [_app_token_payload(token, now) for token in tokens]})
+
+
+@require_user_token
+def revoke_app_token_route(token_id: str) -> Any:
+    login = cast(str, request.user.login)
+    with connect_database() as conn:
+        token = get_app_token(conn, token_id)
+        if token is None or (
+            token["username"] != login and login_role(login) != "admin"
+        ):
+            abort(404, description="Token not found")
+        revoke_app_token(conn, token_id, int(time.time()))
+    logger.info(
+        "application token revoked: user=%s id=%s name=%s owner=%s",
+        login,
+        token_id,
+        token["name"],
+        token["username"],
     )
     return "", 204

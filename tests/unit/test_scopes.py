@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from slurm_quota.scopes import SCOPE_ROLES, SCOPES, scopes_for_role
+from slurm_quota.scopes import SCOPE_ROLES, SCOPES, scopes_for_role, unknown_scopes
 from tests.test_support import SlurmQuotaTestCase
 
 
@@ -23,3 +23,8 @@ class TestScopes(SlurmQuotaTestCase):
             scopes_for_role("manager"), ["stats:read:own", "stats:read:managed"]
         )
         self.assertEqual(scopes_for_role("user"), ["stats:read:own"])
+
+    def test_unknown_scopes(self):
+        self.assertEqual(
+            unknown_scopes(["stats:read:own", "foo", "bar"]), ["foo", "bar"]
+        )
