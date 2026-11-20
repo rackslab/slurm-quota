@@ -71,8 +71,8 @@ slurm-quota login --save
 *slurm-quota token* [*--save*]
 
 Show metadata about the current API authentication token (source, username,
-expiration). The effective token is read from *SLURM_QUOTA_TOKEN* when set,
-otherwise from `$XDG_CONFIG_HOME/slurm-quota/token`.
+type, scopes, expiration). The effective token is read from *SLURM_QUOTA_TOKEN*
+when set, otherwise from `$XDG_CONFIG_HOME/slurm-quota/token`.
 
 Options:
 
@@ -80,12 +80,50 @@ Options:
   Save the JWT from the *SLURM_QUOTA_TOKEN* environment variable to
   `$XDG_CONFIG_HOME/slurm-quota/token` for automatic use by other subcommands.
 
+*slurm-quota token create* <name> *--scope* <scope> [*--scope* <scope>]... [*--duration* <days>]
+
+Create an application token for scripts and integrations, with the given
+scopes among the scopes available for the role of the user: `stats:read`,
+`quotas:read`, `quotas:write`, `roles:read` and `roles:write`. The token is
+printed on stdout, its identifier and expiration date on stderr. It cannot be
+displayed again. Requires a user token, application tokens cannot create
+application tokens.
+
+*<name>*::
+  Name of the token, unique among the active tokens of the user.
+
+*--scope* <scope>::
+  Scope granted to the token. Repeat the option to grant multiple scopes.
+
+*--duration* <days>::
+  Token validity in days. Defaults to `jwt.app_duration` of the service, and
+  cannot exceed `jwt.app_max_duration`.
+
+*slurm-quota token list* [*--user* <username> | *--all*]
+
+List application tokens of the current user, with their identifier, name,
+scopes, creation and expiration dates, and status (active, expired or revoked).
+
+*--user* <username>::
+  List application tokens of this user (admin only).
+
+*--all*::
+  List application tokens of all users (admin only).
+
+*slurm-quota token revoke* <id>
+
+Revoke an application token by its identifier. Users can revoke their own
+tokens, admins can revoke any token.
+
 Examples:
 
 ....
 slurm-quota token
 export SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice)
 slurm-quota token --save
+slurm-quota token create monitoring --scope stats:read --duration 180 > monitoring.token
+slurm-quota token list
+slurm-quota token revoke 3f2a9c4e8b7d41c6a0e5d9b8c7f6e5d4
 ....
 
 === stats
