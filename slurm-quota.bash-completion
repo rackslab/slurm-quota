@@ -112,7 +112,46 @@ _slurm_quota() {
             fi
             ;;
         token)
-            COMPREPLY=($(compgen -W "$base_opts --save" -- "$cur"))
+            local token_subcmd=""
+            for (( i=subcmd_idx+1; i<cword; i++ )); do
+                case "${words[i]}" in
+                    create|list|revoke)
+                        token_subcmd="${words[i]}"
+                        break
+                        ;;
+                esac
+            done
+            case "$token_subcmd" in
+                create)
+                    # Scopes contain colons, which are word breaks for bash:
+                    # complete on the line words and strip the part before the
+                    # last colon from candidates.
+                    local line="${COMP_LINE:0:COMP_POINT}"
+                    local line_cur="${line##* }"
+                    local line_before="${line% *}"
+                    if [[ "${line_before##* }" == --scope ]]; then
+                        local colon_prefix="${line_cur%"${line_cur##*:}"}"
+                        local scope
+                        COMPREPLY=()
+                        for scope in $(compgen -W "stats:read:own stats:read:managed stats:read:all quotas:read quotas:write roles:read roles:write" -- "$line_cur"); do
+                            COMPREPLY+=("${scope#"$colon_prefix"}")
+                        done
+                    elif [[ "$prev" == --duration ]]; then
+                        COMPREPLY=()
+                    else
+                        COMPREPLY=($(compgen -W "$base_opts --scope --duration" -- "$cur"))
+                    fi
+                    ;;
+                list)
+                    COMPREPLY=($(compgen -W "$base_opts --user --all" -- "$cur"))
+                    ;;
+                revoke)
+                    COMPREPLY=($(compgen -W "$base_opts" -- "$cur"))
+                    ;;
+                *)
+                    COMPREPLY=($(compgen -W "$base_opts --save create list revoke" -- "$cur"))
+                    ;;
+            esac
             ;;
         stats)
             COMPREPLY=($(compgen -W "$base_opts --user --account --all --breakdown --no-breakdown --hours --seconds" -- "$cur"))
