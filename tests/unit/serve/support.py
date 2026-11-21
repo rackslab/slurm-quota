@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import subprocess
 import textwrap
+from collections.abc import Iterable
 from pathlib import Path
 
-from rfl.authentication.jwt import JWTManager
+from rfl.authentication.jwt import JWTBaseManager
 from rfl.authentication.user import AuthenticatedUser
 
 from slurm_quota.serve.app import SlurmQuotaServeApp
+from slurm_quota.serve.jwt import SlurmQuotaJWTManager
 from slurm_quota.serve.settings import load_serve_settings
 from tests.test_support import serve_conf_defs
 
@@ -102,17 +104,36 @@ def write_ldap_site_ini(directory: Path) -> Path:
     return site_ini
 
 
-def issue_test_token(site_ini: Path, username: str = "alice") -> str:
+def _test_jwt_manager(site_ini: Path) -> SlurmQuotaJWTManager:
     settings = load_serve_settings(serve_conf_defs(), site_ini)
-    jwt = JWTManager.key(
+    return SlurmQuotaJWTManager.key(
         audience=settings.jwt.audience,
         algorithm=settings.jwt.algorithm,
         path=settings.jwt.key,
         create=settings.jwt.create,
         create_parent=settings.jwt.create_parent,
     )
+
+
+def issue_test_token(
+    site_ini: Path,
+    username: str = "alice",
+    scopes: Iterable[str] | None = None,
+) -> str:
+    """Return a user token, without scopes claim by default as issued by
+    slurm-quota-serve, or restricted to the given scopes."""
+    settings = load_serve_settings(serve_conf_defs(), site_ini)
+    jwt = _test_jwt_manager(site_ini)
     user = AuthenticatedUser(login=username, groups=[])
-    return jwt.generate(user, settings.jwt.duration)
+    if scopes is None:
+        return jwt.generate(user, settings.jwt.duration)
+    claims = {
+        "aud": jwt.audience,
+        "sub": user.login,
+        "groups": user.groups,
+        "scopes": list(scopes),
+    }
+    return JWTBaseManager.generate(jwt, settings.jwt.duration, claims)
 
 
 def write_test_tls_certs(directory: Path) -> tuple[Path, Path]:

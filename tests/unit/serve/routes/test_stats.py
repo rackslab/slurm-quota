@@ -14,6 +14,7 @@ from slurm_quota.database import (
     update_user_and_account_resources,
 )
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
+from tests.unit.serve.support import issue_test_token
 
 
 class TestStatsRoute(ServeRoutesTestCase):
@@ -523,6 +524,54 @@ class TestStatsBreakdown(ServeRoutesTestCase):
             for account in accounts:
                 grant_manager_account(conn, username, account)
             conn.commit()
+
+    def _scoped_breakdown(self, username: str, *scopes: str) -> list[tuple[str, str]]:
+        token = issue_test_token(self._site_ini, username, scopes)
+        resp = app.test_client().get(
+            "/stats?breakdown=true", headers={"Authorization": f"Bearer {token}"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.data)
+        return [(e["username"], e["account"]) for e in body["breakdown"]]
+
+    def test_operator_token_restricted_to_own_stats(self):
+        self._grant_operator("dave")
+        self.assertEqual(
+            self._scoped_breakdown("dave", "stats:read:own"),
+            [("dave", "dev"), ("dave", "hpc")],
+        )
+
+    def test_manager_token_restricted_to_own_stats(self):
+        self._grant_manager("bob", "hpc")
+        self.assertEqual(
+            self._scoped_breakdown("bob", "stats:read:own"),
+            [("bob", "dev"), ("bob", "hpc")],
+        )
+
+    def test_manager_token_with_managed_stats(self):
+        self._grant_manager("bob", "hpc")
+        self.assertEqual(
+            self._scoped_breakdown("bob", "stats:read:own", "stats:read:managed"),
+            self._breakdown("", "bob"),
+        )
+
+    def test_token_without_stats_scope_refused(self):
+        self._grant_operator("dave")
+        token = issue_test_token(self._site_ini, "dave", ["quotas:read"])
+        self._request_expecting_abort(
+            "GET",
+            "/stats",
+            403,
+            description="Token scope insufficient",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    def test_me_accepts_token_without_stats_scope(self):
+        token = issue_test_token(self._site_ini, "dave", ["quotas:read"])
+        resp = app.test_client().get(
+            "/me", headers={"Authorization": f"Bearer {token}"}
+        )
+        self.assertEqual(resp.status_code, 200)
 
     def test_breakdown_absent_by_default(self):
         resp = app.test_client().get("/stats", headers=self._headers("dave"))

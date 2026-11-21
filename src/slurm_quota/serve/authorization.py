@@ -10,11 +10,13 @@ import sqlite3
 from functools import wraps
 from typing import Any, Callable, Literal, TypeVar, cast
 
-from flask import abort, current_app, request
+from flask import abort, current_app, g, request
 from rfl.settings import RuntimeSettings
 from rfl.web.tokens import check_jwt
 
 from slurm_quota.database import connect_database, is_manager, is_operator
+from slurm_quota.scopes import SCOPES, scopes_for_role
+from slurm_quota.serve.jwt import TokenUser
 
 Role = Literal["admin", "operator", "manager", "user"]
 
@@ -46,19 +48,33 @@ def login_role(username: str) -> Role:
         return resolve_role(username, current_app.settings, conn)
 
 
-def require_role(*roles: Role) -> Callable[[F], F]:
-    allowed = set(roles)
+def authorize(*scopes: str) -> Callable[[F], F]:
+    """Require a valid token with one of the given scopes, or only a valid
+    token when no scope is given.
+
+    The scopes of a token are the scopes available for the current role of its
+    owner, restricted to the scopes carried by the token when it has a scopes
+    claim. They are stored in flask.g.scopes for the view.
+    """
+    for scope in scopes:
+        assert scope in SCOPES, f"unknown scope {scope}"
 
     def decorator(view: F) -> F:
         @wraps(view)
-        def role_check(*args: Any, **kwargs: Any) -> Any:
+        def authorization_check(*args: Any, **kwargs: Any) -> Any:
             assert current_app.settings is not None
-            login = cast(str, request.user.login)
-            role = login_role(login)
-            if role not in allowed:
+            user = cast(TokenUser, request.user)
+            role_scopes = set(scopes_for_role(login_role(user.login)))
+            token_scopes = (
+                role_scopes if user.scopes is None else role_scopes & user.scopes
+            )
+            if scopes and role_scopes.isdisjoint(scopes):
                 abort(403, description="Insufficient permissions")
+            if scopes and token_scopes.isdisjoint(scopes):
+                abort(403, description="Token scope insufficient")
+            g.scopes = frozenset(token_scopes)
             return view(*args, **kwargs)
 
-        return check_jwt(role_check)  # type: ignore[return-value]
+        return check_jwt(authorization_check)  # type: ignore[return-value]
 
     return decorator
