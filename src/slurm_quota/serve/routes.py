@@ -548,7 +548,7 @@ def set_default_quotas() -> Any:
         return jsonify({"error": "db_error"}), 500
 
     logger.info(
-        "default quotas: manager=%s updates=%s",
+        "default quotas: by=%s updates=%s",
         cast(str, request.user.login),
         {field: value for field, value in updates.items() if value is not None},
     )
@@ -588,7 +588,7 @@ def set_quota(entity: str, name: str, resource: str) -> Any:
         logger.error("set %s %s quota failed: %s", entity_label, resource, exc)
         return jsonify({"error": "db_error"}), 500
     logger.info(
-        "quota %s %s: manager=%s name=%s value=%s reason=%s",
+        "quota %s %s: by=%s name=%s value=%s reason=%s",
         entity_label,
         resource,
         cast(str, request.user.login),
@@ -630,7 +630,7 @@ def set_comment(entity: str, name: str) -> Any:
         logger.error("set %s comment failed: %s", entity_label, exc)
         return jsonify({"error": "db_error"}), 500
     logger.info(
-        "comment %s: manager=%s name=%s comment=%s",
+        "comment %s: by=%s name=%s comment=%s",
         entity_label,
         cast(str, request.user.login),
         name,
@@ -661,7 +661,7 @@ def adjust_consumption(username: str, account: str, resource: str) -> Any:
         logger.error("adjust %s consumption failed: %s", resource, exc)
         return jsonify({"error": "db_error"}), 500
     logger.info(
-        "consumption %s: manager=%s user=%s account=%s delta=%+ds total=%ds reason=%s",
+        "consumption %s: by=%s user=%s account=%s delta=%+ds total=%ds reason=%s",
         resource,
         cast(str, request.user.login),
         username,
@@ -707,7 +707,7 @@ def set_gpu_factor(gpu_type: str) -> Any:
         logger.error("set gpu factor failed: %s", exc)
         return jsonify({"error": "db_error"}), 500
     logger.info(
-        "gpu factor: manager=%s gpu_type=%s factor=%s",
+        "gpu factor: by=%s gpu_type=%s factor=%s",
         cast(str, request.user.login),
         gpu_type,
         factor,

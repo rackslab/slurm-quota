@@ -60,6 +60,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `slurm-quota-prune --user` filter requires `--preallocs` or `--users` selector and `--account` filter requires
   `--preallocs` or `--accounts` selector. Previously, with another selector, `--all` or without selector, the filter was
   ignored on accounts (resp. users) and all those without consumption were pruned (#132).
+- REST API audit logs of quota, consumption, default quotas and GPU factor changes name the acting user with `by=` key
+  instead of `manager=`, consistently with role changes audit logs (#139).
 
 ### Fixed
 

@@ -83,7 +83,7 @@ class TestDefaultQuotasRoute(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:default quotas: manager=alice updates="
+                "INFO:slurm_quota:default quotas: by=alice updates="
                 "{'user_cpu_minutes': 10, 'user_gpu_minutes': 20, "
                 "'account_cpu_minutes': 30, 'account_gpu_minutes': 40}",
             ],

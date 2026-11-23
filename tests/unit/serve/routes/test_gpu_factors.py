@@ -62,7 +62,7 @@ class TestGpuFactorsRoute(ServeRoutesTestCase):
         self.assertEqual(resp.status_code, 204)
         self.assertEqual(
             log_cm.output,
-            ["INFO:slurm_quota:gpu factor: manager=alice gpu_type=h100 factor=0.25"],
+            ["INFO:slurm_quota:gpu factor: by=alice gpu_type=h100 factor=0.25"],
         )
         with self.db_connection() as conn:
             row = conn.execute(

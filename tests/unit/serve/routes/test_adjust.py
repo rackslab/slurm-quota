@@ -30,7 +30,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:consumption cpu: manager=alice user=bob "
+                "INFO:slurm_quota:consumption cpu: by=alice user=bob "
                 "account=hpc delta=+1800s total=7800s reason=n/a",
             ],
         )
@@ -56,7 +56,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:consumption gpu: manager=carol user=bob "
+                "INFO:slurm_quota:consumption gpu: by=carol user=bob "
                 "account=hpc delta=-1200s total=1800s reason=n/a",
             ],
         )
@@ -202,7 +202,7 @@ class TestConsumptionRoutes(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:consumption cpu: manager=alice user=bob "
+                "INFO:slurm_quota:consumption cpu: by=alice user=bob "
                 "account=hpc delta=+1800s total=7800s reason='correct billing error'",
             ],
         )

@@ -29,7 +29,7 @@ class TestQuotasRoute(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:quota user cpu: manager=alice name=bob value=500 reason=n/a",
+                "INFO:slurm_quota:quota user cpu: by=alice name=bob value=500 reason=n/a",
             ],
         )
         with self.db_connection() as conn:
@@ -56,7 +56,7 @@ class TestQuotasRoute(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:quota user gpu: manager=carol name=bob value=120 reason=n/a",
+                "INFO:slurm_quota:quota user gpu: by=carol name=bob value=120 reason=n/a",
             ],
         )
         with self.db_connection() as conn:
@@ -79,7 +79,7 @@ class TestQuotasRoute(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:quota account cpu: manager=alice name=hpc value=-1 reason=n/a",
+                "INFO:slurm_quota:quota account cpu: by=alice name=hpc value=-1 reason=n/a",
             ],
         )
         with self.db_connection() as conn:
@@ -105,7 +105,7 @@ class TestQuotasRoute(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:quota account gpu: manager=carol name=hpc value=900 reason=n/a",
+                "INFO:slurm_quota:quota account gpu: by=carol name=hpc value=900 reason=n/a",
             ],
         )
         with self.db_connection() as conn:
@@ -218,7 +218,7 @@ class TestQuotasRoute(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:quota user cpu: manager=alice name=bob value=500 "
+                "INFO:slurm_quota:quota user cpu: by=alice name=bob value=500 "
                 "reason='project extension approved'",
             ],
         )

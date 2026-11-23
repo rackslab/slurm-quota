@@ -30,7 +30,7 @@ class TestCommentsRoute(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:comment user: manager=alice name=bob "
+                "INFO:slurm_quota:comment user: by=alice name=bob "
                 "comment='PhD student'",
             ],
         )
@@ -64,8 +64,7 @@ class TestCommentsRoute(ServeRoutesTestCase):
             self.assertEqual(
                 log_cm.output,
                 [
-                    "INFO:slurm_quota:comment account: manager=alice name=hpc "
-                    "comment=n/a",
+                    "INFO:slurm_quota:comment account: by=alice name=hpc comment=n/a",
                 ],
             )
             self.assertIsNone(self._comment("accounts", "account", "hpc"))
@@ -189,7 +188,7 @@ class TestReasonAppendedToComments(ServeRoutesTestCase):
         self.assertEqual(
             log_cm.output,
             [
-                "INFO:slurm_quota:quota account cpu: manager=alice name=hpc "
+                "INFO:slurm_quota:quota account cpu: by=alice name=hpc "
                 "value=500 reason='extension approved'",
             ],
         )
