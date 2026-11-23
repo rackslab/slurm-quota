@@ -47,9 +47,9 @@ For new installations, follow the main [Installation](../README.md#installation)
   - the legacy consumption of each account is stored on pair (`(unattributed)`, account).
 
   User and account consumptions are preserved exactly, and quotas are enforced as before the migration. The
-  `(unattributed)` user and account are visible as regular entries in statistics until they are reallocated. The time of
-  the migration is recorded in the database. The migration runs in a single transaction: on any error, the database is
-  left unchanged. It fails if a user or an account named `(unattributed)` already exists.
+  `(unattributed)` user and account are visible as regular entries in statistics until they are reallocated. The
+  migration runs in a single transaction: on any error, the database is left unchanged. It fails if a user or an account
+  named `(unattributed)` already exists.
 
 - Users and accounts have an optional free text comment, displayed by `slurm-quota stats --comments` and the web
   dashboard, and set with `slurm-quota comments`. By default, the reason of quota changes and consumption adjustments is
@@ -216,12 +216,12 @@ not require a maintenance window and can be run any time after the upgrade, quot
 
 ### Reallocation logic
 
-The command queries Slurm accounting (`sacct`) for jobs ending in the selected period, until the migration by default.
-For CPU and GPU separately, it determines the actual user/account pairs and their shares from these jobs, distributes
-unattributed consumption accordingly while preserving user totals and, as far as possible, account totals (see
-[limits](#limits)), and removes the reallocated `(unattributed)` pairs, then the `(unattributed)` user and account once
-all their consumption is reallocated. The period does not need to cover all legacy consumption, it must be
-representative of how users consumed on their accounts, for example the period since the last reset of consumptions.
+The command queries Slurm accounting (`sacct`) for jobs ending in the selected period, until now by default. For CPU and
+GPU separately, it determines the actual user/account pairs and their shares from these jobs, distributes unattributed
+consumption accordingly while preserving user totals and, as far as possible, account totals (see [limits](#limits)),
+and removes the reallocated `(unattributed)` pairs, then the `(unattributed)` user and account once all their
+consumption is reallocated. The period does not need to cover all legacy consumption, it must be representative of how
+users consumed on their accounts, for example the period since the last reset of consumptions.
 
 For example, consider this legacy CPU consumption after the migration, in minutes:
 

@@ -18,6 +18,7 @@ import math
 import os
 import sqlite3
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -30,7 +31,7 @@ from slurm_quota.database import (
     load_gpu_factors,
 )
 from slurm_quota.log import logger, setup_logging
-from slurm_quota.migrate import CONSUMPTION_MIGRATED_AT, UNATTRIBUTED
+from slurm_quota.migrate import UNATTRIBUTED
 
 Pair = tuple[str, str]
 
@@ -592,20 +593,6 @@ def has_unattributed_consumption() -> bool:
     return row is not None
 
 
-def get_migration_time() -> Optional[int]:
-    """Return the time of migration to user/account pairs, if recorded."""
-    with connect_database() as conn:
-        row = conn.execute(
-            "SELECT value FROM settings WHERE key = ?", (CONSUMPTION_MIGRATED_AT,)
-        ).fetchone()
-    if row is None:
-        return None
-    try:
-        return int(row[0])
-    except (TypeError, ValueError):
-        return None
-
-
 def reallocate_unattributed(
     usage: dict[Pair, tuple[int, int]],
     associations: set[Pair],
@@ -881,13 +868,7 @@ def reallocate_command(
             return
 
         if endtime is None:
-            endtime = get_migration_time()
-            if endtime is None:
-                logger.error(
-                    "Migration time to user/account pairs not found, "
-                    "--endtime is required"
-                )
-                sys.exit(1)
+            endtime = int(time.time())
         if starttime >= endtime:
             logger.error("Start time must be before end time")
             sys.exit(1)
@@ -935,7 +916,7 @@ def main() -> None:
         type=_parse_time,
         help=(
             "Consider jobs ending before this date (YYYY-MM-DD[THH:MM[:SS]], "
-            "default: time of migration to user/account pairs)"
+            "default: now)"
         ),
     )
     parser.add_argument(

@@ -12,11 +12,7 @@ from slurm_quota.database import (
     query_accounts_aggregate,
     query_users_aggregate,
 )
-from slurm_quota.migrate import (
-    CONSUMPTION_MIGRATED_AT,
-    UNATTRIBUTED,
-    migrate_database,
-)
+from slurm_quota.migrate import UNATTRIBUTED, migrate_database
 from tests.test_support import SlurmQuotaTestCase
 
 
@@ -201,8 +197,7 @@ class TestMigrateConsumptionToPairs(SlurmQuotaTestCase):
             ],
             accounts=[("a1", 200, 2000, 20, -1), ("a2", 205, -1, 0, 7)],
         )
-        with patch("slurm_quota.migrate.time.time", return_value=1_700_000_000.5):
-            migrate_database()
+        migrate_database()
 
         with self.db_connection() as conn:
             user_columns = [r[1] for r in conn.execute("PRAGMA table_info(users)")]
@@ -259,13 +254,6 @@ class TestMigrateConsumptionToPairs(SlurmQuotaTestCase):
                     ("u2", UNATTRIBUTED, 100 * 60, 0),
                 ],
             )
-            self.assertEqual(
-                conn.execute(
-                    "SELECT value FROM settings WHERE key = ?",
-                    (CONSUMPTION_MIGRATED_AT,),
-                ).fetchone(),
-                ("1700000000",),
-            )
             self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
             # Preallocations are kept, converted to seconds, and foreign keys
             # still enforced
@@ -320,12 +308,6 @@ class TestMigrateConsumptionToPairs(SlurmQuotaTestCase):
             )
             self.assertEqual(
                 [r[0] for r in conn.execute("SELECT account FROM accounts")], ["a1"]
-            )
-            self.assertIsNone(
-                conn.execute(
-                    "SELECT value FROM settings WHERE key = ?",
-                    (CONSUMPTION_MIGRATED_AT,),
-                ).fetchone()
             )
 
     def test_migration_is_idempotent(self):

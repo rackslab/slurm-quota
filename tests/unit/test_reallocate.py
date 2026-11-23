@@ -9,7 +9,7 @@ from slurm_quota.database import (
     query_accounts_aggregate,
     query_users_aggregate,
 )
-from slurm_quota.migrate import CONSUMPTION_MIGRATED_AT, UNATTRIBUTED
+from slurm_quota.migrate import UNATTRIBUTED
 from slurm_quota.reallocate import (
     SOURCE_ASSOCIATIONS,
     SOURCE_NONE,
@@ -239,10 +239,6 @@ class TestReallocateUnattributed(SlurmQuotaTestCase):
             self.insert_consumption(conn, UNATTRIBUTED, "a2", 90)
             # Consumption charged after migration on actual pairs
             self.insert_consumption(conn, "u1", "a1", 5)
-            conn.execute(
-                "INSERT INTO settings (key, value) VALUES (?, '1700000000')",
-                (CONSUMPTION_MIGRATED_AT,),
-            )
             conn.commit()
 
     def _totals(self):

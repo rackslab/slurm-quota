@@ -9,7 +9,6 @@ import contextlib
 import os
 import sqlite3
 import sys
-import time
 from collections.abc import Iterator
 
 import slurm_quota
@@ -42,10 +41,6 @@ MIGRATE_DEFAULT_QUOTA_SETTINGS = {
 # slurm-quota-reallocate. The rest of slurm-quota handles them as any other
 # user, account and pair.
 UNATTRIBUTED = "(unattributed)"
-
-# Setting storing the time of migration to user/account pairs (epoch seconds),
-# all jobs charged before this time are included in legacy consumption.
-CONSUMPTION_MIGRATED_AT = "consumption_migrated_at"
 
 
 def _table_columns(cursor: sqlite3.Cursor, table: str) -> list[str]:
@@ -92,8 +87,7 @@ def migrate_consumption_to_pairs(cursor: sqlite3.Cursor) -> None:
     minutes) of each user is stored in seconds on the pair (user, UNATTRIBUTED)
     and legacy consumption of each account on the pair (UNATTRIBUTED, account),
     in user_account_consumption table. User and account totals are preserved
-    exactly. UNATTRIBUTED user and account are created for this purpose, and the
-    migration time is recorded for slurm-quota-reallocate.
+    exactly. UNATTRIBUTED user and account are created for this purpose.
 
     The consumption columns are then removed from users and accounts tables by
     rebuilding them, as ALTER TABLE DROP COLUMN is not available with
@@ -145,13 +139,6 @@ def migrate_consumption_to_pairs(cursor: sqlite3.Cursor) -> None:
             "INSERT INTO accounts (account, quota_cpu_minutes, quota_gpu_minutes) "
             "VALUES (?, -1, -1)",
             (UNATTRIBUTED,),
-        )
-        cursor.execute(
-            """
-            INSERT INTO settings (key, value) VALUES (?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            """,
-            (CONSUMPTION_MIGRATED_AT, str(int(time.time()))),
         )
 
     create_consumption_table(cursor)

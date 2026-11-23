@@ -89,7 +89,7 @@ The database path is `/var/lib/state/slurm-quota/slurm-quota.db`, unless
 
 *--endtime* <date>::
   Consider jobs ending before this local date, formatted `YYYY-MM-DD[THH:MM[:SS]]`.
-  Default: time of the database migration to user/account pairs.
+  Default: current time.
 
 *--chunk-days* <days>::
   Split Slurm accounting queries in periods of this number of days. Default: `30`.

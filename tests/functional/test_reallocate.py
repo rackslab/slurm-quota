@@ -4,33 +4,40 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from unittest.mock import patch
 
 from slurm_quota.database import init_database
-from slurm_quota.migrate import CONSUMPTION_MIGRATED_AT, UNATTRIBUTED
+from slurm_quota.migrate import UNATTRIBUTED
 from tests.functional.functional_base import FunctionalCLIBase
 
-MIGRATED_AT = 1_700_000_000
+# Current time when --endtime is omitted
+NOW = 1_700_000_000
+
+
+def _sacct_time(epoch):
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(epoch))
 
 
 class TestReallocateCommand(FunctionalCLIBase):
-    def _seed_unattributed(self, migrated_at=True):
+    def setUp(self):
+        super().setUp()
+        now_patcher = patch("slurm_quota.reallocate.time.time", return_value=NOW + 0.5)
+        now_patcher.start()
+        self.addCleanup(now_patcher.stop)
+
+    def _seed_unattributed(self):
         init_database()
         with self.db_connection() as conn:
             self.insert_consumption(conn, "alice", UNATTRIBUTED, 100)
             self.insert_consumption(conn, "bob", UNATTRIBUTED, 50)
             self.insert_consumption(conn, UNATTRIBUTED, "hpc", 120)
             self.insert_consumption(conn, UNATTRIBUTED, "dev", 30)
-            if migrated_at:
-                conn.execute(
-                    "INSERT INTO settings (key, value) VALUES (?, ?)",
-                    (CONSUMPTION_MIGRATED_AT, str(MIGRATED_AT)),
-                )
             conn.commit()
 
     def _slurm_side_effect(self, args, **_kwargs):
         if args[0] == "sacct":
-            end = MIGRATED_AT - 10
+            end = NOW - 10
             lines = [
                 f"1|alice|hpc|1|{end - 600}|{end}|cpu=1",
                 f"2|alice|dev|1|{end - 200}|{end}|cpu=1",
@@ -141,23 +148,30 @@ class TestReallocateCommand(FunctionalCLIBase):
         self.assertEqual(out.getvalue(), "Nothing to reallocate\n")
         run_mock.assert_not_called()
 
-    def test_reallocate_requires_endtime_without_migration_time(self):
-        self._seed_unattributed(migrated_at=False)
+    def test_reallocate_explicit_endtime(self):
+        self._seed_unattributed()
         with (
             patch("slurm_quota.auth.get_current_user", return_value="root"),
-            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
-            self.assertRaises(SystemExit) as cm,
+            patch(
+                "slurm_quota.slurm.subprocess.run",
+                side_effect=self._slurm_side_effect,
+            ) as run_mock,
+            self.capture_stdout(),
         ):
             self.run_reallocate_main(
-                ["slurm-quota-reallocate", "--starttime", "2023-01-01"]
+                [
+                    "slurm-quota-reallocate",
+                    "--starttime",
+                    "2023-11-01",
+                    "--endtime",
+                    "2023-11-10T12:00:00",
+                    "--dry-run",
+                ]
             )
-        self.assertEqual(cm.exception.code, 1)
+        sacct_args = run_mock.call_args_list[0][0][0]
+        self.assertEqual(sacct_args[0], "sacct")
         self.assertEqual(
-            log_cm.output,
-            [
-                "ERROR:slurm_quota:Migration time to user/account pairs not found, "
-                "--endtime is required",
-            ],
+            sacct_args[sacct_args.index("--endtime") + 1], "2023-11-10T12:00:00"
         )
 
     def test_reallocate_dry_run(self):
@@ -238,9 +252,12 @@ class TestReallocateCommand(FunctionalCLIBase):
                     "SELECT 1 FROM accounts WHERE account = ?", (UNATTRIBUTED,)
                 ).fetchone()
             )
-        # sacct queried up to migration time
+        # sacct queried up to now by default
         sacct_args = run_mock.call_args_list[0][0][0]
         self.assertEqual(sacct_args[0], "sacct")
+        self.assertEqual(
+            sacct_args[sacct_args.index("--endtime") + 1], _sacct_time(NOW)
+        )
 
         # Second run has nothing to do
         with (
