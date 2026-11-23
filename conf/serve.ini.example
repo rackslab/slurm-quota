@@ -28,6 +28,7 @@ admins=
 # key=/etc/slurm-quota/tls/key.pem
 
 # [log]
+# debug=false
 # log_flags=
 #   slurm_quota
 # debug_flags=

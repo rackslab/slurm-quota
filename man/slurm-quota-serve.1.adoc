@@ -27,7 +27,7 @@ The command must run as the `slurm` system user.
   Show help and exit.
 
 *--debug*::
-  Enable debug output.
+  Enable debug output. Debug mode can also be enabled with `[log] debug` in the site configuration file.
 
 *-q*, *--quiet*::
   Only print errors and warnings.
@@ -59,7 +59,7 @@ The command must run as the `slurm` system user.
 *--dump-config*::
   Dump resolved configuration values and exit. Passwords are masked.
 
-The site configuration file supports a `[log]` section with `log_flags` and `debug_flags` lists. Command-line `--log-flags` and `--debug-flags` override these values when provided.
+The site configuration file supports a `[log]` section with a `debug` boolean (default: `false`) and `log_flags` and `debug_flags` lists. Debug mode is enabled when either *--debug* or `[log] debug` is set, unless *--quiet* is given. Command-line `--log-flags` and `--debug-flags` override the lists when provided.
 
 Notes:
 
