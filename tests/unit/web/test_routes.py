@@ -65,7 +65,9 @@ class TestDashboardRoutes(SlurmQuotaTestCase):
 
     def test_urlerror_is_rendered_in_page(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
-            m_client.return_value.stats.side_effect = ServiceUnreachableError("boom")
+            m_client.return_value.stats.side_effect = ServiceUnreachableError(
+                "http://api:9911/", "boom"
+            )
             client = web_app().test_client()
             resp = client.get("/")
         self.assertEqual(resp.status_code, 200)
@@ -154,7 +156,7 @@ class TestAuthRoutes(SlurmQuotaTestCase):
     def test_login_post_api_unreachable_shows_error_page(self):
         with patch("slurm_quota.web.routes.APIClient") as m_client_cls:
             m_client_cls.return_value.login.side_effect = ServiceUnreachableError(
-                "boom"
+                "http://api:9911/", "boom"
             )
             client = web_app().test_client()
             login_page = client.get("/login")
@@ -169,7 +171,8 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             )
         self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
-        self.assertIn("Login failed", body)
+        self.assertIn("Unable to reach slurm-quota REST API at", body)
+        self.assertIn("http://api:9911/", body)
         self.assertIn("boom", body)
 
     def test_login_success_sets_session_and_renders_dashboard(self):

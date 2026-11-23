@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import errno
 import json
+import socket
 import ssl
 import tempfile
 from pathlib import Path
@@ -170,8 +172,11 @@ class TestAPIClientStats(SlurmQuotaTestCase):
             patch("slurm_quota.client.urlopen", side_effect=URLError("boom")),
             self.assertRaises(ServiceUnreachableError) as cm,
         ):
-            APIClient(token="jwt").stats(None, None, True)
-        self.assertEqual(str(cm.exception), "boom")
+            APIClient(token="jwt", base_url="http://api:9911/").stats(None, None, True)
+        self.assertEqual(
+            str(cm.exception),
+            "Unable to reach slurm-quota REST API at http://api:9911/: boom",
+        )
 
     def test_adds_authorization_header_when_token_set(self):
         with patch(
@@ -295,8 +300,11 @@ class TestAPIClientLogin(SlurmQuotaTestCase):
             patch("slurm_quota.client.urlopen", side_effect=URLError("boom")),
             self.assertRaises(ServiceUnreachableError) as cm,
         ):
-            APIClient().login("alice", "secret")
-        self.assertEqual(str(cm.exception), "boom")
+            APIClient(base_url="http://api:9911/").login("alice", "secret")
+        self.assertEqual(
+            str(cm.exception),
+            "Unable to reach slurm-quota REST API at http://api:9911/: boom",
+        )
 
     def test_stats_uses_token_from_login(self):
         users_payload = _sample_payload()
@@ -900,3 +908,33 @@ class TestAPIClientAppTokens(SlurmQuotaTestCase):
         req = m_urlopen.call_args[0][0]
         self.assertEqual(req.get_method(), "DELETE")
         self.assertTrue(req.full_url.endswith("/tokens/abc"))
+
+
+class TestServiceUnreachableError(SlurmQuotaTestCase):
+    URL = "http://controller:9911/"
+
+    def _unreachable(self, reason):
+        with (
+            patch("slurm_quota.client.urlopen", side_effect=URLError(reason)),
+            self.assertRaises(ServiceUnreachableError) as cm,
+        ):
+            APIClient(token="jwt", base_url=self.URL).stats(None, None, True)
+        return cm.exception
+
+    def test_os_error_reported_without_errno(self):
+        exc = self._unreachable(
+            ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused")
+        )
+        self.assertEqual(exc.url, self.URL)
+        self.assertEqual(exc.reason, "Connection refused")
+        self.assertEqual(
+            str(exc),
+            "Unable to reach slurm-quota REST API at http://controller:9911/: "
+            "Connection refused",
+        )
+
+    def test_name_resolution_error_reported_without_errno(self):
+        exc = self._unreachable(
+            socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+        )
+        self.assertEqual(exc.reason, "Name or service not known")

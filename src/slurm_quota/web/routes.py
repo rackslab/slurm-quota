@@ -205,7 +205,10 @@ def login_post() -> Any:
         )
     except (ServiceUnreachableError, ValueError) as exc:
         logger.error("login failed: user=%s: %s", username, exc)
-        flash(f"Login failed: {exc}", "error")
+        if isinstance(exc, ServiceUnreachableError):
+            flash(str(exc), "error")
+        else:
+            flash(f"Login failed: {exc}", "error")
         return render_template(
             "login.html",
             csrf_token=csrf_token(),

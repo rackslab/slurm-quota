@@ -78,4 +78,4 @@ class TestGpuFactorsCommand(FunctionalAPICliBase):
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,
         ):
             self.run_cli_main_exit(["slurm-quota", "gpu-factors"], 1)
-        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+        self.assertIn("Unable to reach slurm-quota REST API at", log_cm.output[0])

@@ -207,5 +207,5 @@ class TestRoleCommand(FunctionalAPICliBase):
         ):
             self.run_cli_main_exit(["slurm-quota", "role", "show"], 1)
         self.assertEqual(len(log_cm.output), 1)
-        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+        self.assertIn("Unable to reach slurm-quota REST API at", log_cm.output[0])
         self.assertIn("boom", log_cm.output[0])

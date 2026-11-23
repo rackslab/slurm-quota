@@ -134,4 +134,4 @@ class TestSetDefaultQuotasCommand(FunctionalAPICliBase):
                 ["slurm-quota", "set-default-quotas", "--user-cpu", "1"],
                 1,
             )
-        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+        self.assertIn("Unable to reach slurm-quota REST API at", log_cm.output[0])

@@ -198,7 +198,7 @@ class TestAdjustCommand(FunctionalAPICliBase):
                 ],
                 1,
             )
-        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+        self.assertIn("Unable to reach slurm-quota REST API at", log_cm.output[0])
 
     def test_adjust_rejects_unsigned_delta(self):
         self.run_cli_main_exit(

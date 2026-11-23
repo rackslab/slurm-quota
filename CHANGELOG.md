@@ -66,6 +66,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Preallocation of jobs modified with `scontrol update` computed from the current number of tasks, time limit and GPUs
   of the job instead of default values of unmodified fields, and moved to the new account when the account of the job is
   modified (#131).
+- Error reported by CLI and web dashboard when the REST API is not reachable gives the API URL (#133).
 
 ### Documentation
 

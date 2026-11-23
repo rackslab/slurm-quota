@@ -63,11 +63,18 @@ class ServiceHTTPError(Exception):
 class ServiceUnreachableError(Exception):
     """Raised when the slurm-quota service cannot be reached."""
 
+    def __init__(self, url: str, reason: str):
+        self.url = url
+        self.reason = reason
+        super().__init__(f"Unable to reach slurm-quota REST API at {url}: {reason}")
+
     @classmethod
-    def from_url_error(cls, exc: URLError) -> ServiceUnreachableError:
-        if exc.reason is not None:
-            return cls(str(exc.reason))
-        return cls(str(exc))
+    def from_url_error(cls, exc: URLError, url: str) -> ServiceUnreachableError:
+        reason = exc.reason
+        if isinstance(reason, OSError) and reason.strerror:
+            # Report error message without [Errno N] prefix
+            return cls(url, reason.strerror)
+        return cls(url, str(reason))
 
 
 def _default_base_url() -> str:
@@ -149,7 +156,7 @@ class APIClient:
         except HTTPError as exc:
             raise ServiceHTTPError.from_http_error(exc) from exc
         except URLError as exc:
-            raise ServiceUnreachableError.from_url_error(exc) from exc
+            raise ServiceUnreachableError.from_url_error(exc, self.base_url) from exc
 
     def login(self, username: str, password: str) -> dict[str, Any]:
         """

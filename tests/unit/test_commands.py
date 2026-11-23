@@ -502,7 +502,9 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.assertEqual(cm.exception.code, 1)
 
     def test_urlerror_exits(self):
-        self._mock_stats(side_effect=ServiceUnreachableError("down"))
+        self._mock_stats(
+            side_effect=ServiceUnreachableError("http://api:9911/", "down")
+        )
         with self.assertRaises(SystemExit) as cm:
             show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
@@ -684,12 +686,12 @@ class TestRoleCommands(SlurmQuotaTestCase):
             self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.grant_role.side_effect = ServiceUnreachableError(
-                "boom"
+                "http://api:9911/", "boom"
             )
             role_grant_command("operator", "bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
-        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+        self.assertIn("Unable to reach slurm-quota REST API at", log_cm.output[0])
 
     def test_role_revoke_prints_confirmation(self):
         buf = io.StringIO()
@@ -725,12 +727,12 @@ class TestRoleCommands(SlurmQuotaTestCase):
             self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.revoke_role.side_effect = ServiceUnreachableError(
-                "boom"
+                "http://api:9911/", "boom"
             )
             role_revoke_command("manager", "bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
-        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+        self.assertIn("Unable to reach slurm-quota REST API at", log_cm.output[0])
 
     def test_role_managers_list_prints_accounts(self):
         buf = io.StringIO()
@@ -782,12 +784,12 @@ class TestRoleCommands(SlurmQuotaTestCase):
             self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.list_manager_accounts.side_effect = (
-                ServiceUnreachableError("boom")
+                ServiceUnreachableError("http://api:9911/", "boom")
             )
             role_managers_list_command("bob")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
-        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+        self.assertIn("Unable to reach slurm-quota REST API at", log_cm.output[0])
 
     def test_role_managers_add_prints_confirmation(self):
         buf = io.StringIO()
@@ -827,12 +829,12 @@ class TestRoleCommands(SlurmQuotaTestCase):
             self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.add_manager_account.side_effect = (
-                ServiceUnreachableError("boom")
+                ServiceUnreachableError("http://api:9911/", "boom")
             )
             role_managers_add_command("bob", "hpc")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
-        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+        self.assertIn("Unable to reach slurm-quota REST API at", log_cm.output[0])
 
     def test_role_managers_remove_prints_confirmation(self):
         buf = io.StringIO()
@@ -874,12 +876,12 @@ class TestRoleCommands(SlurmQuotaTestCase):
             self.assertRaises(SystemExit) as cm,
         ):
             m_client.return_value.remove_manager_account.side_effect = (
-                ServiceUnreachableError("boom")
+                ServiceUnreachableError("http://api:9911/", "boom")
             )
             role_managers_remove_command("bob", "hpc")
         self.assertEqual(cm.exception.code, 1)
         self.assertEqual(len(log_cm.output), 1)
-        self.assertIn("Failed to contact slurm-quota service:", log_cm.output[0])
+        self.assertIn("Unable to reach slurm-quota REST API at", log_cm.output[0])
 
 
 class TestTokenCommand(SlurmQuotaTestCase):

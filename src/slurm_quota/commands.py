@@ -56,7 +56,7 @@ def _handle_api_error(exc: ServiceHTTPError, *, forbidden_message: str) -> None:
 
 
 def _handle_unreachable_error(exc: ServiceUnreachableError) -> None:
-    logger.error(f"Failed to contact slurm-quota service: {exc}")
+    logger.error(str(exc))
     sys.exit(1)
 
 
