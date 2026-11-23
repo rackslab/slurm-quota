@@ -47,6 +47,7 @@ _slurm_quota() {
         account-quota
         user-gpu-quota
         account-gpu-quota
+        comments
         gpu-factors
         set-gpu-factor
         default-quotas
@@ -133,7 +134,7 @@ _slurm_quota() {
                         local colon_prefix="${line_cur%"${line_cur##*:}"}"
                         local scope
                         COMPREPLY=()
-                        for scope in $(compgen -W "stats:read:own stats:read:managed stats:read:all quotas:read quotas:write roles:read roles:write" -- "$line_cur"); do
+                        for scope in $(compgen -W "stats:read:own stats:read:managed stats:read:all quotas:read quotas:write comments:write roles:read roles:write" -- "$line_cur"); do
                             COMPREPLY+=("${scope#"$colon_prefix"}")
                         done
                     elif [[ "$prev" == --duration ]]; then
@@ -154,33 +155,36 @@ _slurm_quota() {
             esac
             ;;
         stats)
-            COMPREPLY=($(compgen -W "$base_opts --user --account --all --breakdown --no-breakdown --hours --seconds" -- "$cur"))
+            COMPREPLY=($(compgen -W "$base_opts --user --account --all --breakdown --no-breakdown --comments --hours --seconds" -- "$cur"))
             COMPREPLY+=($(_slurm_quota_complete_users "$cur"))
             ;;
         adjust)
-            COMPREPLY=($(compgen -W "$base_opts --user --account --cpu --gpu --minutes --hours --seconds --reason" -- "$cur"))
+            COMPREPLY=($(compgen -W "$base_opts --user --account --cpu --gpu --minutes --hours --seconds --reason --no-save-comment" -- "$cur"))
             ;;
         user-quota|user-gpu-quota)
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "$base_opts --reason" -- "$cur"))
+                COMPREPLY=($(compgen -W "$base_opts --reason --no-save-comment" -- "$cur"))
             elif (( cword == subcmd_idx + 1 )); then
                 COMPREPLY=($(_slurm_quota_complete_users "$cur"))
             elif (( cword == subcmd_idx + 2 )); then
                 COMPREPLY=($(compgen -W "-1" -- "$cur"))
             else
-                COMPREPLY=($(compgen -W "$base_opts --reason" -- "$cur"))
+                COMPREPLY=($(compgen -W "$base_opts --reason --no-save-comment" -- "$cur"))
             fi
             ;;
         account-quota|account-gpu-quota)
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "$base_opts --reason" -- "$cur"))
+                COMPREPLY=($(compgen -W "$base_opts --reason --no-save-comment" -- "$cur"))
             elif (( cword == subcmd_idx + 1 )); then
                 COMPREPLY=($(_slurm_quota_complete_accounts "$cur"))
             elif (( cword == subcmd_idx + 2 )); then
                 COMPREPLY=($(compgen -W "-1" -- "$cur"))
             else
-                COMPREPLY=($(compgen -W "$base_opts --reason" -- "$cur"))
+                COMPREPLY=($(compgen -W "$base_opts --reason --no-save-comment" -- "$cur"))
             fi
+            ;;
+        comments)
+            COMPREPLY=($(compgen -W "$base_opts --user --account --clear" -- "$cur"))
             ;;
         set-gpu-factor)
             if (( cword == subcmd_idx + 1 )); then
