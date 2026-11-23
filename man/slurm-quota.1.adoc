@@ -481,7 +481,8 @@ slurm-quota set-default-quotas --user-cpu 50000 --account-cpu 200000
   `~/.config/slurm-quota/token`).
 
 *NO_COLOR*::
-  If set, disables colored status bars in `stats` output.
+  If set, disables colored status bars in `stats` output. Colors are also disabled
+  when standard output is not a terminal.
 
 == Files
 

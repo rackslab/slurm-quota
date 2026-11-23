@@ -60,6 +60,14 @@ def _handle_unreachable_error(exc: ServiceUnreachableError) -> None:
     sys.exit(1)
 
 
+def _use_colors() -> bool:
+    """Return True if colors can be printed on standard output."""
+    if os.environ.get("NO_COLOR") is not None:
+        return False
+    isatty = getattr(sys.stdout, "isatty", None)
+    return isatty is not None and isatty()
+
+
 def create_status_bar(used: int, total: int, width: int = 20) -> str:
     """
     Create a visual status bar representing quota usage.
@@ -79,8 +87,9 @@ def create_status_bar(used: int, total: int, width: int = 20) -> str:
     filled = int(percentage * width)
     bar = "█" * filled + "░" * (width - filled)
 
-    # Apply color based on thresholds unless NO_COLOR is set
-    if os.environ.get("NO_COLOR") is None:
+    # Apply color based on thresholds unless NO_COLOR is set or standard output
+    # is not a terminal
+    if _use_colors():
         # >95% -> red, >80% -> orange/yellow, else green
         if percentage > 0.95:
             color_start = "\033[31m"  # red

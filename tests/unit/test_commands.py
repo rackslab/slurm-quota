@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
@@ -34,6 +35,27 @@ class TestCreateStatusBar(SlurmQuotaTestCase):
         self.assertEqual(create_status_bar(0, 0), " " * 20)
         self.assertIn("50.0%", create_status_bar(5, 10))
         self.assertIn("100.0%", create_status_bar(15, 10))
+
+    def test_colors_on_terminal(self):
+        with patch.dict("os.environ"), redirect_stdout(_TTYStringIO()):
+            os.environ.pop("NO_COLOR", None)
+            self.assertIn("\033[32m", create_status_bar(5, 10))
+            self.assertIn("\033[31m", create_status_bar(10, 10))
+
+    def test_no_colors_when_not_terminal(self):
+        with patch.dict("os.environ"), redirect_stdout(io.StringIO()):
+            os.environ.pop("NO_COLOR", None)
+            self.assertNotIn("\033", create_status_bar(5, 10))
+
+    def test_no_colors_with_no_color_env(self):
+        self.env({"NO_COLOR": "1"})
+        with redirect_stdout(_TTYStringIO()):
+            self.assertNotIn("\033", create_status_bar(5, 10))
+
+
+class _TTYStringIO(io.StringIO):
+    def isatty(self):
+        return True
 
 
 def _sample_users_and_accounts():

@@ -760,10 +760,11 @@ slurm-quota stats --seconds       # same stats displayed in seconds
 > `--account` is mutually exclusive with user selection (`--user` or positional username).
 
 > [!NOTE]
-> Color display of the status bar can be disabled by setting the `NO_COLOR` environment variable. Consumed and
-> preallocated times are displayed in whole minutes (rounded down) by default, in hours with `--hours` or in seconds
-> with `--seconds`. These options change only the displayed unit: the REST API reports consumed and preallocated times
-> in seconds, and quotas in minutes. Status bars are computed in seconds, like the quota check at job submission.
+> Color display of the status bar is disabled when standard output is not a terminal, or by setting the `NO_COLOR`
+> environment variable. Consumed and preallocated times are displayed in whole minutes (rounded down) by default, in
+> hours with `--hours` or in seconds with `--seconds`. These options change only the displayed unit: the REST API
+> reports consumed and preallocated times in seconds, and quotas in minutes. Status bars are computed in seconds, like
+> the quota check at job submission.
 
 - `role`: Show or manage REST API roles (requires a saved token or `SLURM_QUOTA_TOKEN`).
 

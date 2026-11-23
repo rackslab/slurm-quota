@@ -69,6 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Error reported by CLI and web dashboard when the REST API is not reachable gives the API URL (#133).
 - Last updated times displayed by web dashboard in local time zone with time zone name, like in CLI, instead of UTC
   without time zone (#136).
+- `slurm-quota stats` does not print colors when standard output is not a terminal (#138).
 
 ### Documentation
 
