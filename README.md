@@ -771,9 +771,9 @@ slurm-quota role grant operator bob    # grant operator role (admin only)
 slurm-quota role grant manager bob     # grant manager role (admin only)
 slurm-quota role revoke operator bob   # revoke operator role (admin only)
 slurm-quota role revoke manager bob    # revoke manager role (admin only)
-slurm-quota role managers bob list     # list accounts assigned to a manager
-slurm-quota role managers bob add hpc  # assign account to a manager
-slurm-quota role managers bob remove hpc
+slurm-quota role managers list bob        # list accounts assigned to a manager
+slurm-quota role managers add bob hpc     # assign account to a manager
+slurm-quota role managers remove bob hpc  # remove account from a manager
 ```
 
 - `user-quota` (requires operator or admin role): Sets a CPU quota for a user.

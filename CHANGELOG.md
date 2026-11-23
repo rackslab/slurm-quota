@@ -72,6 +72,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Upgrade guide from version 3 to version 4.
 - `--reason` option of quota and adjust commands in `slurm-quota` man page (#108).
+- Syntax of `slurm-quota role managers` subcommands in `slurm-quota` man page, README and upgrade guide from version 2
+  to version 3 (#135).
 
 ## [3.0.1] - 2026-08-25
 

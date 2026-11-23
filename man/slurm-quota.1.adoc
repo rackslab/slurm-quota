@@ -194,7 +194,7 @@ slurm-quota stats alice --no-breakdown
 
 === role
 
-*slurm-quota role* *show* | *list* | *grant* <operator|manager> <username> | *revoke* <operator|manager> <username> | *managers* <username> *list* | *managers* <username> *add* <account> | *managers* <username> *remove* <account>
+*slurm-quota role* *show* | *list* | *grant* <operator|manager> <username> | *revoke* <operator|manager> <username> | *managers* *list* <username> | *managers* *add* <username> <account> | *managers* *remove* <username> <account>
 
 Show or manage REST API user roles. Requires a saved JWT token or
 `SLURM_QUOTA_TOKEN`.
@@ -213,13 +213,13 @@ Subcommands:
 *revoke* <operator|manager> <username>::
   Revoke operator or manager role from a user (admin only).
 
-*managers* <username> *list*::
+*managers* *list* <username>::
   List accounts assigned to a manager (admin only).
 
-*managers* <username> *add* <account>::
+*managers* *add* <username> <account>::
   Assign an account to a manager (admin only).
 
-*managers* <username> *remove* <account>::
+*managers* *remove* <username> <account>::
   Remove an account from a manager (admin only).
 
 Examples:
@@ -230,8 +230,9 @@ slurm-quota role list
 slurm-quota role grant operator bob
 slurm-quota role grant manager bob
 slurm-quota role revoke operator bob
-slurm-quota role managers bob list
-slurm-quota role managers bob add hpc
+slurm-quota role managers list bob
+slurm-quota role managers add bob hpc
+slurm-quota role managers remove bob hpc
 ....
 
 === adjust

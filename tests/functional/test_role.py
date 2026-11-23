@@ -134,6 +134,20 @@ class TestRoleCommand(FunctionalAPICliBase):
         self.assertTrue(req.full_url.endswith("/roles/managers/bob"))
         self.assertEqual(req.get_header("Authorization"), "Bearer saved-jwt")
 
+    def test_role_managers_add_prints_confirmation(self):
+        with (
+            patch(
+                "slurm_quota.client.urlopen",
+                side_effect=self._role_urlopen_side_effect,
+            ) as m_urlopen,
+            self.capture_stdout() as out,
+        ):
+            self.run_cli_main(["slurm-quota", "role", "managers", "add", "bob", "hpc"])
+        self.assertEqual(out.getvalue(), "Assigned account hpc to manager bob\n")
+        req = m_urlopen.call_args[0][0]
+        self.assertEqual(req.get_method(), "PUT")
+        self.assertTrue(req.full_url.endswith("/roles/managers/bob/accounts/hpc"))
+
     def test_role_without_subcommand_exits_with_help(self):
         self.run_cli_main_exit(["slurm-quota", "role"], 1)
 

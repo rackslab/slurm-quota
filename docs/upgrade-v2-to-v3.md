@@ -161,8 +161,8 @@ Admins grant broader or administrative access through *manager* and *operator* r
 ```bash
 slurm-quota role grant operator bob    # manage quotas and view all stats
 slurm-quota role grant manager carol   # view stats for assigned accounts only
-slurm-quota role managers carol add hpc
-slurm-quota role managers carol add research
+slurm-quota role managers add carol hpc
+slurm-quota role managers add carol research
 ```
 
 ## 5. Update the web dashboard
