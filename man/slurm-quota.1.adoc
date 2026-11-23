@@ -230,7 +230,7 @@ slurm-quota role managers bob add hpc
 
 === adjust
 
-*slurm-quota adjust* *--user* <username> *--account* <account> (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int> | *--seconds* <signed_int>)
+*slurm-quota adjust* *--user* <username> *--account* <account> (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int> | *--seconds* <signed_int>) [*--reason* <text>]
 
 Adjust consumed CPU/GPU time of one user on one account. Consumption is recorded
 per user/account pair: the adjustment changes both the user total and the account
@@ -261,6 +261,9 @@ Options:
   Signed delta in seconds, must include `+` or `-`. The new consumed total is
   then reported in seconds instead of whole minutes.
 
+*--reason* <text>::
+  Reason of the adjustment, recorded in the service audit logs.
+
 Notes:
 
 - Negative adjustments are clamped at zero (consumed time of the user/account pair never becomes negative).
@@ -276,10 +279,15 @@ slurm-quota adjust --user alice --account projX --cpu --seconds=-45
 
 === user-quota
 
-*slurm-quota user-quota* <username> <quota_minutes>
+*slurm-quota user-quota* <username> <quota_minutes> [*--reason* <text>]
 
 Set user CPU quota in minutes (`-1` means unlimited). Requires a saved JWT
 token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
+
+Options:
+
+*--reason* <text>::
+  Reason of the change, recorded in the service audit logs.
 
 Example:
 
@@ -289,10 +297,15 @@ slurm-quota user-quota alice 50000
 
 === account-quota
 
-*slurm-quota account-quota* <account> <quota_minutes>
+*slurm-quota account-quota* <account> <quota_minutes> [*--reason* <text>]
 
 Set account CPU quota in minutes (`-1` means unlimited). Requires a saved JWT
 token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
+
+Options:
+
+*--reason* <text>::
+  Reason of the change, recorded in the service audit logs.
 
 Example:
 
@@ -302,10 +315,15 @@ slurm-quota account-quota projX 200000
 
 === user-gpu-quota
 
-*slurm-quota user-gpu-quota* <username> <quota_gpu_minutes>
+*slurm-quota user-gpu-quota* <username> <quota_gpu_minutes> [*--reason* <text>]
 
 Set user GPU quota in minutes (`-1` means unlimited). Requires a saved JWT
 token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
+
+Options:
+
+*--reason* <text>::
+  Reason of the change, recorded in the service audit logs.
 
 Example:
 
@@ -315,10 +333,15 @@ slurm-quota user-gpu-quota alice 10000
 
 === account-gpu-quota
 
-*slurm-quota account-gpu-quota* <account> <quota_gpu_minutes>
+*slurm-quota account-gpu-quota* <account> <quota_gpu_minutes> [*--reason* <text>]
 
 Set account GPU quota in minutes (`-1` means unlimited). Requires a saved JWT
 token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
+
+Options:
+
+*--reason* <text>::
+  Reason of the change, recorded in the service audit logs.
 
 Example:
 
