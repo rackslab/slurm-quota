@@ -58,6 +58,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `slurm-quota adjust` requires both `--user` and `--account` (#110).
 - `GET /stats` reads Slurm associations from the database cache instead of querying `sacctmgr` on each request.
 
+### Fixed
+
+- Preallocation of jobs modified with `scontrol update` computed from the current number of tasks, time limit and GPUs
+  of the job instead of default values of unmodified fields, and moved to the new account when the account of the job is
+  modified (#131).
+
 ### Documentation
 
 - Upgrade guide from version 3 to version 4.

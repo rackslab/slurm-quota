@@ -32,6 +32,14 @@ local function generate_uuid()
     end)
 end
 
+-- Slurm value of numeric fields not provided in job descriptions (NO_VAL)
+local NO_VAL = 4294967294
+
+-- Check whether a job description numeric field is not provided
+local function is_unset(value)
+    return value == nil or value == NO_VAL
+end
+
 -- Normalize Slurm special values for task count
 local function normalize_num_tasks(num_tasks)
     -- Slurm uses 4294967294 for special/unspecified; treat as 1 task for quota
@@ -590,18 +598,43 @@ local function create_job_record(conn, job_uuid, username, account, preallocated
     return true
 end
 
+-- Get the preallocation of a job, or nil if not found or on error
+local function get_job_preallocation(conn, job_uuid)
+    local stmt, perr = conn:prepare("SELECT preallocated_cpu_seconds AS cpu_seconds, preallocated_gpu_seconds AS gpu_seconds, array_size AS array_size FROM jobs_preallocations WHERE job_uuid = ?")
+    if not stmt then
+        slurm.log_error("slurm_job_modify: failed to prepare statement: " .. tostring(perr))
+        return nil
+    end
+    local ok, exerr = execute_with_retry(stmt, job_uuid)
+    if not ok then
+        slurm.log_error("slurm_job_modify: failed to get job preallocation: " .. tostring(exerr))
+        stmt:close()
+        return nil
+    end
+    local row = stmt:fetch(true)
+    stmt:close()
+    if not row then
+        return nil
+    end
+    return {
+        cpu_seconds = tonumber(row.cpu_seconds) or 0,
+        gpu_seconds = tonumber(row.gpu_seconds) or 0,
+        array_size = tonumber(row.array_size) or 1
+    }
+end
+
 -- Update job preallocation
-local function update_job_preallocation(conn, job_uuid, preallocated_cpu_seconds, preallocated_gpu_seconds, array_size)
+local function update_job_preallocation(conn, job_uuid, account, preallocated_cpu_seconds, preallocated_gpu_seconds, array_size)
     if not conn then
         return false
     end
 
-    local stmt, uerr = conn:prepare("UPDATE jobs_preallocations SET preallocated_cpu_seconds = ?, preallocated_gpu_seconds = ?, array_size = ? WHERE job_uuid = ?")
+    local stmt, uerr = conn:prepare("UPDATE jobs_preallocations SET account = ?, preallocated_cpu_seconds = ?, preallocated_gpu_seconds = ?, array_size = ? WHERE job_uuid = ?")
     if not stmt then
         return false
     end
 
-    local updated = execute_with_retry(stmt, preallocated_cpu_seconds, preallocated_gpu_seconds or 0, array_size or 1, job_uuid)
+    local updated = execute_with_retry(stmt, account, preallocated_cpu_seconds, preallocated_gpu_seconds or 0, array_size or 1, job_uuid)
     stmt:close()
     return updated and true or false
 end
@@ -886,8 +919,16 @@ end
 
 -- Job modify function (for job updates)
 function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
-    local username = job_desc.user_name
-    local account = resolve_account(job_desc)
+    -- The job description only contains the modified fields, the other fields
+    -- are taken from the job record.
+    local username = job_desc.user_name or job_record.user_name
+    local account = job_desc.account
+    if not account or account == "" then
+        account = job_record.account
+    end
+    if not account or account == "" then
+        account = resolve_account(job_desc)
+    end
     if not account then
         slurm.log_info(
                 "slurm_job_modify: reject job modification for user %s: no account or default_account provided",
@@ -896,13 +937,13 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
         slurm.log_user("job modification rejected: no account/default_account set")
         return slurm.ESLURM_INVALID_ACCOUNT
     end
-    local num_tasks = normalize_num_tasks(job_desc.num_tasks)
-    local num_nodes = normalize_num_nodes(job_desc.max_nodes)
-    local time_limit = job_desc.time_limit or 0
-    local array_job_count = count_array_jobs(job_desc.array_inx)
-    if not array_job_count then
-        slurm.log_user("job modification rejected: invalid array index range (start must be <= end)")
-        return slurm.ESLURM_INVALID_ARRAY
+    local array_job_count = nil
+    if job_desc.array_inx and job_desc.array_inx ~= "" then
+        array_job_count = count_array_jobs(job_desc.array_inx)
+        if not array_job_count then
+            slurm.log_user("job modification rejected: invalid array index range (start must be <= end)")
+            return slurm.ESLURM_INVALID_ARRAY
+        end
     end
 
     -- If database doesn't exist, allow the modification
@@ -953,6 +994,59 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
         return slurm.SUCCESS
     end
 
+    -- Get the current preallocation of the job
+    local preallocation = get_job_preallocation(conn, job_uuid)
+    if not preallocation then
+        conn:close()
+        slurm.log_info("slurm_job_modify: no preallocation found for job %s, allowing job modification", job_uuid)
+        return slurm.SUCCESS
+    end
+
+    -- Time limit (in minutes), from job description if modified or job record
+    local time_limit = job_desc.time_limit
+    if is_unset(time_limit) then
+        time_limit = job_record.time_limit or 0
+    end
+
+    -- Number of tasks, from job description if modified. Otherwise, the number
+    -- of tasks is not available in job record, it is derived from the current
+    -- CPU preallocation and the current time limit of the job.
+    local num_tasks
+    if not is_unset(job_desc.num_tasks) then
+        num_tasks = normalize_num_tasks(job_desc.num_tasks)
+    else
+        local current_time_limit = job_record.time_limit
+        if is_unset(current_time_limit) or current_time_limit <= 0 then
+            num_tasks = 1
+        else
+            num_tasks = math.max(1, math.floor(preallocation.cpu_seconds / (current_time_limit * 60) + 0.5))
+        end
+    end
+
+    -- Number of nodes, from job description if modified or job record
+    local num_nodes
+    if not is_unset(job_desc.max_nodes) then
+        num_nodes = normalize_num_nodes(job_desc.max_nodes)
+    else
+        num_nodes = normalize_num_nodes(job_record.max_nodes)
+    end
+
+    -- Number of array jobs, from job description if modified or current
+    -- preallocation (array index is not available in job record)
+    if not array_job_count then
+        array_job_count = preallocation.array_size
+    end
+
+    -- TRES fields, from job description if modified or job record
+    local tres = {}
+    for _, field in ipairs({"tres_per_job", "tres_per_task", "tres_per_node", "tres_per_socket"}) do
+        if job_desc[field] ~= nil then
+            tres[field] = job_desc[field]
+        else
+            tres[field] = job_record[field]
+        end
+    end
+
     -- Calculate requested CPU seconds: tasks * time_limit (in minutes)
     local requested_cpu_seconds = num_tasks * time_limit * 60
     local available_user = -1
@@ -965,7 +1059,7 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
         slurm.log_error("slurm_job_modify: failed to load GPU factors, allowing job modification")
         return slurm.SUCCESS
     end
-    local gpu_counts, gpu_parse_error = parse_tres_fields(job_desc, num_tasks, num_nodes)
+    local gpu_counts, gpu_parse_error = parse_tres_fields(tres, num_tasks, num_nodes)
     if not gpu_counts then
         conn:close()
         slurm.log_info("slurm_job_modify: reject job modification for user %s: %s", username, gpu_parse_error or "failed to parse GPU requirements")
@@ -1036,7 +1130,7 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
     end
 
     -- Update the job record with new preallocated CPU and GPU seconds (no commit here)
-    local updated = update_job_preallocation(conn, job_uuid, requested_cpu_seconds, requested_gpu_seconds, array_job_count)
+    local updated = update_job_preallocation(conn, job_uuid, account, requested_cpu_seconds, requested_gpu_seconds, array_job_count)
     if updated and conn.commit then
         pcall(function() conn:commit() end)
     end
