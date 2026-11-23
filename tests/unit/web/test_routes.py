@@ -184,19 +184,24 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             client = web_app().test_client()
             login_page = client.get("/login")
             csrf = extract_csrf(login_page.get_data(as_text=True))
-            resp = client.post(
-                "/login",
-                data={
-                    "_csrf": csrf,
-                    "username": "alice",
-                    "password": "secret",
-                    "next": "/",
-                },
-                follow_redirects=False,
-            )
+            with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+                resp = client.post(
+                    "/login",
+                    data={
+                        "_csrf": csrf,
+                        "username": "alice",
+                        "password": "secret",
+                        "next": "/",
+                    },
+                    follow_redirects=False,
+                )
             self.assertEqual(resp.status_code, 302)
             dashboard = client.get("/")
         self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(
+            log_cm.output,
+            ["INFO:slurm_quota:login succeeded: user=alice role=admin"],
+        )
         self.assertIn("Signed in as", dashboard.get_data(as_text=True))
         m_client.return_value.stats.assert_called_with(
             None, None, show_all=True, include_breakdown=True
@@ -212,17 +217,22 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             client = web_app().test_client()
             login_page = client.get("/login")
             csrf = extract_csrf(login_page.get_data(as_text=True))
-            resp = client.post(
-                "/login",
-                data={
-                    "_csrf": csrf,
-                    "username": "alice",
-                    "password": "wrong",
-                    "next": "/",
-                },
-            )
+            with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
+                resp = client.post(
+                    "/login",
+                    data={
+                        "_csrf": csrf,
+                        "username": "alice",
+                        "password": "wrong",
+                        "next": "/",
+                    },
+                )
         self.assertEqual(resp.status_code, 200)
         self.assertIn("Invalid username or password", resp.get_data(as_text=True))
+        self.assertEqual(
+            log_cm.output,
+            ["WARNING:slurm_quota:login failed: user=alice: invalid credentials"],
+        )
 
     def test_logout_clears_session(self):
         mock_api = self._mock_login_client()
@@ -247,12 +257,14 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             )
             dashboard = client.get("/")
             csrf = extract_csrf(dashboard.get_data(as_text=True))
-            logout = client.post(
-                "/logout",
-                data={"_csrf": csrf},
-                follow_redirects=False,
-            )
+            with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+                logout = client.post(
+                    "/logout",
+                    data={"_csrf": csrf},
+                    follow_redirects=False,
+                )
             self.assertEqual(logout.status_code, 302)
+            self.assertEqual(log_cm.output, ["INFO:slurm_quota:logout: user=alice"])
             redirect = client.get("/")
         self.assertEqual(redirect.status_code, 302)
         self.assertIn("/login", redirect.headers["Location"])
@@ -278,9 +290,14 @@ class TestAuthRoutes(SlurmQuotaTestCase):
                     "next": "/",
                 },
             )
-            resp = client.get("/", follow_redirects=False)
+            with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+                resp = client.get("/", follow_redirects=False)
         self.assertEqual(resp.status_code, 302)
         self.assertIn("session_expired", resp.headers["Location"])
+        self.assertIn(
+            "INFO:slurm_quota:session ended: user=alice role=admin path=/ status=401",
+            log_cm.output,
+        )
 
     def test_session_expired_message_on_login_page(self):
         client = web_app().test_client()
@@ -417,19 +434,27 @@ class TestRolesRoutes(SlurmQuotaTestCase):
             client = web_app().test_client()
             roles_page = client.get("/roles")
             csrf = extract_csrf(roles_page.get_data(as_text=True))
-            resp = client.post(
-                "/roles",
-                data={
-                    "_csrf": csrf,
-                    "action": "grant",
-                    "role": "operator",
-                    "username": "bob",
-                },
-                follow_redirects=False,
-            )
+            with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+                resp = client.post(
+                    "/roles",
+                    data={
+                        "_csrf": csrf,
+                        "action": "grant",
+                        "role": "operator",
+                        "username": "bob",
+                    },
+                    follow_redirects=False,
+                )
         self.assertEqual(resp.status_code, 302)
         self.assertIn("/roles", resp.headers["Location"])
         m_client.return_value.grant_role.assert_called_once_with("operator", "bob")
+        self.assertEqual(
+            log_cm.output,
+            [
+                "INFO:slurm_quota:role granted: user=bob role=operator "
+                "by=(service token)"
+            ],
+        )
 
     def test_roles_post_grant_shows_success_message(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:

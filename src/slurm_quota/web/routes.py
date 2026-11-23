@@ -43,6 +43,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger("slurm_quota")
 
 
+def _logged_in_username() -> str | None:
+    username = session.get("username")
+    if isinstance(username, str) and username:
+        return username
+    return None
+
+
+def _actor() -> str:
+    """Return the user performing the request, for logs."""
+    return _logged_in_username() or "(service token)"
+
+
+def _session_expired(exc: ServiceHTTPError) -> Any:
+    """Log the end of the session refused by the service, clear it and redirect
+    to the login page."""
+    logger.info(
+        "session ended: user=%s role=%s path=%s status=%s",
+        _actor(),
+        current_role(),
+        request.path,
+        exc.status,
+    )
+    session.clear()
+    return redirect(login_url(message="session_expired"))
+
+
 def _api_error_text(prefix: str, exc: ServiceHTTPError) -> str:
     return f"{prefix}: {exc.status_text()}"
 
@@ -131,6 +157,7 @@ def login_post() -> Any:
     next_url = resolve_next_url(request.form.get("next"))
 
     if not validate_csrf():
+        logger.warning("login rejected: invalid CSRF token")
         flash("Invalid or missing CSRF token.", "error")
         return (
             render_template(
@@ -160,6 +187,7 @@ def login_post() -> Any:
         role = payload["role"]
     except ServiceHTTPError as exc:
         if exc.status == 401:
+            logger.warning("login failed: user=%s: invalid credentials", username)
             flash("Invalid username or password.", "error")
             return render_template(
                 "login.html",
@@ -167,6 +195,7 @@ def login_post() -> Any:
                 next_url=next_url,
                 auth_required=True,
             )
+        logger.error("login failed: user=%s: %s", username, exc)
         flash(_api_error_text("Login failed", exc), "error")
         return render_template(
             "login.html",
@@ -175,6 +204,7 @@ def login_post() -> Any:
             auth_required=True,
         )
     except (ServiceUnreachableError, ValueError) as exc:
+        logger.error("login failed: user=%s: %s", username, exc)
         flash(f"Login failed: {exc}", "error")
         return render_template(
             "login.html",
@@ -183,6 +213,7 @@ def login_post() -> Any:
             auth_required=True,
         )
 
+    logger.info("login succeeded: user=%s role=%s", username, role)
     session.clear()
     session.permanent = True
     session["token"] = token
@@ -195,6 +226,7 @@ def login_post() -> Any:
 def logout() -> Any:
     if not validate_csrf():
         abort(400, description="Invalid or missing CSRF token.")
+    logger.info("logout: user=%s", _actor())
     session.clear()
     return redirect(url_for("login"))
 
@@ -241,8 +273,7 @@ def dashboard() -> Response | str:
             )
         except ServiceHTTPError as exc:
             if exc.status == 401:
-                session.clear()
-                return redirect(login_url(message="session_expired"))
+                return _session_expired(exc)
             flash(
                 _api_error_text("Failed to retrieve stats from service", exc), "error"
             )
@@ -274,8 +305,7 @@ def roles() -> Response | str:
         users = api_client().users_roles()
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
-            session.clear()
-            return redirect(login_url(message="session_expired"))
+            return _session_expired(exc)
         flash(_api_error_text("Failed to retrieve roles from service", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to retrieve roles from service: {exc}", "error")
@@ -313,16 +343,21 @@ def roles_post() -> Any:
         api = api_client()
         if action == "grant" and target_role in ("operator", "manager"):
             api.grant_role(cast(Literal["operator", "manager"], target_role), username)
+            logger.info(
+                "role granted: user=%s role=%s by=%s", username, target_role, _actor()
+            )
             flash(f"Role updated for {username}.", "success")
         elif action == "revoke" and target_role in ("operator", "manager"):
             api.revoke_role(cast(Literal["operator", "manager"], target_role), username)
+            logger.info(
+                "role revoked: user=%s role=%s by=%s", username, target_role, _actor()
+            )
             flash(f"Role updated for {username}.", "success")
         else:
             flash("Unknown or invalid role action.", "error")
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
-            session.clear()
-            return redirect(login_url(message="session_expired"))
+            return _session_expired(exc)
         flash(_api_error_text("Failed to update role", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to update role: {exc}", "error")
@@ -348,28 +383,32 @@ def roles_manager_accounts_post() -> Any:
         api = api_client()
         if action == "add":
             api.add_manager_account(username, account)
+            logger.info(
+                "manager account added: user=%s account=%s by=%s",
+                username,
+                account,
+                _actor(),
+            )
             flash("Manager account updated.", "success")
         elif action == "remove":
             api.remove_manager_account(username, account)
+            logger.info(
+                "manager account removed: user=%s account=%s by=%s",
+                username,
+                account,
+                _actor(),
+            )
             flash("Manager account updated.", "success")
         else:
             flash("Unknown or invalid manager account action.", "error")
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
-            session.clear()
-            return redirect(login_url(message="session_expired"))
+            return _session_expired(exc)
         flash(_api_error_text("Failed to update manager account", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to update manager account: {exc}", "error")
 
     return redirect(url_for("roles"))
-
-
-def _logged_in_username() -> str | None:
-    username = session.get("username")
-    if isinstance(username, str) and username:
-        return username
-    return None
 
 
 def _render_tokens(role: str, new_token: dict[str, Any] | None = None) -> Any:
@@ -378,8 +417,7 @@ def _render_tokens(role: str, new_token: dict[str, Any] | None = None) -> Any:
         tokens = api_client().list_app_tokens()
     except ServiceHTTPError as exc:
         if exc.status == 401:
-            session.clear()
-            return redirect(login_url(message="session_expired"))
+            return _session_expired(exc)
         flash(_api_error_text("Failed to retrieve tokens from service", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to retrieve tokens from service: {exc}", "error")
@@ -441,8 +479,7 @@ def tokens_post() -> Any:
         flash("Token duration must be a number of days.", "error")
     except ServiceHTTPError as exc:
         if exc.status == 401:
-            session.clear()
-            return redirect(login_url(message="session_expired"))
+            return _session_expired(exc)
         flash(_api_error_text("Failed to update application tokens", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to update application tokens: {exc}", "error")
@@ -514,8 +551,7 @@ def quotas_post() -> Any:
         flash(f"Quota updated for {name}.", "success")
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
-            session.clear()
-            return redirect(login_url(message="session_expired"))
+            return _session_expired(exc)
         flash(_api_error_text("Failed to update quota", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to update quota: {exc}", "error")
@@ -551,8 +587,7 @@ def comments_post() -> Any:
             flash(f"Comment removed for {name}.", "success")
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
-            session.clear()
-            return redirect(login_url(message="session_expired"))
+            return _session_expired(exc)
         flash(_api_error_text("Failed to update comment", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to update comment: {exc}", "error")
@@ -608,8 +643,7 @@ def consumption_post() -> Any:
         )
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
-            session.clear()
-            return redirect(login_url(message="session_expired"))
+            return _session_expired(exc)
         flash(_api_error_text("Failed to adjust consumption", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to adjust consumption: {exc}", "error")
