@@ -44,6 +44,14 @@ class TestDecorateRows(SlurmQuotaTestCase):
         self.assertEqual(row["cpu"]["percent"], 100.0)
         self.assertEqual(row["cpu"]["status_class"], "bar-danger")
 
+    def test_comment(self):
+        rows = decorate_rows(
+            [_row(username="u1", comment="PhD student"), _row(username="u2")],
+            "username",
+            display_unit="minutes",
+        )
+        self.assertEqual([row["comment"] for row in rows], ["PhD student", ""])
+
     def test_hours_and_unlimited_quota(self):
         (row,) = decorate_rows(
             [

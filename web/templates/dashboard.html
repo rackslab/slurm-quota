@@ -2,6 +2,7 @@
 {% from "quota.html" import quota_cell with context %}
 {% from "consumption.html" import consumption_cell with context %}
 {% from "breakdown.html" import breakdown_toggle, breakdown_rows with context %}
+{% from "comment.html" import comment_block with context %}
 
 {% block title %}slurm-quota{% endblock %}
 
@@ -117,7 +118,7 @@
     {% for row in users %}
     {% set group = "user-" ~ loop.index %}
     <tr>
-      <td class="col-name">{{ breakdown_toggle(row, group, "account") }}{{ row.name }}</td>
+      <td class="col-name">{{ breakdown_toggle(row, group, "account") }}{{ row.name }}{{ comment_block("user", row.name, row.comment) }}</td>
       <td class="num">{{ consumption_cell("user", row.name, "cpu", row.cpu) }}</td>
       <td class="num">{{ row.cpu.preallocated }} ({{ row.job_count }})</td>
       <td class="num">{{ quota_cell("user", row.name, "cpu", row.cpu) }}</td>
@@ -167,7 +168,7 @@
     {% for row in accounts %}
     {% set group = "account-" ~ loop.index %}
     <tr>
-      <td class="col-name">{{ breakdown_toggle(row, group, "user") }}{{ row.name }}</td>
+      <td class="col-name">{{ breakdown_toggle(row, group, "user") }}{{ row.name }}{{ comment_block("account", row.name, row.comment) }}</td>
       <td class="num">{{ consumption_cell("account", row.name, "cpu", row.cpu) }}</td>
       <td class="num">{{ row.cpu.preallocated }} ({{ row.job_count }})</td>
       <td class="num">{{ quota_cell("account", row.name, "cpu", row.cpu) }}</td>
@@ -222,6 +223,27 @@
       Reason (optional)
       <input type="text" name="reason" placeholder="Why is this quota being changed?">
     </label>
+    <label class="edit-dialog-checkbox">
+      <input type="checkbox" name="append_reason" checked>
+      Append reason to comment
+    </label>
+    <div class="edit-dialog-actions">
+      <button type="button" data-dialog-close>Cancel</button>
+      <button type="submit">Set</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="comment-edit-dialog" class="edit-dialog">
+  <form method="post" action="{{ url_for('comments_post') }}" class="comment-edit-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="target" value="">
+    <input type="hidden" name="name" value="">
+    <h3 id="comment-dialog-title" class="edit-dialog-title">Set comment</h3>
+    <label class="edit-dialog-field">
+      Comment (empty to remove)
+      <input type="text" name="comment" class="comment-input" maxlength="1000">
+    </label>
     <div class="edit-dialog-actions">
       <button type="button" data-dialog-close>Cancel</button>
       <button type="submit">Set</button>
@@ -265,6 +287,10 @@
     <label class="edit-dialog-field">
       Reason (optional)
       <input type="text" name="reason" placeholder="Why is consumption being adjusted?">
+    </label>
+    <label class="edit-dialog-checkbox">
+      <input type="checkbox" name="append_reason" checked>
+      Append reason to user and account comments
     </label>
     <div class="edit-dialog-actions">
       <button type="button" data-dialog-close>Cancel</button>
@@ -381,7 +407,8 @@
   (function () {
     var quotaDialog = document.getElementById("quota-edit-dialog");
     var consumptionDialog = document.getElementById("consumption-edit-dialog");
-    if (!quotaDialog && !consumptionDialog) {
+    var commentDialog = document.getElementById("comment-edit-dialog");
+    if (!quotaDialog && !consumptionDialog && !commentDialog) {
       return;
     }
 
@@ -433,6 +460,25 @@
           quotaInput.value = unlimited ? "" : String(quotaMinutes);
           syncQuotaInput();
           quotaDialog.showModal();
+        });
+      });
+    }
+
+    if (commentDialog) {
+      var commentForm = commentDialog.querySelector(".comment-edit-form");
+      var commentTitle = document.getElementById("comment-dialog-title");
+      var commentInput = commentForm.querySelector(".comment-input");
+
+      document.querySelectorAll('.stat-edit-btn[data-edit="comment"]').forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var target = btn.getAttribute("data-target");
+          var name = btn.getAttribute("data-name");
+          commentForm.querySelector('input[name="target"]').value = target;
+          commentForm.querySelector('input[name="name"]').value = name;
+          commentTitle.textContent = "Set comment of " + target + " " + name;
+          commentInput.value = btn.getAttribute("data-comment") || "";
+          commentDialog.showModal();
+          commentInput.focus();
         });
       });
     }

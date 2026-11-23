@@ -455,6 +455,12 @@ def _optional_form_reason() -> str | None:
     return reason or None
 
 
+def _form_append_reason() -> bool:
+    """Return whether the reason must be appended to comments, from the
+    append_reason checkbox of the form."""
+    return request.form.get("append_reason") == "on"
+
+
 def quotas_post() -> Any:
     role = current_role()
     if role not in ("admin", "operator"):
@@ -488,14 +494,23 @@ def quotas_post() -> Any:
     try:
         api = api_client()
         reason = _optional_form_reason()
+        append_reason = _form_append_reason()
         if target == "user" and resource == "cpu":
-            api.set_user_cpu_quota(name, quota_minutes, reason=reason)
+            api.set_user_cpu_quota(
+                name, quota_minutes, reason=reason, append_reason=append_reason
+            )
         elif target == "user" and resource == "gpu":
-            api.set_user_gpu_quota(name, quota_minutes, reason=reason)
+            api.set_user_gpu_quota(
+                name, quota_minutes, reason=reason, append_reason=append_reason
+            )
         elif target == "account" and resource == "cpu":
-            api.set_account_cpu_quota(name, quota_minutes, reason=reason)
+            api.set_account_cpu_quota(
+                name, quota_minutes, reason=reason, append_reason=append_reason
+            )
         elif target == "account" and resource == "gpu":
-            api.set_account_gpu_quota(name, quota_minutes, reason=reason)
+            api.set_account_gpu_quota(
+                name, quota_minutes, reason=reason, append_reason=append_reason
+            )
         flash(f"Quota updated for {name}.", "success")
     except ServiceHTTPError as exc:
         if exc.status in (401, 403):
@@ -504,6 +519,43 @@ def quotas_post() -> Any:
         flash(_api_error_text("Failed to update quota", exc), "error")
     except ServiceUnreachableError as exc:
         flash(f"Failed to update quota: {exc}", "error")
+
+    return redirect(url_for("dashboard"))
+
+
+def comments_post() -> Any:
+    role = current_role()
+    if role not in ("admin", "operator"):
+        return redirect(url_for("dashboard"))
+
+    if not validate_csrf():
+        abort(400, description="Invalid or missing CSRF token.")
+
+    target = (request.form.get("target") or "").strip()
+    name = (request.form.get("name") or "").strip()
+    comment = (request.form.get("comment") or "").strip() or None
+
+    if not name or target not in ("user", "account"):
+        flash("Invalid comment target.", "error")
+        return redirect(url_for("dashboard"))
+
+    try:
+        api = api_client()
+        if target == "user":
+            api.set_user_comment(name, comment)
+        else:
+            api.set_account_comment(name, comment)
+        if comment:
+            flash(f"Comment updated for {name}.", "success")
+        else:
+            flash(f"Comment removed for {name}.", "success")
+    except ServiceHTTPError as exc:
+        if exc.status in (401, 403):
+            session.clear()
+            return redirect(login_url(message="session_expired"))
+        flash(_api_error_text("Failed to update comment", exc), "error")
+    except ServiceUnreachableError as exc:
+        flash(f"Failed to update comment: {exc}", "error")
 
     return redirect(url_for("dashboard"))
 
@@ -548,6 +600,7 @@ def consumption_post() -> Any:
             resource,
             delta * UNIT_SECONDS[delta_unit],
             reason=reason,
+            append_reason=_form_append_reason(),
         )
         flash(
             f"Consumption adjusted for user {username} on account {account}.",

@@ -459,6 +459,28 @@ th {
   margin: 0;
 }
 
+.row-comment {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  font-weight: normal;
+  color: #64748b;
+}
+
+.row-comment-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.edit-dialog-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
 .stat-with-edit {
   display: inline-flex;
   align-items: center;

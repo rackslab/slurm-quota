@@ -96,6 +96,7 @@ def decorate_rows(
                     for entry in breakdown or []
                     if entry[name_key] == name
                 ],
+                "comment": str(item.get("comment") or ""),
                 "job_count": _parse_int(item.get("job_count")),
                 "last_updated": item.get("last_updated") or "n/a",
                 "cpu": {

@@ -666,7 +666,7 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
             )
         self.assertEqual(resp.status_code, 302)
         m_client.return_value.set_user_cpu_quota.assert_called_once_with(
-            "alice", 900, reason=None
+            "alice", 900, reason=None, append_reason=False
         )
 
     def test_quotas_post_forwards_reason_when_provided(self):
@@ -690,11 +690,12 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
                     "resource": "cpu",
                     "quota_minutes": "900",
                     "reason": "project extension approved",
+                    "append_reason": "on",
                 },
                 follow_redirects=False,
             )
         m_client.return_value.set_user_cpu_quota.assert_called_once_with(
-            "alice", 900, reason="project extension approved"
+            "alice", 900, reason="project extension approved", append_reason=True
         )
 
     def test_quotas_post_shows_success_message(self):
@@ -782,7 +783,7 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
                 follow_redirects=False,
             )
         m_client.return_value.set_account_gpu_quota.assert_called_once_with(
-            "hpc", -1, reason=None
+            "hpc", -1, reason=None, append_reason=False
         )
 
     def test_quotas_post_redirects_user_to_dashboard(self):
@@ -848,6 +849,129 @@ class TestQuotasRoutes(SlurmQuotaTestCase):
         self.assertIn("session_expired", resp.headers["Location"])
         with client.session_transaction() as sess:
             self.assertNotIn("token", sess)
+
+
+class TestCommentsRoutes(SlurmQuotaTestCase):
+    def setUp(self):
+        super().setUp()
+        configure_web_app()
+
+    def _dashboard(self, role: str, comments: bool = True) -> str:
+        users, accounts, breakdown = stats_rows()
+        if comments:
+            users[0]["comment"] = "PhD <student>"
+            accounts[0]["comment"] = "Project X"
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value=role),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = (users, accounts, breakdown)
+            resp = web_app().test_client().get("/")
+        self.assertEqual(resp.status_code, 200)
+        return resp.get_data(as_text=True)
+
+    def test_dashboard_shows_comments_to_users(self):
+        body = self._dashboard("user")
+        # Comments are escaped
+        self.assertIn('<span class="row-comment-text">PhD &lt;student&gt;</span>', body)
+        self.assertIn('<span class="row-comment-text">Project X</span>', body)
+        self.assertNotIn('aria-label="Edit comment of', body)
+        self.assertNotIn('action="/comments"', body)
+        self.assertNotIn('name="append_reason"', body)
+
+    def test_dashboard_shows_comment_edit_for_operator(self):
+        body = self._dashboard("operator")
+        self.assertIn('data-edit="comment"', body)
+        self.assertIn('data-comment="Project X"', body)
+        self.assertIn('action="/comments"', body)
+        self.assertEqual(body.count('name="append_reason" checked'), 2)
+
+    def test_dashboard_offers_add_comment_without_comment(self):
+        body = self._dashboard("admin", comments=False)
+        self.assertNotIn('class="row-comment-text"', body)
+        self.assertIn(">Add comment</button>", body)
+
+    def _post(self, role: str, data: dict):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value=role),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            client = web_app().test_client()
+            csrf = extract_csrf(client.get("/").get_data(as_text=True))
+            resp = client.post(
+                "/comments", data={"_csrf": csrf, **data}, follow_redirects=True
+            )
+        return resp, m_client.return_value
+
+    def test_comments_post_sets_user_comment(self):
+        resp, api = self._post(
+            "operator", {"target": "user", "name": "alice", "comment": " PhD "}
+        )
+        api.set_user_comment.assert_called_once_with("alice", "PhD")
+        self.assertIn("Comment updated for alice.", resp.get_data(as_text=True))
+
+    def test_comments_post_clears_account_comment(self):
+        resp, api = self._post(
+            "admin", {"target": "account", "name": "hpc", "comment": ""}
+        )
+        api.set_account_comment.assert_called_once_with("hpc", None)
+        self.assertIn("Comment removed for hpc.", resp.get_data(as_text=True))
+
+    def test_comments_post_rejects_invalid_target(self):
+        resp, api = self._post(
+            "admin", {"target": "group", "name": "hpc", "comment": "x"}
+        )
+        api.set_account_comment.assert_not_called()
+        api.set_user_comment.assert_not_called()
+        self.assertIn("Invalid comment target.", resp.get_data(as_text=True))
+
+    def test_comments_post_ignored_for_user(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value="user"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            resp = (
+                web_app()
+                .test_client()
+                .post(
+                    "/comments",
+                    data={"target": "user", "name": "alice", "comment": "x"},
+                    follow_redirects=False,
+                )
+            )
+        self.assertEqual(resp.status_code, 302)
+        m_client.return_value.set_user_comment.assert_not_called()
+
+    def test_comments_post_reports_api_error(self):
+        with (
+            patch(
+                "slurm_quota.web.app.ClientToken.load_value", return_value="test-token"
+            ),
+            patch("slurm_quota.web.routes.current_role", return_value="admin"),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            m_client.return_value.set_user_comment.side_effect = ServiceHTTPError(
+                400, message="comment must be a single line"
+            )
+            client = web_app().test_client()
+            csrf = extract_csrf(client.get("/").get_data(as_text=True))
+            resp = client.post(
+                "/comments",
+                data={"_csrf": csrf, "target": "user", "name": "alice", "comment": "x"},
+                follow_redirects=True,
+            )
+        self.assertIn("Failed to update comment", resp.get_data(as_text=True))
 
 
 class TestConsumptionRoutes(SlurmQuotaTestCase):
@@ -928,7 +1052,7 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
             )
         self.assertEqual(resp.status_code, 302)
         m_client.return_value.adjust_consumption.assert_called_once_with(
-            "alice", "hpc", "cpu", -900, reason=None
+            "alice", "hpc", "cpu", -900, reason=None, append_reason=False
         )
 
     def _post_consumption(self, m_client, data):
@@ -952,21 +1076,21 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
             self._post_consumption(m_client, {"delta": "-45", "delta_unit": "seconds"})
         m_client.return_value.adjust_consumption.assert_called_once_with(
-            "alice", "hpc", "cpu", -45, reason=None
+            "alice", "hpc", "cpu", -45, reason=None, append_reason=False
         )
 
     def test_consumption_post_delta_in_minutes(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
             self._post_consumption(m_client, {"delta": "2", "delta_unit": "minutes"})
         m_client.return_value.adjust_consumption.assert_called_once_with(
-            "alice", "hpc", "cpu", 120, reason=None
+            "alice", "hpc", "cpu", 120, reason=None, append_reason=False
         )
 
     def test_consumption_post_legacy_delta_minutes(self):
         with auth_disabled(), patch("slurm_quota.web.routes.api_client") as m_client:
             self._post_consumption(m_client, {"delta_minutes": "3"})
         m_client.return_value.adjust_consumption.assert_called_once_with(
-            "alice", "hpc", "cpu", 180, reason=None
+            "alice", "hpc", "cpu", 180, reason=None, append_reason=False
         )
 
     def test_consumption_post_rejects_invalid_unit(self):
@@ -1000,11 +1124,17 @@ class TestConsumptionRoutes(SlurmQuotaTestCase):
                     "resource": "cpu",
                     "delta": "-15",
                     "reason": "correct billing error",
+                    "append_reason": "on",
                 },
                 follow_redirects=False,
             )
         m_client.return_value.adjust_consumption.assert_called_once_with(
-            "alice", "hpc", "cpu", -900, reason="correct billing error"
+            "alice",
+            "hpc",
+            "cpu",
+            -900,
+            reason="correct billing error",
+            append_reason=True,
         )
 
     def test_consumption_post_shows_success_message(self):

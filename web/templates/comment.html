@@ -1,0 +1,22 @@
+{#
+  Comment of a user or account row, below its name. For admins and operators,
+  an Edit button opens the comment dialog.
+#}
+{% macro comment_block(target, name, comment) %}
+{% if comment or user_role in ("admin", "operator") %}
+<div class="row-comment">
+  {% if comment %}<span class="row-comment-text">{{ comment }}</span>{% endif %}
+  {% if user_role in ("admin", "operator") %}
+  <button
+    type="button"
+    class="stat-edit-btn"
+    data-edit="comment"
+    data-target="{{ target }}"
+    data-name="{{ name }}"
+    data-comment="{{ comment }}"
+    aria-label="Edit comment of {{ target }} {{ name }}"
+  >{% if comment %}Edit{% else %}Add comment{% endif %}</button>
+  {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
