@@ -207,6 +207,60 @@ class TestAuthRoutes(SlurmQuotaTestCase):
             None, None, show_all=True, include_breakdown=True
         )
 
+    def _signed_in_page(self, role: str, path: str) -> str:
+        """Sign in as alice with the given role and return the body of the page
+        at the given path."""
+        mock_api = MagicMock()
+
+        def _login(username, password):
+            mock_api.token = "jwt-token"
+            return {"token": "jwt-token", "username": username, "role": role}
+
+        mock_api.login.side_effect = _login
+        with (
+            auth_enabled(),
+            patch("slurm_quota.web.routes.APIClient", return_value=mock_api),
+            patch("slurm_quota.web.routes.api_client") as m_client,
+        ):
+            m_client.return_value.stats.return_value = stats_rows()
+            m_client.return_value.list_app_tokens.return_value = []
+            m_client.return_value.users_roles.return_value = roles_users()
+            client = web_app().test_client()
+            login_page = client.get("/login")
+            csrf = extract_csrf(login_page.get_data(as_text=True))
+            with self.assertLogs("slurm_quota", level="INFO"):
+                client.post(
+                    "/login",
+                    data={
+                        "_csrf": csrf,
+                        "username": "alice",
+                        "password": "secret",
+                        "next": "/",
+                    },
+                )
+            resp = client.get(path)
+        self.assertEqual(resp.status_code, 200)
+        return resp.get_data(as_text=True)
+
+    def test_dashboard_shows_role_next_to_username(self):
+        for role in ("admin", "operator", "manager"):
+            with self.subTest(role=role):
+                body = self._signed_in_page(role, "/")
+                self.assertIn(f"Signed in as <strong>alice</strong> ({role})", body)
+
+    def test_dashboard_hides_standard_user_role(self):
+        body = self._signed_in_page("user", "/")
+        self.assertIn("Signed in as <strong>alice</strong></span>", body)
+        self.assertNotIn("(user)", body)
+
+    def test_tokens_shows_role_next_to_username(self):
+        body = self._signed_in_page("operator", "/tokens")
+        self.assertIn("Signed in as <strong>alice</strong> (operator)", body)
+
+    def test_roles_shows_role_next_to_username(self):
+        body = self._signed_in_page("admin", "/roles")
+        self.assertIn("Signed in as <strong>alice</strong> (admin)", body)
+
     def test_login_rejects_bad_credentials(self):
         mock_api = MagicMock()
         mock_api.login.side_effect = ServiceHTTPError(401)

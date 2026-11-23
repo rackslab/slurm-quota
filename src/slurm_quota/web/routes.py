@@ -322,6 +322,7 @@ def roles() -> Response | str:
         csrf_token=csrf_token(),
         auth_required=True,
         logged_in_username=logged_in_username,
+        user_role=role,
     )
 
 
@@ -436,6 +437,7 @@ def _render_tokens(role: str, new_token: dict[str, Any] | None = None) -> Any:
         csrf_token=csrf_token(),
         auth_required=True,
         logged_in_username=_logged_in_username(),
+        user_role=role,
     )
 
 
