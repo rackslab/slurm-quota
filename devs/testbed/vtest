@@ -1,0 +1,89 @@
+#!/bin/bash
+#
+# Run a command on a node of the vortex development cluster as a given user,
+# and append the command, its output and its exit code to the evidence file of
+# a functional test.
+#
+# Usage: vtest [-i] <test-id> <node> <user> <command>
+#
+#   -i        Forward standard input to the command, for example a password.
+#             Without this option, the command gets no input.
+#   test-id   Functional test identifier, for example FT-SUBMIT-001. Evidence is
+#             appended to $VTEST_EVIDENCE/<test-id>.txt.
+#   node      Short node name: admin, login, cn1, ia1...
+#   user      User running the command, root or a cluster user. Cluster users
+#             run the command in a login shell, with the environment of
+#             /etc/profile.d.
+#   command   Shell command, run by bash on the node.
+#
+# Environment:
+#   VTEST_EVIDENCE  Directory of evidence files (required).
+#   VTEST_CLUSTER   FireHPC cluster name (default: vortex).
+#
+# The output is also printed on standard output, and vtest exits with the exit
+# code of the command.
+
+set -o pipefail
+
+forward_stdin=0
+if [ "$1" = "-i" ]; then
+    forward_stdin=1
+    shift
+fi
+
+if [ $# -ne 4 ]; then
+    echo "usage: $(basename "$0") [-i] <test-id> <node> <user> <command>" >&2
+    exit 2
+fi
+
+test_id=$1
+node=$2
+user=$3
+command=$4
+
+: "${VTEST_EVIDENCE:?VTEST_EVIDENCE must be set}"
+cluster=${VTEST_CLUSTER:-vortex}
+state="${XDG_STATE_HOME:-$HOME/.local/state}/firehpc/clusters/${cluster}"
+remote=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['remote'])" \
+    "${state}/settings.yml" 2>/dev/null)
+namespace=$(python3 -c "import yaml,sys; print(yaml.safe_load(open(sys.argv[1]))['fhpc_namespace'])" \
+    "${state}/conf/custom.yml")
+
+ssh_opts=(
+    -o "UserKnownHostsFile=${state}/ssh/known_hosts"
+    -i "${state}/ssh/id_rsa"
+    -o ControlMaster=auto
+    -o "ControlPath=/tmp/vtest-%C"
+    -o ControlPersist=30m
+    -o LogLevel=ERROR
+)
+if [ -n "$remote" ]; then
+    ssh_opts+=(-o "ProxyCommand=/usr/bin/firehpc --remote ${remote} remote proxy %h %p")
+fi
+
+if [ "$user" = "root" ]; then
+    remote_cmd="bash -lc $(printf '%q' "$command")"
+else
+    remote_cmd="runuser -l ${user} -c $(printf '%q' "$command")"
+fi
+
+mkdir -p "$VTEST_EVIDENCE"
+evidence="${VTEST_EVIDENCE}/${test_id}.txt"
+{
+    echo "[${user}@${node}]\$ ${command}"
+    if [ $forward_stdin -eq 1 ]; then
+        echo "(standard input forwarded, not recorded)"
+    fi
+} >>"$evidence"
+
+if [ $forward_stdin -eq 1 ]; then
+    ssh "${ssh_opts[@]}" -l root "${node}.${cluster}.${namespace}" "$remote_cmd" 2>&1 \
+        | tee -a "$evidence"
+else
+    ssh "${ssh_opts[@]}" -l root "${node}.${cluster}.${namespace}" "$remote_cmd" \
+        </dev/null 2>&1 | tee -a "$evidence"
+fi
+rc=$?
+echo "[exit: ${rc}]" | tee -a "$evidence" >/dev/null
+echo "" >>"$evidence"
+exit $rc

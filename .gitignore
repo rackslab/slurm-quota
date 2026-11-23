@@ -9,3 +9,5 @@ coverage.xml
 htmlcov/
 .ruff_cache/
 slurm-quota.1
+# Functional tests reports, published as release artifacts
+devs/reports/

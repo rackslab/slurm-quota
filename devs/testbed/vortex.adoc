@@ -1,0 +1,23 @@
+// Testbed profile of the vortex development cluster, deployed with FireHPC
+// (see devs/README.md). It defines the values of the placeholders of the
+// functional tests specification (tests/specs/functional-tests.adoc).
+//
+// Include this file in the header of a document before including the
+// specification, or pass the same values with `asciidoctor -a`.
+:user_a: bdennis
+:user_b: dgibbs
+:new_user: jwarren
+:account_a: biology
+:account_b: acoustic
+:new_account: optic
+:manager_user: dmathis
+:operator_user: lhood
+:admin_user: lnorman
+:cpu_partition: standard
+:gpu_partition: ia
+:gpu_type_1: h100
+:gpu_type_2: h200
+:controller: admin.vortex
+:login_node: login.vortex
+:api_url: https://admin.vortex:9911/
+:web_url: https://admin.vortex/quota/
