@@ -184,3 +184,57 @@ class TestRolesRoute(ServeRoutesTestCase):
             description="User is not a manager",
             headers=self._headers("alice"),
         )
+
+
+class TestRolesLogs(ServeRoutesTestCase):
+    def test_role_grant_and_revoke_are_logged(self):
+        init_database()
+        client = app.test_client()
+        with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+            client.put("/roles/operators/bob", headers=self._headers("alice"))
+            client.delete("/roles/operators/bob", headers=self._headers("alice"))
+            client.put("/roles/managers/bob", headers=self._headers("alice"))
+            client.put(
+                "/roles/managers/bob/accounts/hpc", headers=self._headers("alice")
+            )
+            client.delete(
+                "/roles/managers/bob/accounts/hpc", headers=self._headers("alice")
+            )
+            client.delete("/roles/managers/bob", headers=self._headers("alice"))
+        self.assertEqual(
+            [line for line in log_cm.output if "role" in line or "account" in line],
+            [
+                "INFO:slurm_quota:role granted: user=bob role=operator by=alice",
+                "INFO:slurm_quota:role revoked: user=bob role=operator by=alice",
+                "INFO:slurm_quota:role granted: user=bob role=manager by=alice",
+                "INFO:slurm_quota:manager account granted: user=bob account=hpc "
+                "by=alice",
+                "INFO:slurm_quota:manager account revoked: user=bob account=hpc "
+                "by=alice",
+                "INFO:slurm_quota:role revoked: user=bob role=manager by=alice",
+            ],
+        )
+
+    def test_role_grant_to_configured_admin_is_logged_as_ignored(self):
+        init_database()
+        client = app.test_client()
+        with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+            resp = client.put("/roles/operators/alice", headers=self._headers("alice"))
+        self.assertEqual(resp.status_code, 204)
+        self.assertIn(
+            "INFO:slurm_quota:role grant ignored: user=alice role=operator by=alice "
+            "reason=admin in configuration",
+            log_cm.output,
+        )
+
+    def test_access_denied_is_logged_with_role(self):
+        init_database()
+        client = app.test_client()
+        with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+            resp = client.get("/roles", headers=self._headers("carol"))
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn(
+            "INFO:slurm_quota:access denied: user=carol role=user kind=user "
+            "path=/roles required=roles:read reason=insufficient permissions",
+            log_cm.output,
+        )

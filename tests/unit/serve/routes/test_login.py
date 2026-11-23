@@ -30,11 +30,16 @@ class TestLoginRoute(ServeRoutesTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             token = self._enable_ldap_auth(Path(tmp))
             client = app.test_client()
-            resp = client.post(
-                "/login",
-                json={"username": "alice", "password": "secret"},
-            )
+            with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+                resp = client.post(
+                    "/login",
+                    json={"username": "alice", "password": "secret"},
+                )
         self.assertEqual(resp.status_code, 200)
+        self.assertIn(
+            "INFO:slurm_quota:login succeeded: user=alice groups=users role=admin",
+            log_cm.output,
+        )
         body = json.loads(resp.data)
         self.assertIn("token", body)
         self.assertIsInstance(token, str)
@@ -59,7 +64,7 @@ class TestLoginRoute(ServeRoutesTestCase):
         self.assertEqual(body["error"], "unauthorized")
         self.assertEqual(body["message"], "Authentication failed")
         self.assertIn(
-            "ERROR:slurm_quota:LDAP authentication failed: LDAP server unavailable",
+            "ERROR:slurm_quota:login failed: user=alice: LDAP server unavailable",
             log_cm.output,
         )
         self._assert_abort_warning(

@@ -266,13 +266,18 @@ def login() -> Any:
     try:
         user = serve_app.authentifier.login(username, password)
     except LDAPAuthenticationError as exc:
-        logger.error("LDAP authentication failed: %s", exc)
+        logger.error("login failed: user=%s: %s", username, exc)
         abort(401, description="Authentication failed")
 
     token = serve_app.jwt.generate(user, serve_app.settings.jwt.duration)
-    return jsonify(
-        {"token": token, "username": user.login, "role": login_role(user.login)}
+    role = login_role(user.login)
+    logger.info(
+        "login succeeded: user=%s groups=%s role=%s",
+        user.login,
+        ",".join(user.groups),
+        role,
     )
+    return jsonify({"token": token, "username": user.login, "role": role})
 
 
 @authorize(*STATS_SCOPES)
@@ -374,9 +379,20 @@ def grant_operator(username: str) -> Any:
     serve_app = cast("SlurmQuotaServeApp", current_app)
     assert serve_app.settings is not None
     if username in config_admins(serve_app.settings):
+        logger.info(
+            "role grant ignored: user=%s role=operator by=%s "
+            "reason=admin in configuration",
+            username,
+            cast(str, request.user.login),
+        )
         return "", 204
     with connect_database() as conn:
         db_grant_operator(conn, username)
+    logger.info(
+        "role granted: user=%s role=operator by=%s",
+        username,
+        cast(str, request.user.login),
+    )
     return "", 204
 
 
@@ -385,6 +401,11 @@ def revoke_operator(username: str) -> Any:
     _validate_username(username)
     with connect_database() as conn:
         db_revoke_operator(conn, username)
+    logger.info(
+        "role revoked: user=%s role=operator by=%s",
+        username,
+        cast(str, request.user.login),
+    )
     return "", 204
 
 
@@ -394,9 +415,20 @@ def grant_manager(username: str) -> Any:
     serve_app = cast("SlurmQuotaServeApp", current_app)
     assert serve_app.settings is not None
     if username in config_admins(serve_app.settings):
+        logger.info(
+            "role grant ignored: user=%s role=manager by=%s "
+            "reason=admin in configuration",
+            username,
+            cast(str, request.user.login),
+        )
         return "", 204
     with connect_database() as conn:
         db_grant_manager(conn, username)
+    logger.info(
+        "role granted: user=%s role=manager by=%s",
+        username,
+        cast(str, request.user.login),
+    )
     return "", 204
 
 
@@ -405,6 +437,11 @@ def revoke_manager(username: str) -> Any:
     _validate_username(username)
     with connect_database() as conn:
         db_revoke_manager(conn, username)
+    logger.info(
+        "role revoked: user=%s role=manager by=%s",
+        username,
+        cast(str, request.user.login),
+    )
     return "", 204
 
 
@@ -426,6 +463,12 @@ def grant_manager_account_route(username: str, account: str) -> Any:
         if not is_manager(conn, username):
             abort(404, description="User is not a manager")
         db_grant_manager_account(conn, username, account)
+    logger.info(
+        "manager account granted: user=%s account=%s by=%s",
+        username,
+        account,
+        cast(str, request.user.login),
+    )
     return "", 204
 
 
@@ -437,6 +480,12 @@ def revoke_manager_account_route(username: str, account: str) -> Any:
         if not is_manager(conn, username):
             abort(404, description="User is not a manager")
         db_revoke_manager_account(conn, username, account)
+    logger.info(
+        "manager account revoked: user=%s account=%s by=%s",
+        username,
+        account,
+        cast(str, request.user.login),
+    )
     return "", 204
 
 

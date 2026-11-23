@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from functools import wraps
 from typing import Any, Callable, Literal, TypeVar, cast
@@ -26,6 +27,8 @@ from slurm_quota.serve.jwt import TokenUser
 Role = Literal["admin", "operator", "manager", "user"]
 
 F = TypeVar("F", bound=Callable[..., Any])
+
+logger = logging.getLogger("slurm_quota")
 
 
 def config_admins(settings: RuntimeSettings) -> set[str]:
@@ -59,8 +62,18 @@ def _check_app_token_active(user: TokenUser) -> None:
     with connect_database() as conn:
         token = get_app_token(conn, user.jti)
     if token is None or token["username"] != user.login:
+        logger.info(
+            "application token rejected: user=%s id=%s reason=unknown",
+            user.login,
+            user.jti,
+        )
         abort(401, description="Token is unknown")
     if token["revoked_at"] is not None:
+        logger.info(
+            "application token rejected: user=%s id=%s reason=revoked",
+            user.login,
+            user.jti,
+        )
         abort(401, description="Token is revoked")
 
 
@@ -84,13 +97,32 @@ def authorize(*scopes: str) -> Callable[[F], F]:
             user = cast(TokenUser, request.user)
             if user.kind == "application":
                 _check_app_token_active(user)
-            role_scopes = set(scopes_for_role(login_role(user.login)))
+            role = login_role(user.login)
+            role_scopes = set(scopes_for_role(role))
             token_scopes = (
                 role_scopes if user.scopes is None else role_scopes & user.scopes
             )
             if scopes and role_scopes.isdisjoint(scopes):
+                logger.info(
+                    "access denied: user=%s role=%s kind=%s path=%s required=%s "
+                    "reason=insufficient permissions",
+                    user.login,
+                    role,
+                    user.kind,
+                    request.path,
+                    ",".join(scopes),
+                )
                 abort(403, description="Insufficient permissions")
             if scopes and token_scopes.isdisjoint(scopes):
+                logger.info(
+                    "access denied: user=%s role=%s kind=%s path=%s required=%s "
+                    "reason=insufficient token scope",
+                    user.login,
+                    role,
+                    user.kind,
+                    request.path,
+                    ",".join(scopes),
+                )
                 abort(403, description="Token scope insufficient")
             g.scopes = frozenset(token_scopes)
             return view(*args, **kwargs)
@@ -107,6 +139,12 @@ def require_user_token(view: F) -> F:
     def user_token_check(*args: Any, **kwargs: Any) -> Any:
         user = cast(TokenUser, request.user)
         if user.kind != "user":
+            logger.info(
+                "access denied: user=%s kind=%s path=%s reason=user token required",
+                user.login,
+                user.kind,
+                request.path,
+            )
             abort(403, description="Application tokens cannot manage tokens")
         return view(*args, **kwargs)
 

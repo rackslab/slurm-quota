@@ -8,7 +8,12 @@ import time
 from rfl.authentication.jwt import JWTManager
 from rfl.authentication.user import AuthenticatedUser
 
-from slurm_quota.database import get_app_token, grant_operator, revoke_operator
+from slurm_quota.database import (
+    get_app_token,
+    grant_operator,
+    revoke_app_token,
+    revoke_operator,
+)
 from slurm_quota.serve.jwt import unverified_claims
 from slurm_quota.serve.settings import load_serve_settings
 from tests.test_support import serve_conf_defs
@@ -316,6 +321,20 @@ class TestTokenScopes(TokensTestCase):
             401,
             description="Token is unknown",
             headers={"Authorization": f"Bearer {token}"},
+        )
+
+    def test_application_token_rejection_is_logged(self):
+        headers, token_id = self._app_headers("alice", ["stats:read:own"])
+        with self.db_connection() as conn:
+            revoke_app_token(conn, token_id, 1)
+        client = app.test_client()
+        with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+            resp = client.get("/me", headers=headers)
+        self.assertEqual(resp.status_code, 401)
+        self.assertIn(
+            "INFO:slurm_quota:application token rejected: user=alice "
+            f"id={token_id} reason=revoked",
+            log_cm.output,
         )
 
     def test_application_token_follows_owner_role(self):
