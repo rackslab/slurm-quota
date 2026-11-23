@@ -75,215 +75,80 @@ def _slurm_user_accounts(username: str) -> set[str]:
 
 
 @dataclasses.dataclass(frozen=True)
-class StatsScope:
-    """Users, accounts and consumption breakdown returned by a stats request.
+class StatsVisibility:
+    """Users, accounts and user/account pairs the viewer of stats may see.
 
     Attributes:
-        usernames: Usernames of user stats, None for all users, an empty set
-            for none.
-        accounts: Accounts of account stats, None for all accounts, an empty
-            set for none.
-        breakdown_usernames: Usernames selecting user/account pairs of the
-            consumption breakdown, as in query_consumption_breakdown().
-        breakdown_accounts: Accounts selecting user/account pairs of the
-            consumption breakdown, as in query_consumption_breakdown().
-        viewer: None when all selected pairs are visible. Otherwise, only the
-            pairs of this user and the pairs of managed_accounts are visible.
-        managed_accounts: Accounts whose pairs are all visible to viewer.
+        viewer: None when the viewer may see everything. Otherwise, the
+            username of the viewer.
+        users: Users the viewer may see, None for all users.
+        accounts: Accounts the viewer may see, None for all accounts.
+        managed_accounts: Accounts whose users and pairs the viewer may see, in
+            addition to their own.
     """
 
-    usernames: set[str] | None = None
-    accounts: set[str] | None = None
-    breakdown_usernames: set[str] | None = None
-    breakdown_accounts: set[str] | None = None
     viewer: str | None = None
+    users: set[str] | None = None
+    accounts: set[str] | None = None
     managed_accounts: set[str] = dataclasses.field(default_factory=set)
 
-    def can_view(self, pair: dict[str, Any]) -> bool:
-        """Return whether the user/account pair is visible in this scope."""
-        if self.viewer is None:
-            return True
-        return pair["username"] == self.viewer or pair["account"] in (
-            self.managed_accounts
-        )
-
     @classmethod
-    def for_user(
-        cls,
-        username: str,
-        accounts: set[str],
-        *,
-        viewer: str | None = None,
-        managed_accounts: set[str] | None = None,
-    ) -> StatsScope:
-        """Return the scope of a single user and the given accounts.
-
-        The consumption breakdown selects the consumption of the user on each
-        account.
-        """
-        return cls(
-            usernames={username},
-            accounts=accounts,
-            breakdown_usernames={username},
-            breakdown_accounts=set(),
-            viewer=viewer,
-            managed_accounts=managed_accounts or set(),
-        )
-
-    @classmethod
-    def for_account(
-        cls,
-        account: str,
-        *,
-        viewer: str | None = None,
-        managed_accounts: set[str] | None = None,
-    ) -> StatsScope:
-        """Return the scope of a single account.
-
-        The consumption breakdown selects the consumption of each user on the
-        account.
-        """
-        return cls(
-            usernames=set(),
-            accounts={account},
-            breakdown_usernames=set(),
-            breakdown_accounts={account},
-            viewer=viewer,
-            managed_accounts=managed_accounts or set(),
-        )
-
-    @classmethod
-    def resolve(
-        cls,
-        login: str,
-        level: str,
-        username_param: str | None,
-        account_param: str | None,
-    ) -> StatsScope:
-        """Return the stats scope of a request after the stats scope of the
-        token, with the highest visibility.
-
-        Requests outside the scope of the user raise HTTP 403.
+    def for_level(cls, login: str, level: str) -> StatsVisibility:
+        """Return the visibility of login with the given stats scope.
 
         Args:
             login: Username of the authenticated user.
             level: stats:read:all for all stats, stats:read:managed for own
                 stats and stats of managed accounts, stats:read:own for own
                 stats.
-            username_param: Optional username query parameter, or None for no
-                filter.
-            account_param: Optional account query parameter, or None for no
-                filter.
         """
         if level == "stats:read:all":
-            return cls._resolve_privileged(username_param, account_param)
+            return cls()
         if level == "stats:read:managed":
-            return cls._resolve_manager(login, username_param, account_param)
-        return cls._resolve_regular_user(login, username_param, account_param)
-
-    @classmethod
-    def _resolve_privileged(
-        cls, username_param: str | None, account_param: str | None
-    ) -> StatsScope:
-        """Return the stats scope of an admin or operator.
-
-        Admins and operators may view everything. With an account parameter,
-        only this account is returned, with each user's consumption on it. With
-        a username parameter, this user and their Slurm accounts are returned,
-        with the user's consumption on each account. Otherwise, all users,
-        accounts and their consumption breakdown are returned.
-        """
-        if account_param:
-            return cls.for_account(account_param)
-        if username_param:
-            return cls.for_user(username_param, _slurm_user_accounts(username_param))
-        return cls()
-
-    @classmethod
-    def _resolve_manager(
-        cls, login: str, username_param: str | None, account_param: str | None
-    ) -> StatsScope:
-        """Return the stats scope of a manager.
-
-        Managers inherit regular user visibility (their own stats and Slurm
-        accounts they belong to) plus read access to assigned managed accounts
-        and their members. The users of the scope are a deduplicated set so
-        members of multiple managed accounts appear once.
-
-        With no assigned accounts, managers behave like regular users. With an
-        account parameter, the account must be assigned or a personal Slurm
-        account. With a username parameter, the manager may always query
-        themselves; other users are returned only when they belong to an
-        assigned account. Account stats for another user's query are limited to
-        the overlap between that user's Slurm accounts and the assigned set.
-        With neither parameter, users are the manager plus all members of
-        assigned accounts (deduplicated) and accounts are assigned accounts plus
-        personal Slurm accounts.
-
-        In the consumption breakdown, managers see their own consumption and
-        the consumption of all users on assigned accounts.
-        """
-        with connect_database() as conn:
-            assigned = set(list_manager_accounts(conn, login))
-            allowed_accounts = assigned | list_user_accounts(conn, login)
-            user_accounts = (
-                list_user_accounts(conn, username_param)
-                if username_param and username_param != login
-                else set()
-            )
-            members: set[str] = {login}
-            for account in assigned:
-                members.update(list_account_users(conn, account))
-
-        if account_param:
-            if account_param not in allowed_accounts:
-                abort(403, description="Not allowed to view stats for this account")
-            return cls.for_account(
-                account_param, viewer=login, managed_accounts=assigned
-            )
-
-        if username_param:
-            if username_param == login:
-                return cls.for_user(
-                    login, allowed_accounts, viewer=login, managed_accounts=assigned
-                )
-            if not user_accounts.intersection(assigned):
-                abort(403, description="Not allowed to view stats for other users")
-            return cls.for_user(
-                username_param,
-                assigned.intersection(user_accounts),
+            with connect_database() as conn:
+                managed = set(list_manager_accounts(conn, login))
+                own_accounts = list_user_accounts(conn, login)
+                members: set[str] = {login}
+                for account in managed:
+                    members.update(list_account_users(conn, account))
+            return cls(
                 viewer=login,
-                managed_accounts=assigned,
+                users=members,
+                accounts=managed | own_accounts,
+                managed_accounts=managed,
             )
+        return cls(viewer=login, users={login}, accounts=_slurm_user_accounts(login))
 
-        return cls(
-            usernames=members,
-            accounts=allowed_accounts,
-            breakdown_usernames={login},
-            breakdown_accounts=assigned,
-            viewer=login,
-            managed_accounts=assigned,
+    def can_view_account(self, account: str) -> bool:
+        """Return whether the viewer may see stats of the account."""
+        return self.accounts is None or account in self.accounts
+
+    def can_view_pair(self, pair: dict[str, Any]) -> bool:
+        """Return whether the viewer may see the consumption of the
+        user/account pair."""
+        if self.viewer is None:
+            return True
+        return pair["username"] == self.viewer or (
+            pair["account"] in self.managed_accounts
         )
 
-    @classmethod
-    def _resolve_regular_user(
-        cls, login: str, username_param: str | None, account_param: str | None
-    ) -> StatsScope:
-        """Return the stats scope of a regular user.
+    def user_accounts(self, username: str) -> set[str] | None:
+        """Return the accounts shown with the stats of a user, None when the
+        viewer may not see the user.
 
-        Regular users may only view themselves and their Slurm accounts. With an
-        account parameter, only this account is returned. Otherwise, the user
-        and their Slurm accounts are returned. In the consumption breakdown,
-        regular users only see their own consumption.
+        Viewers see all the accounts of users when they may see everything, and
+        their own visible accounts with their own stats. With other users, they
+        see the managed accounts of these users.
         """
-        if username_param and username_param != login:
-            abort(403, description="Not allowed to view stats for other users")
-        user_accounts = _slurm_user_accounts(login)
-        if account_param:
-            if account_param not in user_accounts:
-                abort(403, description="Not allowed to view stats for this account")
-            return cls.for_account(account_param, viewer=login)
-        return cls.for_user(login, user_accounts, viewer=login)
+        if self.viewer is None:
+            return _slurm_user_accounts(username)
+        assert self.accounts is not None
+        if username == self.viewer:
+            return self.accounts
+        if not self.managed_accounts:
+            return None
+        accounts = self.managed_accounts.intersection(_slurm_user_accounts(username))
+        return accounts or None
 
 
 def _valid_name(value: str) -> bool:
@@ -331,49 +196,6 @@ def _parse_optional_reason(payload: dict[str, Any]) -> str | None:
             description=f"reason must be at most {_MAX_REASON_LENGTH} characters",
         )
     return reason
-
-
-def fetch_stats(
-    scope: StatsScope,
-    include_breakdown: bool = False,
-) -> tuple[dict[str, Any] | None, tuple[Any, int] | None]:
-    """Load aggregated user and account consumption stats from the database.
-
-    When the database file is missing, returns empty lists without error.
-
-    Args:
-        scope: Users, accounts and consumption breakdown to include.
-        include_breakdown: If True, include the consumption breakdown per
-            user/account pair.
-
-    Returns:
-        A pair of payload and error response. On success the payload is a dict
-        with users and accounts keys, plus a breakdown key when requested, and
-        the error is None. On database failure the payload is None and the error
-        is an HTTP 500 response tuple.
-    """
-    try:
-        payload: dict[str, Any] = {"users": [], "accounts": []}
-        if include_breakdown:
-            payload["breakdown"] = []
-        if not os.path.exists(slurm_quota.DB_PATH):
-            return payload, None
-
-        with connect_database() as conn:
-            payload["users"] = query_users_aggregate(conn, scope.usernames)
-            payload["accounts"] = query_accounts_aggregate(conn, scope.accounts)
-            if include_breakdown:
-                payload["breakdown"] = [
-                    pair
-                    for pair in query_consumption_breakdown(
-                        conn, scope.breakdown_usernames, scope.breakdown_accounts
-                    )
-                    if scope.can_view(pair)
-                ]
-        return payload, None
-    except sqlite3.Error as exc:
-        logger.error("/stats query failed: %s", exc)
-        return None, (jsonify({"error": "db_error"}), 500)
 
 
 def health() -> Any:
@@ -436,13 +258,58 @@ def stats() -> Any:
         request.args.get("breakdown") or ""
     ).strip().lower() in _TRUE_QUERY_VALUES
 
-    login = cast(str, request.user.login)
     level = next(scope for scope in reversed(STATS_SCOPES) if scope in g.scopes)
-    scope = StatsScope.resolve(login, level, username_param, account_param)
-    payload, error = fetch_stats(scope, include_breakdown)
-    if error is not None:
-        response, status = error
-        return response, status
+    visibility = StatsVisibility.for_level(cast(str, request.user.login), level)
+
+    # Users and accounts of stats, and users and accounts selecting the pairs
+    # of the consumption breakdown, as in query_consumption_breakdown(). None
+    # selects all of them.
+    usernames: set[str] | None
+    accounts: set[str] | None
+    breakdown_usernames: set[str] | None
+    breakdown_accounts: set[str] | None
+    if account_param:
+        # Only this account, with the consumption of each visible user on it.
+        if not visibility.can_view_account(account_param):
+            abort(403, description="Not allowed to view stats for this account")
+        usernames, accounts = set(), {account_param}
+        breakdown_usernames, breakdown_accounts = set(), {account_param}
+    elif username_param:
+        # This user and their visible accounts, with the consumption of the
+        # user on each account.
+        user_accounts = visibility.user_accounts(username_param)
+        if user_accounts is None:
+            abort(403, description="Not allowed to view stats for other users")
+        usernames, accounts = {username_param}, user_accounts
+        breakdown_usernames, breakdown_accounts = {username_param}, set()
+    elif visibility.viewer is None:
+        usernames = accounts = breakdown_usernames = breakdown_accounts = None
+    else:
+        # All visible users and accounts, with the visible consumption.
+        usernames, accounts = visibility.users, visibility.accounts
+        breakdown_usernames = {visibility.viewer}
+        breakdown_accounts = visibility.managed_accounts
+
+    payload: dict[str, Any] = {"users": [], "accounts": []}
+    if include_breakdown:
+        payload["breakdown"] = []
+    if not os.path.exists(slurm_quota.DB_PATH):
+        return jsonify(payload)
+    try:
+        with connect_database() as conn:
+            payload["users"] = query_users_aggregate(conn, usernames)
+            payload["accounts"] = query_accounts_aggregate(conn, accounts)
+            if include_breakdown:
+                payload["breakdown"] = [
+                    pair
+                    for pair in query_consumption_breakdown(
+                        conn, breakdown_usernames, breakdown_accounts
+                    )
+                    if visibility.can_view_pair(pair)
+                ]
+    except sqlite3.Error as exc:
+        logger.error("/stats query failed: %s", exc)
+        return jsonify({"error": "db_error"}), 500
     return jsonify(payload)
 
 

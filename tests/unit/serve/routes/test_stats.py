@@ -1,4 +1,4 @@
-"""Unit tests for GET /stats."""
+"""Unit tests for GET /stats and the visibility of stats."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from slurm_quota.database import (
     init_database,
     update_user_and_account_resources,
 )
+from slurm_quota.serve.routes import StatsVisibility
+from tests.test_support import SlurmQuotaTestCase
 from tests.unit.serve.routes.base import ServeRoutesTestCase, app
 from tests.unit.serve.support import issue_test_token
 
@@ -657,3 +659,80 @@ class TestStatsBreakdown(ServeRoutesTestCase):
                 ("dave", "hpc"),
             ],
         )
+
+
+class StatsVisibilityTestCase(SlurmQuotaTestCase):
+    """Carol manages hpc, whose members are bob and carol. Carol also belongs
+    to dev, with dave. Bob also belongs to gpu."""
+
+    def setUp(self):
+        super().setUp()
+        init_database()
+        with self.db_connection() as conn:
+            grant_manager(conn, "carol")
+            grant_manager_account(conn, "carol", "hpc")
+            self.insert_associations(
+                conn,
+                ("bob", "hpc"),
+                ("bob", "gpu"),
+                ("carol", "hpc"),
+                ("carol", "dev"),
+                ("dave", "dev"),
+            )
+            conn.commit()
+
+
+class TestStatsVisibility(StatsVisibilityTestCase):
+    def test_all(self):
+        visibility = StatsVisibility.for_level("carol", "stats:read:all")
+        self.assertEqual(visibility, StatsVisibility())
+        self.assertTrue(visibility.can_view_account("gpu"))
+        self.assertTrue(
+            visibility.can_view_pair({"username": "dave", "account": "dev"})
+        )
+        self.assertEqual(visibility.user_accounts("bob"), {"hpc", "gpu"})
+
+    def test_managed(self):
+        visibility = StatsVisibility.for_level("carol", "stats:read:managed")
+        self.assertEqual(
+            visibility,
+            StatsVisibility(
+                viewer="carol",
+                users={"bob", "carol"},
+                accounts={"hpc", "dev"},
+                managed_accounts={"hpc"},
+            ),
+        )
+        self.assertTrue(visibility.can_view_account("dev"))
+        self.assertFalse(visibility.can_view_account("gpu"))
+
+    def test_managed_pairs(self):
+        visibility = StatsVisibility.for_level("carol", "stats:read:managed")
+        self.assertTrue(
+            visibility.can_view_pair({"username": "carol", "account": "dev"})
+        )
+        self.assertTrue(visibility.can_view_pair({"username": "bob", "account": "hpc"}))
+        self.assertFalse(
+            visibility.can_view_pair({"username": "dave", "account": "dev"})
+        )
+        self.assertFalse(
+            visibility.can_view_pair({"username": "bob", "account": "gpu"})
+        )
+
+    def test_managed_user_accounts(self):
+        visibility = StatsVisibility.for_level("carol", "stats:read:managed")
+        self.assertEqual(visibility.user_accounts("carol"), {"hpc", "dev"})
+        self.assertEqual(visibility.user_accounts("bob"), {"hpc"})
+        self.assertIsNone(visibility.user_accounts("dave"))
+
+    def test_own(self):
+        visibility = StatsVisibility.for_level("carol", "stats:read:own")
+        self.assertEqual(
+            visibility,
+            StatsVisibility(viewer="carol", users={"carol"}, accounts={"hpc", "dev"}),
+        )
+        self.assertFalse(
+            visibility.can_view_pair({"username": "bob", "account": "hpc"})
+        )
+        self.assertEqual(visibility.user_accounts("carol"), {"hpc", "dev"})
+        self.assertIsNone(visibility.user_accounts("bob"))
