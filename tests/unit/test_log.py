@@ -119,3 +119,36 @@ class TestSetupLogging(SlurmQuotaTestCase):
             log_flags=DEFAULT_LOG_FLAGS,
             debug_flags=[],
         )
+
+    @patch("slurm_quota.log.setup_logger")
+    def test_config_debug(self, mock_setup_logger):
+        setup_logging(_args(), config_debug=True)
+
+        mock_setup_logger.assert_called_once_with(
+            debug=True,
+            level=None,
+            log_flags=DEFAULT_LOG_FLAGS,
+            debug_flags=DEFAULT_DEBUG_FLAGS,
+        )
+
+    @patch("slurm_quota.log.setup_logger")
+    def test_config_debug_with_config_flags(self, mock_setup_logger):
+        setup_logging(_args(), config_debug=True, config_debug_flags=["rfl"])
+
+        mock_setup_logger.assert_called_once_with(
+            debug=True,
+            level=None,
+            log_flags=DEFAULT_LOG_FLAGS,
+            debug_flags=["rfl"],
+        )
+
+    @patch("slurm_quota.log.setup_logger")
+    def test_quiet_overrides_config_debug(self, mock_setup_logger):
+        setup_logging(_args(quiet=True), config_debug=True)
+
+        mock_setup_logger.assert_called_once_with(
+            debug=False,
+            level="WARNING",
+            log_flags=DEFAULT_LOG_FLAGS,
+            debug_flags=[],
+        )

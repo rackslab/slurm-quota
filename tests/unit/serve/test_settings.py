@@ -87,8 +87,9 @@ class TestLoadLogSettings(SlurmQuotaTestCase):
     def test_yaml_defaults_when_site_ini_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             site_ini = Path(tmp) / "missing.ini"
-            log_flags, debug_flags = load_log_settings(self.defs_path, site_ini)
+            debug, log_flags, debug_flags = load_log_settings(self.defs_path, site_ini)
 
+        self.assertFalse(debug)
         self.assertEqual(log_flags, ["slurm_quota"])
         self.assertEqual(debug_flags, ["slurm_quota"])
 
@@ -108,10 +109,21 @@ class TestLoadLogSettings(SlurmQuotaTestCase):
                 ),
                 encoding="utf-8",
             )
-            log_flags, debug_flags = load_log_settings(self.defs_path, site_ini)
+            debug, log_flags, debug_flags = load_log_settings(self.defs_path, site_ini)
 
+        self.assertFalse(debug)
         self.assertEqual(log_flags, ["rfl", "werkzeug"])
         self.assertEqual(debug_flags, ["rfl"])
+
+    def test_site_ini_enables_debug(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            site_ini = Path(tmp) / "serve.ini"
+            site_ini.write_text("[log]\ndebug=true\n", encoding="utf-8")
+            debug, log_flags, debug_flags = load_log_settings(self.defs_path, site_ini)
+
+        self.assertTrue(debug)
+        self.assertEqual(log_flags, ["slurm_quota"])
+        self.assertEqual(debug_flags, ["slurm_quota"])
 
 
 class TestValidateAuthSettings(SlurmQuotaTestCase):

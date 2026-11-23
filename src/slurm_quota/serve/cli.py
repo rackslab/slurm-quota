@@ -177,13 +177,14 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    config_log_flags, config_debug_flags = load_log_settings(
+    config_debug, config_log_flags, config_debug_flags = load_log_settings(
         args.conf_defs, args.config
     )
     setup_logging(
         args,
         config_log_flags=config_log_flags,
         config_debug_flags=config_debug_flags,
+        config_debug=config_debug,
     )
 
     app = SlurmQuotaServeApp()

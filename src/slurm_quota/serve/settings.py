@@ -140,12 +140,17 @@ def validate_settings(settings: RuntimeSettings) -> None:
 
 def load_log_settings(
     conf_defs: Path, site_config: Path
-) -> tuple[list[str], list[str]]:
-    """Load log flags from configuration without full settings validation."""
+) -> tuple[bool, list[str], list[str]]:
+    """Load debug mode and log flags from configuration without full settings
+    validation."""
     settings = RuntimeSettings.yaml_definition(conf_defs)
     if site_config.exists():
         settings.override_ini(site_config)
-    return list(settings.log.log_flags), list(settings.log.debug_flags)
+    return (
+        bool(settings.log.debug),
+        list(settings.log.log_flags),
+        list(settings.log.debug_flags),
+    )
 
 
 def load_serve_settings(conf_defs: Path, site_config: Path) -> RuntimeSettings:

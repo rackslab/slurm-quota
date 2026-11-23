@@ -143,6 +143,10 @@ tls:
 
 log:
   _doc: Logging settings
+  debug:
+    type: bool
+    default: false
+    doc: Enable debug mode in slurm-quota-serve (same as --debug)
   log_flags:
     type: list
     content: str
