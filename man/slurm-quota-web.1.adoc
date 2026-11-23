@@ -108,17 +108,23 @@ openssl rand -hex 32
 
 ....
 # default standalone launch
-slurm-quota-web
+/usr/libexec/slurm-quota/slurm-quota-web
 
 # custom API endpoint
-SLURM_QUOTA_URL=http://controller:9911/ slurm-quota-web
+SLURM_QUOTA_URL=http://controller:9911/ /usr/libexec/slurm-quota/slurm-quota-web
 
 # with REST API LDAP authentication enabled
-SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key slurm-quota-web
+SLURM_QUOTA_WEB_SESSION_KEY_FILE=/etc/slurm-quota/web-session.key \
+  /usr/libexec/slurm-quota/slurm-quota-web
 
 # custom bind host/port
-SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 slurm-quota-web
+SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 /usr/libexec/slurm-quota/slurm-quota-web
 ....
+
+== Files
+
+`/usr/libexec/slurm-quota/slurm-quota-web`::
+  Command executable.
 
 == Exit Status
 

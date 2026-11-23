@@ -664,6 +664,11 @@ sudo systemctl reload httpd
 This section summarizes common use of the Slurm-quota executables. Man pages are available for each command after
 install (for example `man slurm-quota`, `man slurm-quota-serve`).
 
+> [!NOTE]
+> RPM packages install `slurm-quota-serve`, `slurm-quota-sync` and `slurm-quota-web` in `/usr/libexec/slurm-quota/`,
+> outside of the `PATH`, as they are normally run by systemd or the HTTP server. The examples below use this full path.
+> With [manual installation](docs/installation-manual.md), all commands are in the `PATH`.
+
 ### `slurm-quota` Command<a name="slurm-quota-command"></a>
 
 The CLI targets the REST API on the controller.
@@ -889,8 +894,8 @@ Examples:
 
 ```bash
 # Manual launch (testing; must run as slurm user)
-sudo -u slurm slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 600
-sudo -u slurm slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 0    # no idle timeout
+sudo -u slurm /usr/libexec/slurm-quota/slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 600
+sudo -u slurm /usr/libexec/slurm-quota/slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 0  # no idle timeout
 
 # Via systemd (recommended)
 sudo systemctl start slurm-quota.socket
@@ -904,7 +909,7 @@ disabled with `--idle-timeout 0` argument. The `stats` command queries this HTTP
 Dump resolved configuration (passwords masked) and exit:
 
 ```bash
-slurm-quota-serve --dump-config
+/usr/libexec/slurm-quota/slurm-quota-serve --dump-config
 ```
 
 LDAP login when `authentication.method=ldap` with `curl`:
@@ -959,8 +964,9 @@ Environment variables:
 Examples:
 
 ```bash
-SLURM_QUOTA_URL=http://127.0.0.1:9911/ slurm-quota-web
-SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 SLURM_QUOTA_URL=http://controller:9911/ slurm-quota-web
+SLURM_QUOTA_URL=http://127.0.0.1:9911/ /usr/libexec/slurm-quota/slurm-quota-web
+SLURM_QUOTA_WEB_HOST=0.0.0.0 SLURM_QUOTA_WEB_PORT=8080 SLURM_QUOTA_URL=http://controller:9911/ \
+  /usr/libexec/slurm-quota/slurm-quota-web
 ```
 
 > [!NOTE]
@@ -1010,6 +1016,12 @@ the next periodic synchronization:
 
 ```bash
 sudo systemctl start slurm-quota-sync.service
+```
+
+It can also be run manually as `slurm` user, for example to debug a failing synchronization:
+
+```bash
+sudo -u slurm /usr/libexec/slurm-quota/slurm-quota-sync --debug
 ```
 
 ### `slurm-quota-reallocate` Command<a name="slurm-quota-reallocate-command"></a>

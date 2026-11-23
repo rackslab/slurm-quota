@@ -61,10 +61,13 @@ The database path is fixed to `/var/lib/state/slurm-quota/slurm-quota.db`.
 
 ....
 sudo systemctl start slurm-quota-sync.service
-sudo -u slurm slurm-quota-sync
+sudo -u slurm /usr/libexec/slurm-quota/slurm-quota-sync
 ....
 
 == Files
+
+`/usr/libexec/slurm-quota/slurm-quota-sync`::
+  Command executable.
 
 `/var/lib/state/slurm-quota/slurm-quota.db`::
   SQLite database, Slurm associations are cached in the `slurm_associations` table.

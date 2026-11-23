@@ -80,7 +80,7 @@ Notes:
 == Examples
 
 ....
-slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 600
+/usr/libexec/slurm-quota/slurm-quota-serve --host 127.0.0.1 --port 9911 --idle-timeout 600
 curl https://127.0.0.1:9911/health
 
 TOKEN=$(sudo slurm-quota-token alice)
@@ -88,7 +88,7 @@ curl -H 'Authorization: Bearer '"$TOKEN" https://127.0.0.1:9911/stats
 curl -H 'Authorization: Bearer '"$TOKEN" 'https://127.0.0.1:9911/stats?username=alice'
 curl -H 'Authorization: Bearer '"$TOKEN" 'https://127.0.0.1:9911/stats?account=hpc'
 
-slurm-quota-serve --dump-config
+/usr/libexec/slurm-quota/slurm-quota-serve --dump-config
 
 # With authentication.method=ldap in /etc/slurm-quota/serve.ini
 curl -s -X POST https://127.0.0.1:9911/login \
@@ -116,6 +116,9 @@ curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/jso
 ....
 
 == Files
+
+`/usr/libexec/slurm-quota/slurm-quota-serve`::
+  Command executable.
 
 `/var/lib/state/slurm-quota/slurm-quota.db`::
   SQLite database for quotas, consumed/preallocated counters, GPU factors, default settings, and operator/manager roles.

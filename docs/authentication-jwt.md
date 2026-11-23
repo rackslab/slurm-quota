@@ -89,7 +89,8 @@ SLURM_QUOTA_TOKEN=<token-from-slurm-quota-token>
 For standalone testing:
 
 ```bash
-SLURM_QUOTA_URL=http://controller:9911/ SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice) slurm-quota-web
+SLURM_QUOTA_URL=http://controller:9911/ SLURM_QUOTA_TOKEN=$(sudo slurm-quota-token alice) \
+  /usr/libexec/slurm-quota/slurm-quota-web
 ```
 
 When `SLURM_QUOTA_TOKEN` is set, the dashboard skips the browser login page.
