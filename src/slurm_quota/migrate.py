@@ -227,6 +227,17 @@ def migrate_preallocations_to_seconds(cursor: sqlite3.Cursor) -> None:
     )
 
 
+def add_comment_columns(cursor: sqlite3.Cursor) -> None:
+    """Add the comment column to users and accounts tables when missing."""
+    for table in ("users", "accounts"):
+        if "comment" in _table_columns(cursor, table):
+            logger.info("Migration not needed: %s table has comment column", table)
+            continue
+        logger.info("Adding comment column to %s table", table)
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN comment TEXT")
+        logger.info("Migration completed: comment column added to %s", table)
+
+
 def migrate_database() -> None:
     """
     Migrate existing database schema to add new columns if needed.
@@ -444,6 +455,11 @@ def migrate_database() -> None:
             with _rebuild_transaction(conn) as rebuild_cursor:
                 migrate_consumption_to_pairs(rebuild_cursor)
                 migrate_preallocations_to_seconds(rebuild_cursor)
+
+            # Add users and accounts comments (v4), once the tables are rebuilt
+            # without legacy consumption columns.
+            add_comment_columns(cursor)
+            conn.commit()
 
             enable_wal_mode(conn)
             set_database_permissions()

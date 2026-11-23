@@ -74,6 +74,55 @@ class TestMigrateDatabase(SlurmQuotaTestCase):
             ],
         )
 
+    def _drop_comment_columns(self):
+        """Recreate users and accounts tables of a new database without comment
+        column, as in v4 databases before comments."""
+        with self.db_connection() as conn:
+            for table, key in (("users", "username"), ("accounts", "account")):
+                conn.execute(f"DROP TABLE {table}")
+                conn.execute(f"""
+                    CREATE TABLE {table} (
+                        {key} TEXT PRIMARY KEY,
+                        quota_cpu_minutes INTEGER DEFAULT -1,
+                        quota_gpu_minutes INTEGER DEFAULT -1,
+                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+            conn.execute(
+                "INSERT INTO users (username, quota_cpu_minutes) VALUES ('alice', 10)"
+            )
+            conn.execute(
+                "INSERT INTO accounts (account, quota_gpu_minutes) VALUES ('hpc', 20)"
+            )
+            conn.commit()
+
+    def test_migrate_database_adds_comment_columns(self):
+        init_database()
+        self._drop_comment_columns()
+
+        migrate_database()
+        # Second run is a no-op
+        migrate_database()
+
+        with self.db_connection() as conn:
+            for table in ("users", "accounts"):
+                columns = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+                self.assertEqual(columns.count("comment"), 1)
+            users = query_users_aggregate(conn)
+            accounts = query_accounts_aggregate(conn)
+        self.assertEqual(
+            (users[0]["username"], users[0]["quota_cpu_minutes"], users[0]["comment"]),
+            ("alice", 10, None),
+        )
+        self.assertEqual(
+            (
+                accounts[0]["account"],
+                accounts[0]["quota_gpu_minutes"],
+                accounts[0]["comment"],
+            ),
+            ("hpc", 20, None),
+        )
+
 
 V3_SCHEMA = """
 CREATE TABLE users (
@@ -162,11 +211,23 @@ class TestMigrateConsumptionToPairs(SlurmQuotaTestCase):
             ]
             self.assertEqual(
                 user_columns,
-                ["username", "quota_cpu_minutes", "quota_gpu_minutes", "last_updated"],
+                [
+                    "username",
+                    "quota_cpu_minutes",
+                    "quota_gpu_minutes",
+                    "last_updated",
+                    "comment",
+                ],
             )
             self.assertEqual(
                 account_columns,
-                ["account", "quota_cpu_minutes", "quota_gpu_minutes", "last_updated"],
+                [
+                    "account",
+                    "quota_cpu_minutes",
+                    "quota_gpu_minutes",
+                    "last_updated",
+                    "comment",
+                ],
             )
             # Quotas are preserved, unattributed entities have unlimited quotas
             self.assertEqual(
@@ -332,7 +393,13 @@ class TestMigrateConsumptionToPairs(SlurmQuotaTestCase):
             ).fetchall()
         self.assertEqual(
             columns,
-            ["username", "quota_cpu_minutes", "quota_gpu_minutes", "last_updated"],
+            [
+                "username",
+                "quota_cpu_minutes",
+                "quota_gpu_minutes",
+                "last_updated",
+                "comment",
+            ],
         )
         # Columns added by intermediate steps are converted along
         self.assertEqual(preallocations, [("j1", 180, 0, 1)])

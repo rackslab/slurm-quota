@@ -23,6 +23,11 @@ DEFAULT_QUOTA_SETTINGS = {
 }
 
 
+# Separator inserted between an existing user or account comment and the text
+# appended to it.
+COMMENT_SEPARATOR = " | "
+
+
 class AssociationsSync(NamedTuple):
     """Result of a synchronization of the Slurm associations cache.
 
@@ -351,7 +356,8 @@ def init_database() -> None:
                     username TEXT PRIMARY KEY,
                     quota_cpu_minutes INTEGER DEFAULT -1,
                     quota_gpu_minutes INTEGER DEFAULT -1,
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    comment TEXT
                 )
             """)
 
@@ -361,7 +367,8 @@ def init_database() -> None:
                     account TEXT PRIMARY KEY,
                     quota_cpu_minutes INTEGER DEFAULT -1,
                     quota_gpu_minutes INTEGER DEFAULT -1,
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    comment TEXT
                 )
             """)
 
@@ -790,6 +797,108 @@ def update_user_and_account_resources(
         raise
 
 
+def _append_comment(
+    cursor: sqlite3.Cursor, table: str, key: str, name: str, text: str
+) -> None:
+    """Append text to the comment of a user or account.
+
+    The comment is set to text when it is empty, otherwise text is appended
+    after COMMENT_SEPARATOR. Nothing is done when the row does not exist.
+
+    Args:
+        cursor: Database cursor.
+        table: "users" or "accounts".
+        key: Primary key column of table ("username" or "account").
+        name: Name of the user or account.
+        text: Text to append.
+    """
+    cursor.execute(
+        f"""
+        UPDATE {table}
+        SET comment = CASE
+            WHEN comment IS NULL OR comment = '' THEN ?
+            ELSE comment || ? || ?
+        END
+        WHERE {key} = ?
+        """,
+        (text, COMMENT_SEPARATOR, text, name),
+    )
+
+
+def _set_comment(table: str, key: str, name: str, comment: Optional[str]) -> None:
+    """Set or clear the comment of a user or account.
+
+    The user or account is created with default quotas when missing.
+
+    Args:
+        table: "users" or "accounts".
+        key: Primary key column of table ("username" or "account").
+        name: Name of the user or account.
+        comment: New comment, None or empty to clear it.
+    """
+    prefix = "default_user" if table == "users" else "default_account"
+    try:
+        with connect_database() as conn:
+            cursor = conn.cursor()
+            dq = get_default_quota_settings(conn)
+            cursor.execute(
+                f"""
+                INSERT INTO {table} (
+                    {key}, quota_cpu_minutes, quota_gpu_minutes, comment,
+                    last_updated
+                )
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT ({key}) DO
+                UPDATE SET comment = excluded.comment,
+                           last_updated = CURRENT_TIMESTAMP
+                """,
+                (
+                    name,
+                    dq[f"{prefix}_quota_cpu_minutes"],
+                    dq[f"{prefix}_quota_gpu_minutes"],
+                    comment or None,
+                ),
+            )
+            conn.commit()
+    except sqlite3.Error as e:
+        logger.error(f"Failed to set {table[:-1]} comment: {e}")
+        raise
+
+
+def set_user_comment(username: str, comment: Optional[str]) -> None:
+    """Set the comment of a user, None or empty to clear it."""
+    _set_comment("users", "username", username, comment)
+
+
+def set_account_comment(account: str, comment: Optional[str]) -> None:
+    """Set the comment of an account, None or empty to clear it."""
+    _set_comment("accounts", "account", account, comment)
+
+
+def _append_comment_text(table: str, key: str, name: str, text: str) -> None:
+    """Append text to the comment of a user or account, see _append_comment()."""
+    try:
+        with connect_database() as conn:
+            _append_comment(conn.cursor(), table, key, name, text)
+            conn.commit()
+    except sqlite3.Error as e:
+        logger.error(f"Failed to append to {table[:-1]} comment: {e}")
+        raise
+
+
+def append_user_comment(username: str, text: str) -> None:
+    """Append text to the comment of a user, after COMMENT_SEPARATOR when a
+    comment is already defined. Nothing is done when the user does not exist."""
+    _append_comment_text("users", "username", username, text)
+
+
+def append_account_comment(account: str, text: str) -> None:
+    """Append text to the comment of an account, after COMMENT_SEPARATOR when a
+    comment is already defined. Nothing is done when the account does not
+    exist."""
+    _append_comment_text("accounts", "account", account, text)
+
+
 def set_user_quota(username: str, quota_cpu_minutes: int) -> None:
     """
     Set quota for a user in the database.
@@ -993,7 +1102,8 @@ def _query_aggregate(
     key: str,
     names: Optional[set[str]],
 ) -> list[dict[str, Any]]:
-    """Return consumption, preallocation and quota aggregates of users or accounts.
+    """Return consumption, preallocation, quota aggregates and comments of users
+    or accounts.
 
     Consumption is summed over user/account pairs, preallocations over jobs,
     both in seconds. Quotas are in minutes. Consumption sums are correlated
@@ -1038,11 +1148,13 @@ def _query_aggregate(
                    0
                ) as total_preallocated_gpu_seconds,
                e.quota_gpu_minutes, e.last_updated,
-               COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count
+               COALESCE(SUM(COALESCE(j.array_size, 0)), 0) as job_count,
+               e.comment
         FROM {table} e
         LEFT JOIN jobs_preallocations j ON e.{key} = j.{key}
         {where}
-        GROUP BY e.{key}, e.quota_cpu_minutes, e.quota_gpu_minutes, e.last_updated
+        GROUP BY e.{key}, e.quota_cpu_minutes, e.quota_gpu_minutes,
+                 e.last_updated, e.comment
         ORDER BY e.{key}
         """,
         params,
@@ -1059,6 +1171,7 @@ def _query_aggregate(
             quota_gpu,
             last_updated,
             job_count,
+            comment,
         ) = row
         results.append(
             {
@@ -1071,6 +1184,7 @@ def _query_aggregate(
                 "quota_gpu_minutes": int(quota_gpu if quota_gpu is not None else -1),
                 "last_updated": last_updated,
                 "job_count": int(job_count or 0),
+                "comment": comment or None,
             }
         )
     return results

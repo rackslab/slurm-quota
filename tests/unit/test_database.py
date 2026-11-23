@@ -7,6 +7,8 @@ from unittest.mock import patch
 
 from slurm_quota.database import (
     adjust_consumed_seconds,
+    append_account_comment,
+    append_user_comment,
     connect_database,
     grant_manager,
     grant_manager_account,
@@ -28,8 +30,10 @@ from slurm_quota.database import (
     revoke_manager,
     revoke_manager_account,
     revoke_operator,
+    set_account_comment,
     set_account_gpu_quota,
     set_account_quota,
+    set_user_comment,
     set_user_gpu_quota,
     set_user_quota,
     sync_associations,
@@ -570,6 +574,105 @@ class TestSetAccountGpuQuota(SlurmQuotaTestCase):
                 ("b",),
             ).fetchone()
         self.assertEqual(row, (250, 44))
+
+
+class TestComments(SlurmQuotaTestCase):
+    @staticmethod
+    def comment(conn, table: str, key: str, name: str):
+        row = conn.execute(
+            f"SELECT comment FROM {table} WHERE {key} = ?", (name,)
+        ).fetchone()
+        return None if row is None else row[0]
+
+    def test_set_user_comment_creates_user_with_default_quotas(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.execute(
+                "UPDATE settings SET value = ? WHERE key = ?",
+                ("100", "default_user_quota_cpu_minutes"),
+            )
+            conn.commit()
+        set_user_comment("alice", "PhD student")
+        with self.db_connection() as conn:
+            row = conn.execute(
+                "SELECT quota_cpu_minutes, quota_gpu_minutes, comment FROM users "
+                "WHERE username = ?",
+                ("alice",),
+            ).fetchone()
+        self.assertEqual(row, (100, -1, "PhD student"))
+
+    def test_set_account_comment_preserves_quotas(self):
+        init_database()
+        set_account_quota("hpc", 500)
+        set_account_comment("hpc", "Project X")
+        set_account_comment("hpc", "Project Y")
+        with self.db_connection() as conn:
+            row = conn.execute(
+                "SELECT quota_cpu_minutes, comment FROM accounts WHERE account = ?",
+                ("hpc",),
+            ).fetchone()
+        self.assertEqual(row, (500, "Project Y"))
+
+    def test_set_comment_clears_with_none_or_empty(self):
+        init_database()
+        set_user_comment("alice", "PhD student")
+        set_user_comment("alice", None)
+        set_account_comment("hpc", "Project X")
+        set_account_comment("hpc", "")
+        with self.db_connection() as conn:
+            self.assertIsNone(self.comment(conn, "users", "username", "alice"))
+            self.assertIsNone(self.comment(conn, "accounts", "account", "hpc"))
+
+    def test_append_user_comment(self):
+        init_database()
+        set_user_quota("alice", 100)
+        append_user_comment("alice", "first")
+        append_user_comment("alice", "second")
+        with self.db_connection() as conn:
+            self.assertEqual(
+                self.comment(conn, "users", "username", "alice"), "first | second"
+            )
+
+    def test_append_account_comment_after_existing_comment(self):
+        init_database()
+        set_account_comment("hpc", "Project X")
+        append_account_comment("hpc", "extension approved")
+        with self.db_connection() as conn:
+            self.assertEqual(
+                self.comment(conn, "accounts", "account", "hpc"),
+                "Project X | extension approved",
+            )
+
+    def test_append_comment_ignores_missing_entity(self):
+        init_database()
+        append_user_comment("ghost", "text")
+        append_account_comment("ghost", "text")
+        with self.db_connection() as conn:
+            self.assertIsNone(
+                conn.execute("SELECT 1 FROM users WHERE username = 'ghost'").fetchone()
+            )
+            self.assertIsNone(
+                conn.execute(
+                    "SELECT 1 FROM accounts WHERE account = 'ghost'"
+                ).fetchone()
+            )
+
+    def test_aggregates_return_comments(self):
+        init_database()
+        with self.db_connection() as conn:
+            self.insert_consumption(conn, "alice", "hpc")
+            self.insert_consumption(conn, "bob", "hpc")
+            conn.commit()
+        set_user_comment("alice", "PhD student")
+        set_account_comment("hpc", "Project X")
+        with self.db_connection() as conn:
+            users = query_users_aggregate(conn)
+            accounts = query_accounts_aggregate(conn)
+        self.assertEqual(
+            [(user["username"], user["comment"]) for user in users],
+            [("alice", "PhD student"), ("bob", None)],
+        )
+        self.assertEqual(accounts[0]["comment"], "Project X")
 
 
 class TestAdjustConsumedSeconds(SlurmQuotaTestCase):
