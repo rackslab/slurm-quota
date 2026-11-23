@@ -1,0 +1,37 @@
+common_pkgs_derivatives:
+- main
+common_with_devs_repos: true
+common_devs_derivatives:
+- main
+common_hpckit_derivatives:
+- main
+- slurm24.11
+slurm_params:
+  PriorityType: priority/multifactor
+  PriorityWeightFairshare: 1000
+  PriorityWeightQOS: 100
+  SelectType: select/cons_tres
+  JobCompType: jobcomp/script
+  JobCompLoc: /etc/slurm/slurm-quota-charge-wrapper
+  JobSubmitPlugins: lua
+  AccountingStorageTRES: "gres/gpu:h100,gres/gpu:h200"
+slurm_partitions:
+- name: standard
+  nodes: cn[1-4]
+  default: yes
+  params:
+    MaxTime: "2:0:0"
+    State: UP
+    DefMemPerCPU: 512
+- name: ia
+  nodes: ia[1-2]
+  params:
+    MaxTime: "2:0:0"
+    State: UP
+    DefMemPerCPU: 512
+slurm_gpus_models_map:
+  Nvidia H100:
+    type: h100
+  Nvidia H200:
+    type: h200
+slurmquota_enabled: true
