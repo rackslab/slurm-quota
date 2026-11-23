@@ -35,3 +35,7 @@ slurm_gpus_models_map:
   Nvidia H200:
     type: h200
 slurmquota_enabled: true
+# Restrict slurm-quota admins to the first generated user, sole member of the
+# admin group, so that other users can be tested with user, manager and
+# operator roles.
+slurmquota_admins: "{{ fhpc_users[0:1] | map(attribute='login') | list }}"
