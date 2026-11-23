@@ -40,7 +40,10 @@ def main() -> None:
     prune_target_group.add_argument(
         "--all",
         action="store_true",
-        help="Prune preallocations, users and accounts (default if no selector)",
+        help=(
+            "Prune preallocations, users and accounts (default if no selector), "
+            "cannot be combined with --user or --account"
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -49,11 +52,17 @@ def main() -> None:
     )
     parser.add_argument(
         "--user",
-        help="Limit preallocations and users pruning to a specific username",
+        help=(
+            "Limit preallocations and users pruning to a specific username "
+            "(requires --preallocs or --users)"
+        ),
     )
     parser.add_argument(
         "--account",
-        help="Limit preallocations and accounts pruning to a specific account",
+        help=(
+            "Limit preallocations and accounts pruning to a specific account "
+            "(requires --preallocs or --accounts)"
+        ),
     )
 
     args = parser.parse_args()

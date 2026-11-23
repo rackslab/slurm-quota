@@ -443,6 +443,20 @@ def prune_command(
             )
             sys.exit(1)
 
+        # Filters only apply to the targets they can restrict, refuse them
+        # with other targets to avoid pruning unfiltered users or accounts.
+        if user_filter and not (preallocs or users):
+            logger.error(
+                "Prune command --user filter requires --preallocs or --users selector"
+            )
+            sys.exit(1)
+        if account_filter and not (preallocs or accounts):
+            logger.error(
+                "Prune command --account filter requires --preallocs or --accounts "
+                "selector"
+            )
+            sys.exit(1)
+
         if all_targets or not any((preallocs, users, accounts)):
             targets = {"preallocs", "users", "accounts"}
         else:

@@ -12,6 +12,7 @@ from slurm_quota.commands import (
     RELOGIN_GUIDANCE,
     create_status_bar,
     format_timestamp_with_timezone,
+    prune_command,
     role_grant_command,
     role_list_command,
     role_managers_add_command,
@@ -949,3 +950,62 @@ class TestTokenCommand(SlurmQuotaTestCase):
         ):
             token_command(save=True)
         self.assertEqual(cm.exception.code, 1)
+
+
+class TestPruneCommand(SlurmQuotaTestCase):
+    def _prune_targets(self, **kwargs):
+        with (
+            patch("slurm_quota.commands.auth.get_current_user", return_value="root"),
+            patch(
+                "slurm_quota.commands.prune_resources",
+                return_value={"preallocs": 0, "users": 0, "accounts": 0},
+            ) as prune_mock,
+            redirect_stdout(io.StringIO()),
+        ):
+            prune_command(**kwargs)
+        return prune_mock.call_args.args[0]
+
+    def test_prune_no_selector_selects_all_targets(self):
+        self.assertEqual(self._prune_targets(), {"preallocs", "users", "accounts"})
+
+    def test_prune_all_selects_all_targets(self):
+        self.assertEqual(
+            self._prune_targets(all_targets=True), {"preallocs", "users", "accounts"}
+        )
+
+    def test_prune_filter_without_matching_selector_is_rejected(self):
+        for selector, filters in (
+            ({}, {"user_filter": "u1"}),
+            ({}, {"account_filter": "a1"}),
+            ({}, {"user_filter": "u1", "account_filter": "a1"}),
+            ({"all_targets": True}, {"user_filter": "u1"}),
+            ({"all_targets": True}, {"account_filter": "a1"}),
+            ({"users": True}, {"account_filter": "a1"}),
+            ({"users": True}, {"user_filter": "u1", "account_filter": "a1"}),
+            ({"accounts": True}, {"user_filter": "u1"}),
+            ({"accounts": True}, {"user_filter": "u1", "account_filter": "a1"}),
+        ):
+            with self.subTest(**selector, **filters):
+                with (
+                    patch(
+                        "slurm_quota.commands.auth.get_current_user",
+                        return_value="root",
+                    ),
+                    patch("slurm_quota.commands.prune_resources") as prune_mock,
+                    self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+                    self.assertRaises(SystemExit) as cm,
+                ):
+                    prune_command(**selector, **filters)
+                self.assertEqual(cm.exception.code, 1)
+                prune_mock.assert_not_called()
+                self.assertIn("filter requires", log_cm.output[0])
+
+    def test_prune_explicit_selector_with_filter_keeps_selector(self):
+        self.assertEqual(
+            self._prune_targets(preallocs=True, user_filter="u1", account_filter="a1"),
+            {"preallocs"},
+        )
+        self.assertEqual(self._prune_targets(users=True, user_filter="u1"), {"users"})
+        self.assertEqual(
+            self._prune_targets(accounts=True, account_filter="a1"), {"accounts"}
+        )

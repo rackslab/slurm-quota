@@ -57,6 +57,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   route, with `delta_seconds` instead of `delta_minutes`, and responds with `total_consumed_seconds`.
   `slurm-quota adjust` requires both `--user` and `--account` (#110).
 - `GET /stats` reads Slurm associations from the database cache instead of querying `sacctmgr` on each request.
+- `slurm-quota-prune --user` filter requires `--preallocs` or `--users` selector and `--account` filter requires
+  `--preallocs` or `--accounts` selector. Previously, with another selector, `--all` or without selector, the filter was
+  ignored on accounts (resp. users) and all those without consumption were pruned (#132).
 
 ### Fixed
 

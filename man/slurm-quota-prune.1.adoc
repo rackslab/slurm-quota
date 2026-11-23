@@ -52,20 +52,20 @@ Selectors (mutually exclusive):
   Remove accounts with zero consumed CPU and GPU.
 
 *--all*::
-  Prune all categories above. This is also the default behavior when no selector is provided.
+  Prune all categories above. This is also the default behavior when no selector is provided. This option cannot be
+  combined with *--user* or *--account*.
 
 *--dry-run*::
   Report what would be removed, without deleting anything.
 
 *--user* <username>::
   Limit preallocation and user pruning candidates to this username (applies when preallocations and/or users are in
-  selected targets). Combined with *--all* or without selector, only the orphan preallocations of this user are
-  pruned.
+  selected targets). This option requires *--preallocs* or *--users* selector.
 
 *--account* <account>::
   Limit preallocation and account pruning candidates to this account (applies when preallocations and/or accounts are
-  in selected targets). Combined with *--all* or without selector, only the orphan preallocations of this account are
-  pruned. When both *--user* and *--account* are set, only the preallocations matching both are pruned.
+  in selected targets). This option requires *--preallocs* or *--accounts* selector. When both *--user* and
+  *--account* are set, only the preallocations matching both are pruned.
 
 == Examples
 

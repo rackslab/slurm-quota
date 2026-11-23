@@ -477,28 +477,45 @@ class TestPruneCommand(FunctionalCLIBase):
         )
         self.assertEqual(self._prealloc_uuids(), {"uuid-u1", "uuid-u2"})
 
-    def test_prune_all_filtered_by_user_and_account(self):
+    def test_prune_filters_without_matching_selector_are_refused(self):
         self._insert_orphan_preallocs()
-        with (
-            patch("slurm_quota.auth.get_current_user", return_value="root"),
-            patch("slurm_quota.slurm.collect_active_job_uuids", return_value=set()),
-            self.capture_stdout() as out,
+        for args, message in (
+            (["--user", "u1"], "--user filter requires --preallocs or --users"),
+            (
+                ["--account", "a1"],
+                "--account filter requires --preallocs or --accounts",
+            ),
+            (
+                ["--all", "--user", "u1", "--account", "a1"],
+                "--user filter requires --preallocs or --users",
+            ),
+            (["--users", "--account", "a1"], "--account filter requires"),
+            (["--accounts", "--user", "u1"], "--user filter requires"),
         ):
-            self.run_prune_main(
-                ["slurm-quota-prune", "--all", "--user", "u1", "--account", "a1"]
-            )
-        # u1/a1 orphan preallocation is removed in the same run, so u1 and a1
-        # can be pruned. u2/a2 orphan preallocation is kept.
-        self.assertEqual(
-            out.getvalue(),
-            "Removed 1 orphan preallocation(s), 1 user(s), 1 account(s)\n",
-        )
-        self.assertEqual(self._prealloc_uuids(), {"uuid-u2"})
-        with self.db_connection() as conn:
-            users = {row[0] for row in conn.execute("SELECT username FROM users")}
-            accounts = {row[0] for row in conn.execute("SELECT account FROM accounts")}
-        self.assertEqual(users, {"u2"})
-        self.assertEqual(accounts, {"a2"})
+            with self.subTest(args=args):
+                with (
+                    patch("slurm_quota.auth.get_current_user", return_value="root"),
+                    patch(
+                        "slurm_quota.slurm.collect_active_job_uuids",
+                        return_value=set(),
+                    ),
+                    self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+                    self.assertRaises(SystemExit) as cm,
+                ):
+                    self.run_prune_main(["slurm-quota-prune", *args])
+                self.assertEqual(cm.exception.code, 1)
+                self.assertIn(message, log_cm.output[0])
+                # Nothing is pruned
+                self.assertEqual(self._prealloc_uuids(), {"uuid-u1", "uuid-u2"})
+                with self.db_connection() as conn:
+                    users = {
+                        row[0] for row in conn.execute("SELECT username FROM users")
+                    }
+                    accounts = {
+                        row[0] for row in conn.execute("SELECT account FROM accounts")
+                    }
+                self.assertEqual(users, {"u1", "u2"})
+                self.assertEqual(accounts, {"a1", "a2"})
 
     def test_prune_accounts_filtered_by_account(self):
         init_database()
