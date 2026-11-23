@@ -108,6 +108,8 @@ curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/j
   -d '{"delta_minutes":30}' https://127.0.0.1:9911/consumption/alice/hpc/cpu
 curl -X PATCH -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
   -d '{"delta_minutes":-60}' https://127.0.0.1:9911/consumption/alice/hpc/gpu
+curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+  -d '{"comment":"Project X, granted 2026-09"}' https://127.0.0.1:9911/comments/accounts/hpc
 curl -H 'Authorization: Bearer <token>' https://127.0.0.1:9911/factors/gpu
 curl -X PUT -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
   -d '{"factor":0.5}' https://127.0.0.1:9911/factors/gpu/h100

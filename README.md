@@ -269,6 +269,7 @@ restricted to the scopes carried by the token, if any:
 | `stats:read:all`     | Read statistics of all users and accounts                               | **operator**, **admin** |
 | `quotas:read`        | Read default quotas and GPU factors                                     | **operator**, **admin** |
 | `quotas:write`       | Set quotas, default quotas and GPU factors, adjust consumption          | **operator**, **admin** |
+| `comments:write`     | Set comments of users and accounts                                      | **operator**, **admin** |
 | `roles:read`         | Read users roles and managers accounts                                  | **admin**               |
 | `roles:write`        | Grant and revoke users roles and managers accounts                      | **admin**               |
 
@@ -315,6 +316,8 @@ Following routes are served by REST API:
 | `PUT /quotas/users/<username>/gpu`                     | Set GPU quota for a user                                                          | **operator**, **admin**                                                                     | `quotas:write`                                             |
 | `PUT /quotas/accounts/<account>/cpu`                   | Set CPU quota for an account                                                      | **operator**, **admin**                                                                     | `quotas:write`                                             |
 | `PUT /quotas/accounts/<account>/gpu`                   | Set GPU quota for an account                                                      | **operator**, **admin**                                                                     | `quotas:write`                                             |
+| `PUT /comments/users/<username>`                       | Set or clear the comment of a user                                                | **operator**, **admin**                                                                     | `comments:write`                                           |
+| `PUT /comments/accounts/<account>`                     | Set or clear the comment of an account                                            | **operator**, **admin**                                                                     | `comments:write`                                           |
 | `PATCH /consumption/<username>/<account>/cpu`          | Adjust consumed CPU time of a user on an account                                  | **operator**, **admin**                                                                     | `quotas:write`                                             |
 | `PATCH /consumption/<username>/<account>/gpu`          | Adjust consumed GPU time of a user on an account                                  | **operator**, **admin**                                                                     | `quotas:write`                                             |
 | `GET /factors/gpu`                                     | List GPU load factors                                                             | **operator**, **admin**                                                                     | `quotas:read`                                              |
@@ -327,7 +330,8 @@ Following routes are served by REST API:
 responses: `username` limits users and accounts to that user's Slurm associations (e.g. `/stats?username=alice`), while
 `account` returns only the requested account in the `accounts` array (e.g. `/stats?account=hpc`). Each entry reports
 consumed and preallocated times in seconds (`total_consumed_cpu_seconds`, `total_preallocated_cpu_seconds` and their GPU
-counterparts) and quotas in minutes (`quota_cpu_minutes`, `quota_gpu_minutes`, `-1` means unlimited).
+counterparts), quotas in minutes (`quota_cpu_minutes`, `quota_gpu_minutes`, `-1` means unlimited) and the free text
+`comment` of the user or account (`null` when not defined).
 
 With `breakdown=true` (e.g. `/stats?username=alice&breakdown=true`), the object also contains a `breakdown` array with
 the consumption of each user on each account: `username`, `account`, `consumed_cpu_seconds`, `consumed_gpu_seconds` and
@@ -345,6 +349,12 @@ Quota routes accept `{"quota_minutes": <int>}` (`-1` means unlimited), with an o
 auto-created users and accounts. Consumption routes accept `{"delta_seconds": <signed int>}` and return
 `{"total_consumed_seconds": <int>}`, with an optional single-line `{"reason": "<string>"}`. GPU factor routes return
 `{"default_factor": <float>, "factors": {<gpu_type>: <float>, ...}}` or accept `{"factor": <positive float>}`.
+
+The reason of quota and consumption routes is appended to the comment of the user or account, or to the comments of both
+the user and the account for consumption routes, after a `|` separator when a comment is already defined. Add
+`{"append_reason": false}` to record the reason in audit logs only. Saving the reason in comments does not require the
+`comments:write` scope. Comment routes accept `{"comment": "<string>"}`, a single line of at most 1000 characters;
+`null` or an empty string removes the comment. The user or account is created with default quotas when missing.
 
 `POST /tokens` accepts `{"name": <string>, "scopes": [<scope>, ...]}` with an optional `{"duration": <days>}` and
 returns the token description with the `token` itself, which is never returned again. `GET /tokens` returns
@@ -735,6 +745,7 @@ slurm-quota stats --user alice    # same as positional username
 slurm-quota stats --account hpc   # only stats for account hpc
 slurm-quota stats --all           # lists all users and all accounts
 slurm-quota stats --all --breakdown  # same, with consumption of users on each account
+slurm-quota stats --all --comments  # same, with comments of users and accounts
 slurm-quota stats --no-breakdown  # current user without consumption on each account
 slurm-quota stats --hours         # same stats displayed in hours
 slurm-quota stats --seconds       # same stats displayed in seconds
@@ -799,6 +810,18 @@ Examples:
 ```bash
 slurm-quota account-gpu-quota projX 50000   # 50k GPU minutes
 slurm-quota account-gpu-quota projY -1      # unlimited GPU
+```
+
+- `comments` (requires operator or admin role): Sets or removes the free text comment of a user (`--user`) or an account
+  (`--account`). Comments are displayed below user and account rows by `stats --comments` and in the web dashboard. The
+  `--reason` of quota and `adjust` commands is appended to these comments, unless `--no-save-comment` is given.
+
+Examples:
+
+```bash
+slurm-quota comments --user alice "PhD student, thesis until 2027"
+slurm-quota comments --account projX --clear                         # remove comment
+slurm-quota account-quota projX 300000 --reason "extension granted"  # appended to projX comment
 ```
 
 - `adjust`: Adjusts consumed CPU/GPU time for one user or one account (operator or admin role required).

@@ -51,6 +51,10 @@ For new installations, follow the main [Installation](../README.md#installation)
   the migration is recorded in the database. The migration runs in a single transaction: on any error, the database is
   left unchanged. It fails if a user or an account named `(unattributed)` already exists.
 
+- Users and accounts have an optional free text comment, displayed by `slurm-quota stats --comments` and the web
+  dashboard, and set with `slurm-quota comments`. By default, the reason of quota changes and consumption adjustments is
+  appended to these comments. The database migration adds the comment columns to `users` and `accounts` tables.
+
 - Version 3 `job_submit.lua` cannot read the version 4 database schema, and version 3 `slurm-quota-charge` cannot write
   it. The database migration and the new versions of these files are all installed by the `slurm-quota-controller`
   package, they must not run concurrently with job submissions and completions. This is why the controller upgrade

@@ -85,9 +85,10 @@ Options:
 Create an application token for scripts and integrations, with the given
 scopes among the scopes available for the role of the user: `stats:read:own`,
 `stats:read:managed`, `stats:read:all`, `quotas:read`, `quotas:write`,
-`roles:read` and `roles:write`. The token is printed on stdout, its identifier
-and expiration date on stderr. It cannot be displayed again. Requires a user
-token, application tokens cannot create application tokens.
+`comments:write`, `roles:read` and `roles:write`. The token is printed on
+stdout, its identifier and expiration date on stderr. It cannot be displayed
+again. Requires a user token, application tokens cannot create application
+tokens.
 
 *<name>*::
   Name of the token, unique among the active tokens of the user.
@@ -128,7 +129,7 @@ slurm-quota token revoke 3f2a9c4e8b7d41c6a0e5d9b8c7f6e5d4
 
 === stats
 
-*slurm-quota stats* [<username>] [*--user* <username>] [*--account* <account>] [*--all*] [*--breakdown* | *--no-breakdown*] [*--hours* | *--seconds*]
+*slurm-quota stats* [<username>] [*--user* <username>] [*--account* <account>] [*--all*] [*--breakdown* | *--no-breakdown*] [*--comments*] [*--hours* | *--seconds*]
 
 Display quota statistics (consumed, preallocated, quota, and status) for users
 and/or accounts using the HTTP service (`/stats`).
@@ -160,6 +161,10 @@ Options:
 *--no-breakdown*::
   Do not break down the consumption of the selected user or account.
 
+*--comments*::
+  Display the comment of users and accounts, when defined (see *comments*), on
+  a line starting with `#` below their row.
+
 *--hours*::
   Display values in hours instead of minutes.
 
@@ -182,6 +187,7 @@ slurm-quota stats alice
 slurm-quota stats --account hpc
 slurm-quota stats --all --hours
 slurm-quota stats --all --breakdown
+slurm-quota stats --all --comments
 slurm-quota stats alice --seconds
 slurm-quota stats alice --no-breakdown
 ....
@@ -230,7 +236,7 @@ slurm-quota role managers bob add hpc
 
 === adjust
 
-*slurm-quota adjust* *--user* <username> *--account* <account> (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int> | *--seconds* <signed_int>) [*--reason* <text>]
+*slurm-quota adjust* *--user* <username> *--account* <account> (*--cpu* | *--gpu*) (*--minutes* <signed_int> | *--hours* <signed_int> | *--seconds* <signed_int>) [*--reason* <text> [*--no-save-comment*]]
 
 Adjust consumed CPU/GPU time of one user on one account. Consumption is recorded
 per user/account pair: the adjustment changes both the user total and the account
@@ -262,7 +268,13 @@ Options:
   then reported in seconds instead of whole minutes.
 
 *--reason* <text>::
-  Reason of the adjustment, recorded in the service audit logs.
+  Reason of the adjustment, recorded in the service audit logs. The reason is
+  also saved in the comments of both the user and the account (see
+  *comments*), after a ` | ` separator when a comment is already defined,
+  unless *--no-save-comment* is given.
+
+*--no-save-comment*::
+  Do not save the reason in the comments of the user and the account.
 
 Notes:
 
@@ -279,7 +291,7 @@ slurm-quota adjust --user alice --account projX --cpu --seconds=-45
 
 === user-quota
 
-*slurm-quota user-quota* <username> <quota_minutes> [*--reason* <text>]
+*slurm-quota user-quota* <username> <quota_minutes> [*--reason* <text> [*--no-save-comment*]]
 
 Set user CPU quota in minutes (`-1` means unlimited). Requires a saved JWT
 token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
@@ -287,7 +299,12 @@ token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
 Options:
 
 *--reason* <text>::
-  Reason of the change, recorded in the service audit logs.
+  Reason of the change, recorded in the service audit logs. The reason is also
+  saved in the comment of the user (see *comments*), after a ` | ` separator
+  when a comment is already defined, unless *--no-save-comment* is given.
+
+*--no-save-comment*::
+  Do not save the reason in the comment of the user.
 
 Example:
 
@@ -297,7 +314,7 @@ slurm-quota user-quota alice 50000
 
 === account-quota
 
-*slurm-quota account-quota* <account> <quota_minutes> [*--reason* <text>]
+*slurm-quota account-quota* <account> <quota_minutes> [*--reason* <text> [*--no-save-comment*]]
 
 Set account CPU quota in minutes (`-1` means unlimited). Requires a saved JWT
 token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
@@ -305,7 +322,12 @@ token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
 Options:
 
 *--reason* <text>::
-  Reason of the change, recorded in the service audit logs.
+  Reason of the change, recorded in the service audit logs. The reason is also
+  saved in the comment of the account (see *comments*), after a ` | ` separator
+  when a comment is already defined, unless *--no-save-comment* is given.
+
+*--no-save-comment*::
+  Do not save the reason in the comment of the account.
 
 Example:
 
@@ -315,7 +337,7 @@ slurm-quota account-quota projX 200000
 
 === user-gpu-quota
 
-*slurm-quota user-gpu-quota* <username> <quota_gpu_minutes> [*--reason* <text>]
+*slurm-quota user-gpu-quota* <username> <quota_gpu_minutes> [*--reason* <text> [*--no-save-comment*]]
 
 Set user GPU quota in minutes (`-1` means unlimited). Requires a saved JWT
 token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
@@ -323,7 +345,12 @@ token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
 Options:
 
 *--reason* <text>::
-  Reason of the change, recorded in the service audit logs.
+  Reason of the change, recorded in the service audit logs. The reason is also
+  saved in the comment of the user (see *comments*), after a ` | ` separator
+  when a comment is already defined, unless *--no-save-comment* is given.
+
+*--no-save-comment*::
+  Do not save the reason in the comment of the user.
 
 Example:
 
@@ -333,7 +360,7 @@ slurm-quota user-gpu-quota alice 10000
 
 === account-gpu-quota
 
-*slurm-quota account-gpu-quota* <account> <quota_gpu_minutes> [*--reason* <text>]
+*slurm-quota account-gpu-quota* <account> <quota_gpu_minutes> [*--reason* <text> [*--no-save-comment*]]
 
 Set account GPU quota in minutes (`-1` means unlimited). Requires a saved JWT
 token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
@@ -341,12 +368,52 @@ token or `SLURM_QUOTA_TOKEN`, and operator or admin role.
 Options:
 
 *--reason* <text>::
-  Reason of the change, recorded in the service audit logs.
+  Reason of the change, recorded in the service audit logs. The reason is also
+  saved in the comment of the account (see *comments*), after a ` | ` separator
+  when a comment is already defined, unless *--no-save-comment* is given.
+
+*--no-save-comment*::
+  Do not save the reason in the comment of the account.
 
 Example:
 
 ....
 slurm-quota account-gpu-quota projX 50000
+....
+
+=== comments
+
+*slurm-quota comments* (*--user* <username> | *--account* <account>) (<comment> | *--clear*)
+
+Set the free text comment of a user or an account, or remove it with *--clear*.
+The comment must be a single line of at most 1000 characters. It is displayed
+by the *stats* command with *--comments* and in the web dashboard to everyone
+who can see the user or the account. The user or account is created in the
+database with default quotas when missing. Requires a saved JWT token or
+`SLURM_QUOTA_TOKEN`, and operator or admin role.
+
+Options:
+
+*--user* <username>::
+  Set the comment of this user.
+
+*--account* <account>::
+  Set the comment of this account.
+
+*--clear*::
+  Remove the comment.
+
+Notes:
+
+- `--user` and `--account` are mutually exclusive, one is required.
+- `<comment>` and `--clear` are mutually exclusive, one is required.
+
+Examples:
+
+....
+slurm-quota comments --user alice "PhD student, thesis until 2027"
+slurm-quota comments --account projX "Granted by allocation committee 2026-09"
+slurm-quota comments --account projX --clear
 ....
 
 === gpu-factors
