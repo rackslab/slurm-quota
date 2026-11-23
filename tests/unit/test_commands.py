@@ -11,7 +11,6 @@ from slurm_quota.client import ServiceHTTPError, ServiceUnreachableError
 from slurm_quota.commands import (
     RELOGIN_GUIDANCE,
     create_status_bar,
-    format_timestamp_with_timezone,
     prune_command,
     role_grant_command,
     role_list_command,
@@ -28,13 +27,6 @@ from slurm_quota.commands import (
 from slurm_quota.token import ClientToken, TokenPayload
 from tests.test_support import SlurmQuotaTestCase
 from tests.testing_utils import craft_jwt, dedent_lines
-
-
-class TestFormatTimestampWithTimezone(SlurmQuotaTestCase):
-    def test_format_timestamp_with_timezone(self):
-        self.assertEqual(format_timestamp_with_timezone(""), "N/A")
-        out = format_timestamp_with_timezone("2024-01-15T12:30:45")
-        self.assertIn("2024", out)
 
 
 class TestCreateStatusBar(SlurmQuotaTestCase):

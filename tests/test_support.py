@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import tempfile
+import time
 import unittest
 from contextlib import closing, contextmanager
 from pathlib import Path
@@ -19,6 +20,17 @@ def serve_conf_defs() -> Path:
 def web_assets_root() -> Path:
     """Path to web/ assets in the source tree for tests."""
     return Path(__file__).resolve().parents[1] / "web"
+
+
+@contextmanager
+def local_timezone(tz: str):
+    """Set the local time zone of the process to tz in the context."""
+    try:
+        with patch.dict(os.environ, {"TZ": tz}):
+            time.tzset()
+            yield
+    finally:
+        time.tzset()
 
 
 class SlurmQuotaTestCase(unittest.TestCase):

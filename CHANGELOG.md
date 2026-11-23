@@ -67,6 +67,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   of the job instead of default values of unmodified fields, and moved to the new account when the account of the job is
   modified (#131).
 - Error reported by CLI and web dashboard when the REST API is not reachable gives the API URL (#133).
+- Last updated times displayed by web dashboard in local time zone with time zone name, like in CLI, instead of UTC
+  without time zone (#136).
 
 ### Documentation
 

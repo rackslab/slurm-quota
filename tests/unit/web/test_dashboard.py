@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from slurm_quota.web.dashboard import decorate_breakdown, decorate_rows
-from tests.test_support import SlurmQuotaTestCase
+from tests.test_support import SlurmQuotaTestCase, local_timezone
 
 
 def _row(**overrides):
@@ -111,13 +111,14 @@ class TestDecorateBreakdown(SlurmQuotaTestCase):
         )
 
     def test_formats_consumption_in_display_unit(self):
-        alice, bob = self._entries()
+        with local_timezone("Europe/Paris"):
+            alice, bob = self._entries()
         self.assertEqual(alice["username"], "alice")
         self.assertEqual(alice["account"], "hpc")
         self.assertEqual(alice["cpu"]["consumed"], "90")
         self.assertEqual(alice["gpu"]["consumed"], "1")
-        self.assertEqual(alice["last_updated"], "2024-06-01T10:00:00")
-        self.assertEqual(bob["last_updated"], "n/a")
+        self.assertEqual(alice["last_updated"], "2024-06-01 12:00:00 CEST")
+        self.assertEqual(bob["last_updated"], "N/A")
 
     def test_user_rows_list_entries_by_account(self):
         rows = decorate_rows(

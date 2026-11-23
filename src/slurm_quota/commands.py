@@ -8,7 +8,6 @@ import getpass
 import logging
 import os
 import sys
-from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 from slurm_quota import auth
@@ -16,6 +15,7 @@ from slurm_quota.client import APIClient, ServiceHTTPError, ServiceUnreachableEr
 from slurm_quota.database import (
     prune_resources,
 )
+from slurm_quota.timestamps import format_timestamp_with_timezone
 from slurm_quota.token import ClientToken, format_epoch
 from slurm_quota.units import (
     HOURS,
@@ -58,34 +58,6 @@ def _handle_api_error(exc: ServiceHTTPError, *, forbidden_message: str) -> None:
 def _handle_unreachable_error(exc: ServiceUnreachableError) -> None:
     logger.error(str(exc))
     sys.exit(1)
-
-
-def format_timestamp_with_timezone(timestamp_str: Optional[str]) -> str:
-    """
-    Format a timestamp string to display with local timezone.
-
-    Args:
-        timestamp_str: UTC timestamp string from REST API in ISO format
-
-    Returns:
-        Formatted timestamp string with local timezone, or "N/A" if invalid
-    """
-    if not timestamp_str:
-        return "N/A"
-
-    try:
-        # ISO format from API without timezone - assume UTC
-        dt = datetime.fromisoformat(timestamp_str)
-        # Replace timezone info to treat as UTC
-        dt = dt.replace(tzinfo=timezone.utc)
-
-        # Convert to local timezone
-        local_dt = dt.astimezone()
-        # Format as YYYY-MM-DD HH:MM:SS TZ
-        return local_dt.strftime("%Y-%m-%d %H:%M:%S %Z")
-    except (ValueError, TypeError) as e:
-        logger.debug(f"Failed to parse timestamp '{timestamp_str}': {e}")
-        return "N/A"
 
 
 def create_status_bar(used: int, total: int, width: int = 20) -> str:

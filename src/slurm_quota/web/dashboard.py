@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from slurm_quota.timestamps import format_timestamp_with_timezone
 from slurm_quota.units import format_quota, format_seconds, usage_ratio
 
 
@@ -41,7 +42,7 @@ def decorate_breakdown(
         {
             "username": str(entry.get("username", "?")),
             "account": str(entry.get("account", "?")),
-            "last_updated": entry.get("last_updated") or "n/a",
+            "last_updated": format_timestamp_with_timezone(entry.get("last_updated")),
             "cpu": {
                 "consumed": format_seconds(
                     _parse_int(entry.get("consumed_cpu_seconds")), display_unit
@@ -98,7 +99,9 @@ def decorate_rows(
                 ],
                 "comment": str(item.get("comment") or ""),
                 "job_count": _parse_int(item.get("job_count")),
-                "last_updated": item.get("last_updated") or "n/a",
+                "last_updated": format_timestamp_with_timezone(
+                    item.get("last_updated")
+                ),
                 "cpu": {
                     "consumed": format_seconds(cpu_consumed, display_unit),
                     "preallocated": format_seconds(cpu_preallocated, display_unit),
