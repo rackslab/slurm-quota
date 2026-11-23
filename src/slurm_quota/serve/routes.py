@@ -21,6 +21,8 @@ import slurm_quota
 from slurm_quota.database import (
     active_app_token_exists,
     adjust_consumed_seconds as db_adjust_consumed_seconds,
+    append_account_comment,
+    append_user_comment,
     connect_database,
     create_app_token,
     get_app_token,
@@ -42,10 +44,12 @@ from slurm_quota.database import (
     revoke_manager as db_revoke_manager,
     revoke_manager_account as db_revoke_manager_account,
     revoke_operator as db_revoke_operator,
+    set_account_comment as db_set_account_comment,
     set_account_gpu_quota as db_set_account_gpu_quota,
     set_account_quota as db_set_account_quota,
     set_default_quota_settings,
     set_gpu_factor as db_set_gpu_factor,
+    set_user_comment as db_set_user_comment,
     set_user_gpu_quota as db_set_user_gpu_quota,
     set_user_quota as db_set_user_quota,
 )
@@ -64,6 +68,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger("slurm_quota")
 
 _MAX_REASON_LENGTH = 500
+
+_MAX_COMMENT_LENGTH = 1000
 
 _TRUE_QUERY_VALUES = ("1", "true", "yes")
 
@@ -196,6 +202,35 @@ def _parse_optional_reason(payload: dict[str, Any]) -> str | None:
             description=f"reason must be at most {_MAX_REASON_LENGTH} characters",
         )
     return reason
+
+
+def _parse_append_reason(payload: dict[str, Any], reason: str | None) -> str | None:
+    """Return the text to append to comments, the reason unless appending is
+    disabled with append_reason, None without reason."""
+    append_reason = payload.get("append_reason", True)
+    if not isinstance(append_reason, bool):
+        abort(400, description="append_reason must be a boolean")
+    return reason if append_reason else None
+
+
+def _parse_comment(payload: dict[str, Any]) -> str | None:
+    """Return the comment of payload, None to clear the comment."""
+    if "comment" not in payload:
+        abort(400, description="comment is required")
+    comment = payload["comment"]
+    if comment is None:
+        return None
+    if not isinstance(comment, str):
+        abort(400, description="comment must be a string or null")
+    comment = comment.strip()
+    if "\n" in comment or "\r" in comment:
+        abort(400, description="comment must be a single line")
+    if len(comment) > _MAX_COMMENT_LENGTH:
+        abort(
+            400,
+            description=f"comment must be at most {_MAX_COMMENT_LENGTH} characters",
+        )
+    return comment or None
 
 
 def health() -> Any:
@@ -482,6 +517,7 @@ def set_quota(entity: str, name: str, resource: str) -> Any:
     if not isinstance(quota_minutes, int) or quota_minutes < -1:
         abort(400, description="quota_minutes must be an integer >= -1")
     reason = _parse_optional_reason(payload)
+    append_comment = _parse_append_reason(payload, reason)
     try:
         if entity == "users":
             _validate_username(name)
@@ -511,6 +547,46 @@ def set_quota(entity: str, name: str, resource: str) -> Any:
         quota_minutes,
         "n/a" if reason is None else repr(reason),
     )
+    if append_comment:
+        try:
+            if entity == "users":
+                append_user_comment(name, append_comment)
+            else:
+                append_account_comment(name, append_comment)
+        except sqlite3.Error as exc:
+            logger.error("append reason to %s comment failed: %s", entity_label, exc)
+            return jsonify({"error": "db_error"}), 500
+    return "", 204
+
+
+@authorize("comments:write")
+def set_comment(entity: str, name: str) -> Any:
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        abort(400, description="Invalid JSON body")
+    comment = _parse_comment(payload)
+    if entity == "users":
+        _validate_username(name)
+        entity_label = "user"
+        setter = db_set_user_comment
+    elif entity == "accounts":
+        _validate_account(name)
+        entity_label = "account"
+        setter = db_set_account_comment
+    else:
+        abort(404)
+    try:
+        setter(name, comment)
+    except sqlite3.Error as exc:
+        logger.error("set %s comment failed: %s", entity_label, exc)
+        return jsonify({"error": "db_error"}), 500
+    logger.info(
+        "comment %s: manager=%s name=%s comment=%s",
+        entity_label,
+        cast(str, request.user.login),
+        name,
+        "n/a" if comment is None else repr(comment),
+    )
     return "", 204
 
 
@@ -527,6 +603,7 @@ def adjust_consumption(username: str, account: str, resource: str) -> Any:
     if not isinstance(delta_seconds, int):
         abort(400, description="delta_seconds must be an integer")
     reason = _parse_optional_reason(payload)
+    append_comment = _parse_append_reason(payload, reason)
     try:
         total = db_adjust_consumed_seconds(username, account, resource, delta_seconds)
     except ValueError as exc:
@@ -544,6 +621,13 @@ def adjust_consumption(username: str, account: str, resource: str) -> Any:
         total,
         "n/a" if reason is None else repr(reason),
     )
+    if append_comment:
+        try:
+            append_user_comment(username, append_comment)
+            append_account_comment(account, append_comment)
+        except sqlite3.Error as exc:
+            logger.error("append reason to comments failed: %s", exc)
+            return jsonify({"error": "db_error"}), 500
     return jsonify({"total_consumed_seconds": total})
 
 

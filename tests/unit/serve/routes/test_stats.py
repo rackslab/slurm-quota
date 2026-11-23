@@ -11,6 +11,8 @@ from slurm_quota.database import (
     grant_manager_account,
     grant_operator,
     init_database,
+    set_account_comment,
+    set_user_comment,
     update_user_and_account_resources,
 )
 from slurm_quota.serve.routes import StatsVisibility
@@ -169,6 +171,29 @@ class TestStatsRoute(ServeRoutesTestCase):
         body = json.loads(resp.data)
         self.assertEqual(len(body["users"]), 1)
         self.assertEqual(body["users"][0]["username"], "bob")
+
+    def test_user_sees_comments_of_own_user_and_accounts(self):
+        with self.db_connection() as conn:
+            self.insert_consumption(conn, "carol", "hpc")
+            self.insert_consumption(conn, "bob", "dev")
+            self.insert_associations(conn, ("carol", "hpc"), ("bob", "dev"))
+            conn.commit()
+        set_user_comment("carol", "PhD student")
+        set_account_comment("hpc", "Project X")
+        set_account_comment("dev", "Hidden")
+
+        client = app.test_client()
+        resp = client.get("/stats", headers=self._headers("carol"))
+        self.assertEqual(resp.status_code, 200)
+        body = json.loads(resp.data)
+        self.assertEqual(
+            [(user["username"], user["comment"]) for user in body["users"]],
+            [("carol", "PhD student")],
+        )
+        self.assertEqual(
+            [(account["account"], account["comment"]) for account in body["accounts"]],
+            [("hpc", "Project X")],
+        )
 
     def test_user_scoped_stats_default(self):
         init_database()

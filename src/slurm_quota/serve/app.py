@@ -110,6 +110,11 @@ class SlurmQuotaServeApp(Flask, RFLTokenizedWebApp):
             methods=["PUT"],
         )
         self.add_url_rule(
+            "/comments/<entity>/<name>",
+            view_func=routes.set_comment,
+            methods=["PUT"],
+        )
+        self.add_url_rule(
             "/consumption/<username>/<account>/<resource>",
             view_func=routes.adjust_consumption,
             methods=["PATCH"],

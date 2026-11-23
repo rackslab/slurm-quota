@@ -23,6 +23,7 @@ SCOPES: dict[str, str] = {
     "stats:read:all": "Read resource statistics of all users and accounts",
     "quotas:read": "Read default quotas and GPU factors",
     "quotas:write": "Set quotas, default quotas, GPU factors and adjust consumption",
+    "comments:write": "Set comments of users and accounts",
     "roles:read": "Read users roles and managers accounts",
     "roles:write": "Grant and revoke users roles and managers accounts",
 }
@@ -33,6 +34,7 @@ SCOPE_ROLES: dict[str, frozenset[str]] = {
     "stats:read:all": frozenset({"admin", "operator"}),
     "quotas:read": frozenset({"admin", "operator"}),
     "quotas:write": frozenset({"admin", "operator"}),
+    "comments:write": frozenset({"admin", "operator"}),
     "roles:read": frozenset({"admin"}),
     "roles:write": frozenset({"admin"}),
 }

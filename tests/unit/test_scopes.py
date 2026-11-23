@@ -17,7 +17,13 @@ class TestScopes(SlurmQuotaTestCase):
         )
         self.assertEqual(
             scopes_for_role("operator"),
-            ["stats:read:own", "stats:read:all", "quotas:read", "quotas:write"],
+            [
+                "stats:read:own",
+                "stats:read:all",
+                "quotas:read",
+                "quotas:write",
+                "comments:write",
+            ],
         )
         self.assertEqual(
             scopes_for_role("manager"), ["stats:read:own", "stats:read:managed"]
