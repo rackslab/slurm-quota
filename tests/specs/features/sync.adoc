@@ -1,0 +1,132 @@
+= Slurm associations synchronization (SYNC)
+
+`slurm-quota-sync` caches the user/account associations defined in Slurm in the Slurm-quota database. The cache is
+used to refuse jobs submitted with an account the user is not associated with, and to select users and accounts in
+statistics.
+
+// tag::FT-SYNC-001[]
+[[FT-SYNC-001]]
+== FT-SYNC-001 — Associations are synchronized by the systemd service
+
+Feature:: Slurm associations synchronization
+Interface:: Admin command
+Objective:: The synchronization service caches all user associations defined in Slurm and reports what it did.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. As root on `{controller}`, list the user associations defined in Slurm:
++
+[source,console,subs=attributes+]
+----
+# sacctmgr --noheader --parsable2 show associations format=user,account | grep -v '^|'
+----
+. Run the synchronization service:
++
+[source,console,subs=attributes+]
+----
+# systemctl start slurm-quota-sync.service
+# journalctl -u slurm-quota-sync.service --since "-1min"
+----
+Expected results::
+* `systemctl start` succeeds.
+* The service logs report `Synchronized <N> Slurm associations (<added> added, <removed> removed)`, where `<N>` is the
+number of user associations listed by `sacctmgr`.
+// end::FT-SYNC-001[]
+
+// tag::FT-SYNC-002[]
+[[FT-SYNC-002]]
+== FT-SYNC-002 — New association is picked up
+
+Feature:: Slurm associations synchronization
+Interface:: Admin command
+Objective:: An association added in Slurm is accepted by the submission plugin after the next synchronization.
+Prerequisites::
+* `{user_b}` is not associated with `{account_b}` in Slurm.
+Steps::
+. As `{user_b}`, submit a job on `{account_b}`:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_b} -p {cpu_partition} -n 1 -t 5 --wrap "sleep 30"
+----
+. As root on `{controller}`, add the association and run the synchronization:
++
+[source,console,subs=attributes+]
+----
+# sacctmgr -i add user {user_b} account={account_b}
+# systemctl start slurm-quota-sync.service
+----
+. As `{user_b}`, submit the same job again.
+Expected results::
+* The first submission is refused with message
+`job submission rejected: invalid account {account_b} for user {user_b}`.
+* The synchronization logs report `Added Slurm association {user_b}/{account_b}`.
+* The second submission is accepted.
+// end::FT-SYNC-002[]
+
+// tag::FT-SYNC-003[]
+[[FT-SYNC-003]]
+== FT-SYNC-003 — Removed association is dropped
+
+Feature:: Slurm associations synchronization
+Interface:: Admin command
+Objective:: An association removed from Slurm is refused by the submission plugin after the next synchronization.
+Prerequisites::
+* <<FT-SYNC-002>> passed: `{user_b}` is associated with `{account_b}`, with no pending or running job on it.
+Steps::
+. As root on `{controller}`, remove the association and run the synchronization:
++
+[source,console,subs=attributes+]
+----
+# sacctmgr -i delete user {user_b} account={account_b}
+# systemctl start slurm-quota-sync.service
+----
+. As `{user_b}`, submit a job on `{account_b}`.
+Expected results::
+* The synchronization logs report `Removed Slurm association {user_b}/{account_b}`.
+* The submission is refused with message `job submission rejected: invalid account {account_b} for user {user_b}`.
+// end::FT-SYNC-003[]
+
+// tag::FT-SYNC-004[]
+[[FT-SYNC-004]]
+== FT-SYNC-004 — Cache is kept when Slurm accounting is unavailable
+
+Feature:: Slurm associations synchronization
+Interface:: Admin command
+Objective:: When `sacctmgr` fails, the synchronization fails and leaves the cache unchanged, so jobs are not refused.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. As root on `{controller}`, stop `slurmdbd` and run the synchronization:
++
+[source,console,subs=attributes+]
+----
+# systemctl stop slurmdbd
+# systemctl start slurm-quota-sync.service
+----
+. As `{user_a}`, submit a job on `{account_a}`.
+. As root on `{controller}`, start `slurmdbd` again and run the synchronization.
+Expected results::
+* `systemctl start slurm-quota-sync.service` fails while `slurmdbd` is stopped, and its logs report the `sacctmgr`
+failure with `Sync command failed:`.
+* The job of `{user_a}` is accepted.
+* The synchronization succeeds after `slurmdbd` is started, with no added nor removed association.
+// end::FT-SYNC-004[]
+
+// tag::FT-SYNC-005[]
+[[FT-SYNC-005]]
+== FT-SYNC-005 — Synchronization is restricted to the slurm user
+
+Feature:: Slurm associations synchronization
+Interface:: Admin command
+Objective:: `slurm-quota-sync` refuses to run as another user than `slurm`.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. As root on `{controller}`, run `slurm-quota-sync`.
+. On `{controller}`, run `slurm-quota-sync` as the `slurm` user.
+Expected results::
+* The first command fails with exit code 1 and the error
+`Sync command can only be executed by slurm user, not by root`.
+* The second command succeeds with exit code 0.
+// end::FT-SYNC-005[]

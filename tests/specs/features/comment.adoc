@@ -1,0 +1,145 @@
+= Comments (COMMENT)
+
+Operators and admins attach a free text comment, a single line of at most 1000 characters, to users and accounts.
+Comments are visible in statistics to everyone who can see the user or the account.
+
+// tag::FT-COMMENT-001[]
+[[FT-COMMENT-001]]
+== FT-COMMENT-001 — Set and clear comments
+
+Feature:: Comments
+Interface:: CLI
+Objective:: Operators and admins can set and remove the comment of a user or an account.
+Prerequisites::
+* `{user_a}` and `{account_a}` have no comment.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota comments --user {user_a} "PhD student, thesis until 2027"
+$ slurm-quota comments --account {account_a} "Granted by allocation committee"
+$ slurm-quota stats --user {user_a} --comments
+$ slurm-quota comments --account {account_a} --clear
+$ slurm-quota stats --user {user_a} --comments
+----
+Expected results::
+* The commands print `Successfully set comment for user {user_a}`,
+`Successfully set comment for account {account_a}` and `Successfully removed comment of account {account_a}`.
+* The first `stats` shows `# PhD student, thesis until 2027` below `{user_a}` and
+`# Granted by allocation committee` below `{account_a}`.
+* The second `stats` shows the comment of `{user_a}` only.
+* Without `--comments`, `stats` shows no comment.
+// end::FT-COMMENT-001[]
+
+// tag::FT-COMMENT-002[]
+[[FT-COMMENT-002]]
+== FT-COMMENT-002 — Invalid comments are refused
+
+Feature:: Comments
+Interface:: CLI
+Objective:: Comments must be a single line of at most 1000 characters.
+Prerequisites::
+* The comment of `{user_a}` is `PhD student, thesis until 2027`.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota comments --user {user_a} "$(head -c 1001 /dev/zero | tr '\0' x)"
+$ slurm-quota comments --user {user_a} "$(printf 'line 1\nline 2')"
+$ slurm-quota comments --user {user_a} --account {account_a} "both"
+$ slurm-quota comments --user {user_a}
+----
+Expected results::
+* All commands fail with a non-zero exit code and an error message.
+* The comment of `{user_a}` is unchanged.
+// end::FT-COMMENT-002[]
+
+// tag::FT-COMMENT-003[]
+[[FT-COMMENT-003]]
+== FT-COMMENT-003 — Comments are visible to users
+
+Feature:: Comments
+Interface:: CLI
+Objective:: Users see the comments of themselves and their accounts.
+Prerequisites::
+* <<FT-COMMENT-001>> passed, and `{account_a}` comment is set to `Project A`.
+Steps::
+. As `{user_b}`, run `slurm-quota stats --comments`.
+. As `{user_a}`, run `slurm-quota stats --comments`.
+Expected results::
+* `{user_b}` sees the comment `Project A` of `{account_a}`, and no comment of `{user_a}` which is not listed.
+* `{user_a}` sees its own comment and the comment of `{account_a}`.
+// end::FT-COMMENT-003[]
+
+// tag::FT-COMMENT-004[]
+[[FT-COMMENT-004]]
+== FT-COMMENT-004 — Edit comments in the dashboard
+
+Feature:: Comments
+Interface:: Web dashboard
+Objective:: Comments are displayed in the dashboard, and operators and admins can edit them.
+Prerequisites::
+* <<FT-COMMENT-003>> passed.
+Steps::
+. Sign in the dashboard as `{admin_user}`.
+. Edit the comment of `{account_a}`, set `Project A, extended`, and click *Set*.
+. Edit the comment of `{user_a}`, empty the *Comment (empty to remove)* field, and click *Set*.
+. Sign in the dashboard as `{user_b}`.
+Expected results::
+* As `{admin_user}`, the dashboard shows `Project A, extended` for `{account_a}` and no comment for `{user_a}`.
+* As `{user_b}`, the dashboard shows the comment of `{account_a}`, without edit control.
+* `slurm-quota stats --all --comments` shows the same comments.
+// end::FT-COMMENT-004[]
+
+// tag::FT-COMMENT-005[]
+[[FT-COMMENT-005]]
+== FT-COMMENT-005 — Comments with the REST API
+
+Feature:: Comments
+Interface:: REST API
+Objective:: Comments can be set and removed with the REST API.
+Prerequisites::
+* `TOKEN` holds a token of `{admin_user}`.
+Steps::
+. Run:
++
+[source,console,subs=attributes+]
+----
+$ curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d '{"comment": "set by API"}' {api_url}comments/users/{user_b}
+$ curl -s -H "Authorization: Bearer $TOKEN" "{api_url}stats?username={user_b}"
+$ curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d '{"comment": null}' {api_url}comments/users/{user_b}
+$ curl -s -H "Authorization: Bearer $TOKEN" "{api_url}stats?username={user_b}"
+----
+Expected results::
+* The `comment` of `{user_b}` is `set by API` in the first statistics, and `null` in the second.
+// end::FT-COMMENT-005[]
+
+// tag::FT-COMMENT-006[]
+[[FT-COMMENT-006]]
+== FT-COMMENT-006 — Dashboard reasons are appended to existing comments
+
+Feature:: Comments
+Interface:: Web dashboard
+Objective:: Reasons of quota and consumption changes made in the dashboard are appended to existing comments, after a
+`|` separator, unless the append option is unchecked.
+Prerequisites::
+* The comment of `{user_a}` is `PhD student, thesis until 2027`, the comment of `{account_a}` is `Project A`.
+Steps::
+. Sign in the dashboard as `{admin_user}`.
+. On the row of `{account_a}`, click *Edit* in the CPU quota cell, enter `2000`, enter reason `quota extension`, keep
+*Append reason to comment* checked and click *Set*.
+. Expand the row of `{user_a}`, and on the breakdown row of `{account_a}`, click *Edit* in the CPU consumption cell,
+enter delta `10` in *Minutes*, reason `node failure refund`, keep *Append reason to user and account comments* checked,
+and click the submit button.
+. On the row of `{account_a}`, click *Edit* in the CPU quota cell, enter `3000`, enter reason `not in comment`, uncheck
+*Append reason to comment* and click *Set*.
+. Run `slurm-quota stats --user {user_a} --comments` as `{admin_user}`.
+Expected results::
+* The dashboard shows the comment `Project A | quota extension | node failure refund` for `{account_a}`, and
+`PhD student, thesis until 2027 | node failure refund` for `{user_a}`.
+* `stats` shows the same comments, without `not in comment`.
+// end::FT-COMMENT-006[]

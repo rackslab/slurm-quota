@@ -1,0 +1,201 @@
+= Statistics (STATS)
+
+Statistics report, for users and accounts, the consumed and preallocated CPU and GPU time, the number of jobs considered
+in preallocations, the quotas and a usage status. The consumption of a user can be broken down by account, and the
+consumption of an account by user. The visibility of statistics depends on the role, see the ROLE chapter.
+
+// tag::FT-STATS-001[]
+[[FT-STATS-001]]
+== FT-STATS-001 — Own statistics
+
+Feature:: Statistics
+Interface:: CLI
+Objective:: A user displays their own statistics, broken down by account, and the statistics of their accounts.
+Prerequisites::
+* `{user_a}` consumed time on `{account_a}` and `{account_b}` (for example after <<FT-CHARGE-006>>).
+Steps::
+. As `{user_a}`, run `slurm-quota stats`.
+Expected results::
+* A `USER` table lists `{user_a}` with CPU and GPU columns `CONSUMED`, `PREALLOC(JOBS)`, `QUOTA` and `STATUS`, and
+`LAST UPDATED`.
+* Below the row of `{user_a}`, breakdown rows list its consumption on `{account_a}` and on `{account_b}`.
+* An `ACCOUNT` table lists `{account_a}` and `{account_b}`.
+// end::FT-STATS-001[]
+
+// tag::FT-STATS-002[]
+[[FT-STATS-002]]
+== FT-STATS-002 — Statistics selectors
+
+Feature:: Statistics
+Interface:: CLI
+Objective:: Statistics can be selected by user, by account, or for all users and accounts.
+Prerequisites::
+* Same as <<FT-STATS-001>>.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota stats {user_b}
+$ slurm-quota stats --user {user_b}
+$ slurm-quota stats --account {account_b}
+$ slurm-quota stats --all
+$ slurm-quota stats --all --breakdown
+$ slurm-quota stats --user {user_a} --no-breakdown
+$ slurm-quota stats --user no-such-user
+----
+Expected results::
+* The first 2 commands give the same output: `{user_b}` and `{account_a}`.
+* `--account {account_b}` lists only the account `{account_b}`, with the breakdown of its consumption by user.
+* `--all` lists all users and accounts, without breakdown; `--all --breakdown` adds the breakdown rows.
+* `--no-breakdown` lists `{user_a}` and its accounts without breakdown rows.
+* `--user no-such-user` prints `No data found for user: no-such-user`.
+// end::FT-STATS-002[]
+
+// tag::FT-STATS-003[]
+[[FT-STATS-003]]
+== FT-STATS-003 — Statistics units
+
+Feature:: Statistics
+Interface:: CLI
+Objective:: Statistics are displayed in whole minutes by default, or in hours or seconds.
+Prerequisites::
+* `{user_a}` CPU consumption is exactly 5430 seconds (set with `slurm-quota adjust`), and CPU quota is 600 minutes.
+Steps::
+. As `{user_a}`, run `slurm-quota stats --no-breakdown`, `slurm-quota stats --no-breakdown --hours` and
+`slurm-quota stats --no-breakdown --seconds`.
+. Run `slurm-quota stats --hours --seconds`.
+Expected results::
+* The CPU consumption of `{user_a}` is displayed as `90` minutes (rounded down), `1.51` hours and `5430` seconds, and
+the quota as `600` minutes, `10.00` hours and `36000` seconds.
+* The status bar shows the same usage ratio in the 3 units.
+* `--hours --seconds` fails with exit code 2.
+// end::FT-STATS-003[]
+
+// tag::FT-STATS-004[]
+[[FT-STATS-004]]
+== FT-STATS-004 — Conflicting selectors are refused
+
+Feature:: Statistics
+Interface:: CLI
+Objective:: Mutually exclusive options of `stats` are refused.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota stats {user_a} --user {user_b}
+$ slurm-quota stats --user {user_a} --account {account_a}
+$ slurm-quota stats --breakdown --no-breakdown
+----
+Expected results::
+* All commands fail with exit code 2 and an error message about the conflicting options.
+// end::FT-STATS-004[]
+
+// tag::FT-STATS-005[]
+[[FT-STATS-005]]
+== FT-STATS-005 — Status bars and colors
+
+Feature:: Statistics
+Interface:: CLI
+Objective:: Status bars show the ratio of consumed and preallocated time over the quota, in colors unless `NO_COLOR` is
+set or when the output is not a terminal.
+Prerequisites::
+* `{user_a}` CPU quota is 100 minutes, with 50 consumed CPU minutes and a held job preallocating 20 CPU minutes.
+Steps::
+. As `{user_a}`, run `slurm-quota stats --no-breakdown` in a terminal.
+. Run `NO_COLOR=1 slurm-quota stats --no-breakdown`.
+. Run `slurm-quota stats --no-breakdown | cat`.
+Expected results::
+* The CPU status of `{user_a}` shows a usage of 70%, with colors in the first output.
+* The second and third outputs have no color escape sequences.
+// end::FT-STATS-005[]
+
+// tag::FT-STATS-006[]
+[[FT-STATS-006]]
+== FT-STATS-006 — Statistics with the REST API
+
+Feature:: Statistics
+Interface:: REST API
+Objective:: `GET /stats` returns users and accounts statistics, filtered by user or account, optionally with the
+breakdown of consumption.
+Prerequisites::
+* `TOKEN` holds a token of `{admin_user}`.
+Steps::
+. Run:
++
+[source,console,subs=attributes+]
+----
+$ curl -s -H "Authorization: Bearer $TOKEN" "{api_url}stats?username={user_a}"
+$ curl -s -H "Authorization: Bearer $TOKEN" "{api_url}stats?account={account_a}&breakdown=true"
+$ curl -s -o /dev/null -w '%\{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+    "{api_url}stats?username={user_a}&account={account_a}"
+----
+Expected results::
+* The first response has `users` with `{user_a}` only, and `accounts` with `{account_a}` and `{account_b}`. Entries
+have `total_consumed_cpu_seconds`, `total_preallocated_cpu_seconds`, their GPU counterparts, `quota_cpu_minutes`,
+`quota_gpu_minutes` and `comment`.
+* The second response has `accounts` with `{account_a}` only, and a `breakdown` array with the consumption of each user
+on `{account_a}` (`username`, `account`, `consumed_cpu_seconds`, `consumed_gpu_seconds`, `last_updated`).
+* The third request returns HTTP status `400`.
+// end::FT-STATS-006[]
+
+// tag::FT-STATS-007[]
+[[FT-STATS-007]]
+== FT-STATS-007 — Statistics in the dashboard
+
+Feature:: Statistics
+Interface:: Web dashboard
+Objective:: The dashboard shows users and accounts statistics with usage bars, with filters and units.
+Prerequisites::
+* Same as <<FT-STATS-001>>.
+Steps::
+. Sign in the dashboard as `{admin_user}`.
+. Check the *Users* and *Accounts* tables.
+. Enter `{user_a}` in *Username* and apply the filter; then clear it, enter `{account_a}` in *Account* and apply it.
+. Select the *Hours* unit, then *Seconds*.
+Expected results::
+* The tables show consumed, preallocated and quota values with usage bars, matching `slurm-quota stats --all`.
+* The *Username* filter shows `{user_a}` and its accounts only, the *Account* filter shows `{account_a}` only.
+* The values are converted in the selected unit, and match `slurm-quota stats --hours` and `--seconds`.
+// end::FT-STATS-007[]
+
+// tag::FT-STATS-008[]
+[[FT-STATS-008]]
+== FT-STATS-008 — Consumption breakdown in the dashboard
+
+Feature:: Statistics
+Interface:: Web dashboard
+Objective:: User rows can be expanded to show the consumption of the user on each account, and account rows to show
+the consumption of each user on the account.
+Prerequisites::
+* Same as <<FT-STATS-001>>.
+Steps::
+. Sign in the dashboard as `{admin_user}`.
+. Expand the row of `{user_a}`, then the row of `{account_a}`.
+Expected results::
+* The expanded row of `{user_a}` lists its consumption on `{account_a}` and `{account_b}`.
+* The expanded row of `{account_a}` lists the consumption of `{user_a}` and `{user_b}`.
+* The values match `slurm-quota stats --all --breakdown`.
+// end::FT-STATS-008[]
+
+// tag::FT-STATS-009[]
+[[FT-STATS-009]]
+== FT-STATS-009 — Dashboard auto-refresh
+
+Feature:: Statistics
+Interface:: Web dashboard
+Objective:: The dashboard can refresh statistics periodically.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. Sign in the dashboard as `{user_a}`, check *Enable auto-refresh* and select the interval *30 seconds*.
+. In a shell as `{user_a}`, submit a held job, then wait for 30 seconds without reloading the page.
+. Cancel the job.
+Expected results::
+* Without manual reload, the preallocation of the job appears in the dashboard within 30 seconds, then disappears after
+the cancellation.
+* The auto-refresh setting is kept after a manual reload of the page.
+// end::FT-STATS-009[]

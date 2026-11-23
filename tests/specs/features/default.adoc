@@ -1,0 +1,144 @@
+= Default quotas (DEFAULT)
+
+Default quotas are applied to users and accounts when Slurm-quota records them for the first time, for example at
+their first job submission. Changing default quotas does not modify existing users and accounts. The web dashboard
+does not manage default quotas.
+
+// tag::FT-DEFAULT-001[]
+[[FT-DEFAULT-001]]
+== FT-DEFAULT-001 — Show default quotas
+
+Feature:: Default quotas
+Interface:: CLI
+Objective:: Operators and admins can display the default quotas.
+Prerequisites::
+* Default quotas were never changed.
+Steps::
+. As `{admin_user}`, run `slurm-quota default-quotas`.
+Expected results::
+* The command prints `Default Quotas For New Entities` with `user_cpu_minutes`, `user_gpu_minutes`,
+`account_cpu_minutes` and `account_gpu_minutes`, all unlimited (`∞`).
+// end::FT-DEFAULT-001[]
+
+// tag::FT-DEFAULT-002[]
+[[FT-DEFAULT-002]]
+== FT-DEFAULT-002 — Set default quotas
+
+Feature:: Default quotas
+Interface:: CLI
+Objective:: Operators and admins can set one or more default quotas, other default quotas are unchanged.
+Prerequisites::
+* <<FT-DEFAULT-001>> passed.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota set-default-quotas --user-cpu 600 --account-cpu 1200
+$ slurm-quota default-quotas
+$ slurm-quota set-default-quotas --user-gpu 60 --account-gpu 120
+$ slurm-quota default-quotas
+----
+Expected results::
+* Both `set-default-quotas` commands print `Successfully updated default quotas`.
+* After the first change, `user_cpu_minutes` is `600`, `account_cpu_minutes` is `1200`, and GPU default quotas are
+still unlimited.
+* After the second change, `user_gpu_minutes` is `60`, `account_gpu_minutes` is `120`, and CPU default quotas are
+still `600` and `1200`.
+// end::FT-DEFAULT-002[]
+
+// tag::FT-DEFAULT-003[]
+[[FT-DEFAULT-003]]
+== FT-DEFAULT-003 — Invalid default quotas are refused
+
+Feature:: Default quotas
+Interface:: CLI
+Objective:: Default quotas must be positive integers or `-1`, and at least one must be given.
+Prerequisites::
+* <<FT-DEFAULT-002>> passed.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota set-default-quotas
+$ slurm-quota set-default-quotas --user-cpu -5
+$ slurm-quota set-default-quotas --user-cpu abc
+$ slurm-quota default-quotas
+----
+Expected results::
+* The three `set-default-quotas` commands fail with a non-zero exit code and an error message.
+* Default quotas are unchanged (`600`, `60`, `1200`, `120`).
+// end::FT-DEFAULT-003[]
+
+// tag::FT-DEFAULT-004[]
+[[FT-DEFAULT-004]]
+== FT-DEFAULT-004 — Default quotas are applied to new users and accounts
+
+Feature:: Default quotas
+Interface:: Slurm
+Objective:: A user and an account recorded for the first time at job submission get the default quotas.
+Prerequisites::
+* <<FT-DEFAULT-002>> passed.
+* `{new_user}` and `{new_account}` are associated in Slurm and synchronized, and unknown to Slurm-quota
+(`slurm-quota stats --all` does not list them).
+Steps::
+. As `{new_user}`, submit a job within the default quotas:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {new_account} -p {cpu_partition} -n 1 -t 5 --wrap "sleep 30"
+----
+. As `{admin_user}`, run `slurm-quota stats --user {new_user}` and `slurm-quota stats --account {new_account}`.
+Expected results::
+* The job is accepted.
+* `{new_user}` has CPU quota `600` and GPU quota `60` minutes.
+* `{new_account}` has CPU quota `1200` and GPU quota `120` minutes.
+// end::FT-DEFAULT-004[]
+
+// tag::FT-DEFAULT-005[]
+[[FT-DEFAULT-005]]
+== FT-DEFAULT-005 — Default quotas do not modify existing users and accounts
+
+Feature:: Default quotas
+Interface:: CLI
+Objective:: Changing default quotas leaves the quotas of known users and accounts unchanged.
+Prerequisites::
+* <<FT-DEFAULT-004>> passed.
+Steps::
+. As `{admin_user}`, set all default quotas to unlimited:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota set-default-quotas --user-cpu -1 --user-gpu -1 --account-cpu -1 --account-gpu -1
+----
+. Run `slurm-quota stats --user {new_user}` and `slurm-quota stats --account {new_account}`.
+Expected results::
+* All default quotas are unlimited (`slurm-quota default-quotas`).
+* `{new_user}` and `{new_account}` keep the quotas of <<FT-DEFAULT-004>>.
+// end::FT-DEFAULT-005[]
+
+// tag::FT-DEFAULT-006[]
+[[FT-DEFAULT-006]]
+== FT-DEFAULT-006 — Read and update default quotas with the REST API
+
+Feature:: Default quotas
+Interface:: REST API
+Objective:: Default quotas can be read and partially updated with the REST API.
+Prerequisites::
+* <<FT-DEFAULT-005>> passed.
+* `TOKEN` holds a token of `{admin_user}`.
+Steps::
+. Run:
++
+[source,console,subs=attributes+]
+----
+$ curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d '{"user_cpu_minutes": 300}' {api_url}quotas/defaults
+$ curl -s -H "Authorization: Bearer $TOKEN" {api_url}quotas/defaults
+----
+. Restore the default quota with `slurm-quota set-default-quotas --user-cpu -1`.
+Expected results::
+* The `PUT` request succeeds.
+* The `GET` request returns `user_cpu_minutes` `300`, and `-1` for the three other default quotas.
+// end::FT-DEFAULT-006[]

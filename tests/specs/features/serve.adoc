@@ -1,0 +1,80 @@
+= REST API service (SERVE)
+
+The REST API service runs on `{controller}`, started on demand by the systemd socket `slurm-quota.socket` and stopped
+after a period of inactivity.
+
+// tag::FT-SERVE-001[]
+[[FT-SERVE-001]]
+== FT-SERVE-001 — Service is started on demand
+
+Feature:: REST API service
+Interface:: Admin command
+Objective:: The service is started by the first connection to the socket, and answers the health check.
+Prerequisites::
+* `slurm-quota.socket` is active, `slurm-quota.service` is inactive (stop it if needed).
+Steps::
+. As root on `{controller}`, run `systemctl is-active slurm-quota.service`.
+. From `{login_node}`, run `curl -s -w '\n%\{http_code}\n' {api_url}health`.
+. As root on `{controller}`, run `systemctl is-active slurm-quota.service` again, and
+`ps -o user= -C slurm-quota-serve`.
+Expected results::
+* The service is `inactive` before the request, and `active` after it.
+* The health check returns HTTP status `200`.
+* The service runs as user `slurm`.
+// end::FT-SERVE-001[]
+
+// tag::FT-SERVE-002[]
+[[FT-SERVE-002]]
+== FT-SERVE-002 — Service stops after inactivity
+
+Feature:: REST API service
+Interface:: Admin command
+Objective:: The service stops after the idle timeout (10 minutes by default), and is started again on the next request.
+Prerequisites::
+* <<FT-SERVE-001>> passed, default idle timeout.
+Steps::
+. Send no request to the REST API (close dashboard pages with auto-refresh) for 11 minutes.
+. As root on `{controller}`, run `systemctl is-active slurm-quota.service`.
+. As `{user_a}`, run `slurm-quota stats`.
+Expected results::
+* The service is `inactive` after 11 minutes without request.
+* `stats` succeeds, and the service is `active` again.
+// end::FT-SERVE-002[]
+
+// tag::FT-SERVE-003[]
+[[FT-SERVE-003]]
+== FT-SERVE-003 — Dump the service configuration
+
+Feature:: REST API service
+Interface:: Admin command
+Objective:: The resolved configuration of the service can be displayed, with passwords masked.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. As root on `{controller}`, run `slurm-quota-serve --dump-config`.
+. As root, start the service on another port: `slurm-quota-serve --port 9999`.
+Expected results::
+* The first command prints the configuration, with `authentication.method` `ldap` and `{admin_user}` in
+`authorization.admins`. Passwords, if any, are masked.
+* The second command fails with exit code 1, as the service must run as `slurm`.
+// end::FT-SERVE-003[]
+
+// tag::FT-SERVE-004[]
+[[FT-SERVE-004]]
+== FT-SERVE-004 — Clients report an unreachable service
+
+Feature:: REST API service
+Interface:: CLI
+Objective:: The CLI and the dashboard report clearly when the REST API is not reachable.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. As root on `{controller}`, stop the socket and the service: `systemctl stop slurm-quota.socket slurm-quota.service`.
+. As `{user_a}`, run `slurm-quota stats`.
+. Open `{web_url}` signed in as `{user_a}`.
+. Start the socket again: `systemctl start slurm-quota.socket`.
+Expected results::
+* `stats` fails with exit code 1 and an error reporting the REST API is unreachable, with its URL.
+* The dashboard shows an error page or message about the unavailable service.
+* After the socket is started again, `stats` and the dashboard work.
+// end::FT-SERVE-004[]

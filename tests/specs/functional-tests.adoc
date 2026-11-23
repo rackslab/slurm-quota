@@ -1,0 +1,182 @@
+= Slurm-quota functional tests specification
+:doctype: book
+:toc: left
+:toclevels: 2
+:sectnums:
+:sectnumlevels: 2
+:icons: font
+// Placeholders. Each site overrides these values, for example with
+// `asciidoctor -a user_a=alice ...` or by including a testbed profile.
+ifndef::user_a[:user_a: <user_a>]
+ifndef::user_b[:user_b: <user_b>]
+ifndef::new_user[:new_user: <new_user>]
+ifndef::account_a[:account_a: <account_a>]
+ifndef::account_b[:account_b: <account_b>]
+ifndef::new_account[:new_account: <new_account>]
+ifndef::manager_user[:manager_user: <manager_user>]
+ifndef::operator_user[:operator_user: <operator_user>]
+ifndef::admin_user[:admin_user: <admin_user>]
+ifndef::cpu_partition[:cpu_partition: <cpu_partition>]
+ifndef::gpu_partition[:gpu_partition: <gpu_partition>]
+ifndef::gpu_type_1[:gpu_type_1: <gpu_type_1>]
+ifndef::gpu_type_2[:gpu_type_2: <gpu_type_2>]
+ifndef::controller[:controller: <controller>]
+ifndef::login_node[:login_node: <login_node>]
+ifndef::api_url[:api_url: <api_url>]
+ifndef::web_url[:web_url: <web_url>]
+
+[preface]
+== Introduction
+
+This document specifies the functional tests of Slurm-quota. They check the features of the product end-to-end, on a
+real Slurm cluster with Slurm-quota installed and configured as documented in the README and the man pages.
+
+The tests are generic: they do not depend on a particular cluster, operating system or deployment tool. Every
+site-specific value (user names, accounts, partitions, GPU types, hosts, URLs) is a placeholder written between angle
+brackets, for example `{user_a}`. A site running the tests provides the values of the placeholders and reports the
+results of each test by its identifier.
+
+=== Test case structure
+
+Each test case has a stable identifier `FT-<AREA>-<NNN>`, which is never renumbered nor reused, and these fields:
+
+Feature:: The feature of Slurm-quota covered by the test.
+Interface:: How the feature is exercised:
+`Slurm` (job submission, modification and completion with the Slurm commands),
+`CLI` (the `slurm-quota` command),
+`REST API` (HTTP requests to `slurm-quota-serve`),
+`Web dashboard` (the `slurm-quota-web` application in a browser) or
+`Admin command` (`slurm-quota-sync`, `slurm-quota-prune`, `slurm-quota-reallocate`, `slurm-quota-token`, systemd units
+on the controller).
+Objective:: What the test demonstrates.
+Prerequisites:: The state required before the steps, in addition to the global prerequisites.
+Steps:: The actions to perform, in order.
+Expected results:: What must be observed for the test to pass.
+
+A feature available through several interfaces is tested once per interface, in the same feature area.
+
+=== Test results
+
+Each test gets one of these statuses:
+
+PASS:: All expected results are observed.
+FAIL:: At least one expected result is not observed.
+BLOCKED:: The test cannot be performed because a prerequisite cannot be met, for example after the failure of another
+test.
+SKIPPED:: The test is not applicable to the site, for example a feature disabled on purpose.
+
+== Test environment
+
+=== Placeholders
+
+[cols="1m,3"]
+|===
+|Placeholder |Description
+
+|{user_a}
+|Regular user, associated in Slurm with `{account_a}` and `{account_b}`.
+
+|{user_b}
+|Regular user, associated in Slurm with `{account_a}` only.
+
+|{new_user}
+|User associated in Slurm with `{new_account}`, never seen by Slurm-quota before the tests that use it.
+
+|{account_a}
+|Slurm account, associated with `{user_a}` and `{user_b}`.
+
+|{account_b}
+|Slurm account, associated with `{user_a}` only.
+
+|{new_account}
+|Slurm account, never seen by Slurm-quota before the tests that use it.
+
+|{manager_user}
+|User without any role at the start of the tests, granted the manager role by the tests.
+
+|{operator_user}
+|User without any role at the start of the tests, granted the operator role by the tests.
+
+|{admin_user}
+|User listed in `[authorization] admins` of the REST API configuration.
+
+|{cpu_partition}
+|Slurm partition with CPU-only nodes.
+
+|{gpu_partition}
+|Slurm partition with nodes providing GPUs of types `{gpu_type_1}` and `{gpu_type_2}`.
+
+|{gpu_type_1}, {gpu_type_2}
+|Two GPU types, as named in Slurm GRES (`gres/gpu:<type>`).
+
+|{controller}
+|Host running `slurmctld`, `slurm-quota-serve` and the Slurm-quota database.
+
+|{login_node}
+|Host where users submit jobs and run the `slurm-quota` command.
+
+|{api_url}
+|Base URL of the REST API, as set in `SLURM_QUOTA_URL`.
+
+|{web_url}
+|Base URL of the web dashboard.
+|===
+
+All users exist in the directory (LDAP) with known passwords, and can log in on `{login_node}`.
+
+=== Global prerequisites
+
+. Slurm is running with accounting (`slurmdbd`), and the Slurm associations listed in the placeholders table exist.
+. `AccountingStorageTRES` tracks `gres/gpu:{gpu_type_1}` and `gres/gpu:{gpu_type_2}`.
+. The Slurm configuration enables the Slurm-quota plugins: `JobSubmitPlugins=lua` with the Slurm-quota
+`job_submit.lua`, `JobCompType=jobcomp/script` with `JobCompLoc` set to `slurm-quota-charge-wrapper`.
+. `slurm-quota.socket` is enabled on `{controller}`, with LDAP authentication (`authentication.method=ldap`), and
+`{admin_user}` in `[authorization] admins`.
+. `slurm-quota-sync.timer` is enabled on `{controller}`, and a first synchronization succeeded.
+. The `slurm-quota` command is installed on `{login_node}`, with `SLURM_QUOTA_URL` set to `{api_url}`.
+. The web dashboard is reachable at `{web_url}`, with LDAP login (no service token).
+. No GPU load factor is configured: the factor of all GPU types is the default `1.0`.
+
+=== Conventions
+
+* _"As `<user>`"_ means: in a shell on `{login_node}` as this user, with a valid token saved by
+`slurm-quota login --save` (see <<FT-AUTH-001>>), or in a browser session on the dashboard signed in as this user.
+* _"As root on `{controller}`"_ means: in a root shell on the controller.
+* _"Set quota"_ prerequisites are performed by `{admin_user}` with the quota commands of the `slurm-quota` CLI. A quota
+of `-1` means unlimited. Unless stated otherwise, all quotas involved in a test are unlimited before its
+prerequisites are applied.
+* Unless stated otherwise, the consumption of the users and accounts involved in a test is reset to zero before the
+test with `slurm-quota adjust`, and they have no pending or running job.
+* CPU minutes requested by a job are `number of tasks × time limit in minutes`. GPU minutes requested by a job are
+`number of GPUs × time limit in minutes × GPU load factor`. Consumed CPU time is `allocated CPUs × elapsed time`, as
+reported by `sacct` (`AllocCPUS`, `Elapsed`).
+* The tests are written to be run in the order of this document. Tests in a feature area may rely on the state left
+by previous tests of the same area, as stated in their prerequisites.
+
+include::features/sync.adoc[leveloffset=+1]
+
+include::features/default.adoc[leveloffset=+1]
+
+include::features/submit.adoc[leveloffset=+1]
+
+include::features/charge.adoc[leveloffset=+1]
+
+include::features/gpufactor.adoc[leveloffset=+1]
+
+include::features/quota.adoc[leveloffset=+1]
+
+include::features/adjust.adoc[leveloffset=+1]
+
+include::features/stats.adoc[leveloffset=+1]
+
+include::features/comment.adoc[leveloffset=+1]
+
+include::features/auth.adoc[leveloffset=+1]
+
+include::features/role.adoc[leveloffset=+1]
+
+include::features/serve.adoc[leveloffset=+1]
+
+include::features/prune.adoc[leveloffset=+1]
+
+include::features/reallocate.adoc[leveloffset=+1]

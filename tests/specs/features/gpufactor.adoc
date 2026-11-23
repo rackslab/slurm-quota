@@ -1,0 +1,146 @@
+= GPU load factors (GPUFACTOR)
+
+GPU load factors weight the GPU minutes by GPU type, both for the preallocation at submission and for the consumption at
+completion: billed GPU minutes are `number of GPUs × minutes × factor`. The default factor is `1.0` for GPU types
+without factor, and can be changed with the special type `default`. The web dashboard does not manage GPU factors.
+
+// tag::FT-GPUFACTOR-001[]
+[[FT-GPUFACTOR-001]]
+== FT-GPUFACTOR-001 — Show and set GPU factors
+
+Feature:: GPU load factors
+Interface:: CLI
+Objective:: Operators and admins can display and set the load factors of GPU types.
+Prerequisites::
+* No GPU factor is configured.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota gpu-factors
+$ slurm-quota set-gpu-factor {gpu_type_1} 0.5
+$ slurm-quota gpu-factors
+----
+Expected results::
+* The first `gpu-factors` prints `GPU Charging Factors` with the `default` factor `1.000` and no other GPU type.
+* `set-gpu-factor` succeeds.
+* The second `gpu-factors` reports `{gpu_type_1}` with factor `0.500`, and `default` with factor `1.000`.
+// end::FT-GPUFACTOR-001[]
+
+// tag::FT-GPUFACTOR-002[]
+[[FT-GPUFACTOR-002]]
+== FT-GPUFACTOR-002 — Invalid GPU factors are refused
+
+Feature:: GPU load factors
+Interface:: CLI
+Objective:: GPU factors must be positive numbers.
+Prerequisites::
+* <<FT-GPUFACTOR-001>> passed.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota set-gpu-factor {gpu_type_1} 0
+$ slurm-quota set-gpu-factor {gpu_type_1} -1
+$ slurm-quota set-gpu-factor {gpu_type_1} abc
+$ slurm-quota gpu-factors
+----
+Expected results::
+* The 3 `set-gpu-factor` commands fail with a non-zero exit code and an error message.
+* The factor of `{gpu_type_1}` is still `0.5`.
+// end::FT-GPUFACTOR-002[]
+
+// tag::FT-GPUFACTOR-003[]
+[[FT-GPUFACTOR-003]]
+== FT-GPUFACTOR-003 — Preallocation is weighted by GPU factors
+
+Feature:: GPU load factors
+Interface:: Slurm
+Objective:: The GPU minutes preallocated and checked against quotas at submission are weighted by the factor of the
+requested GPU type.
+Prerequisites::
+* <<FT-GPUFACTOR-001>> passed: factor of `{gpu_type_1}` is `0.5`, `{gpu_type_2}` has no factor.
+* `{user_a}` GPU quota is 15 minutes, with no GPU consumption nor preallocation.
+Steps::
+. As `{user_a}`, submit held jobs of 2 GPUs for 10 minutes:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -H -A {account_a} -p {gpu_partition} -n 1 -t 10 --gpus={gpu_type_1}:2 --wrap "sleep 60"
+$ sbatch -H -A {account_a} -p {gpu_partition} -n 1 -t 10 --gpus={gpu_type_2}:2 --wrap "sleep 60"
+----
+. Run `slurm-quota stats`, then cancel the jobs.
+Expected results::
+* The job on `{gpu_type_1}` is accepted, with 10 preallocated GPU minutes (2 × 10 × 0.5).
+* The job on `{gpu_type_2}` is refused with message
+`job submission rejected due to user GPU quota (requested: 20 GPU mins, available: 5 GPU mins)`.
+// end::FT-GPUFACTOR-003[]
+
+// tag::FT-GPUFACTOR-004[]
+[[FT-GPUFACTOR-004]]
+== FT-GPUFACTOR-004 — Consumption is weighted by GPU factors
+
+Feature:: GPU load factors
+Interface:: Slurm
+Objective:: The GPU time charged at completion is weighted by the factor of the allocated GPU type.
+Prerequisites::
+* <<FT-GPUFACTOR-001>> passed: factor of `{gpu_type_1}` is `0.5`.
+* `{user_a}` GPU quota is unlimited, with no GPU consumption nor preallocation.
+Steps::
+. As `{user_a}`, submit a job with 2 GPUs of type `{gpu_type_1}` running for about 2 minutes, and wait for its
+completion.
+. Get its elapsed time with `sacct -j <jobid> -X --noheader --format=ElapsedRaw`.
+. Run `slurm-quota stats --seconds`.
+Expected results::
+* The consumed GPU time of `{user_a}` is `2 × ElapsedRaw × 0.5` seconds.
+// end::FT-GPUFACTOR-004[]
+
+// tag::FT-GPUFACTOR-005[]
+[[FT-GPUFACTOR-005]]
+== FT-GPUFACTOR-005 — Default GPU factor
+
+Feature:: GPU load factors
+Interface:: Slurm
+Objective:: The factor of type `default` applies to GPU types without factor.
+Prerequisites::
+* <<FT-GPUFACTOR-001>> passed.
+* `{user_a}` GPU quota is unlimited, with no GPU consumption nor preallocation.
+Steps::
+. As `{admin_user}`, run `slurm-quota set-gpu-factor default 2`.
+. As `{user_a}`, submit held jobs of 1 GPU for 10 minutes, one on `{gpu_type_1}` and one on `{gpu_type_2}`, then run
+`slurm-quota stats` and cancel the jobs.
+. As `{admin_user}`, restore the factors: `slurm-quota set-gpu-factor default 1` and
+`slurm-quota set-gpu-factor {gpu_type_1} 1`.
+Expected results::
+* `slurm-quota gpu-factors` reports `default` with factor `2.000`.
+* The preallocation of `{user_a}` is 25 GPU minutes: 5 for `{gpu_type_1}` (1 × 10 × 0.5) and 20 for `{gpu_type_2}`
+(1 × 10 × 2).
+// end::FT-GPUFACTOR-005[]
+
+// tag::FT-GPUFACTOR-006[]
+[[FT-GPUFACTOR-006]]
+== FT-GPUFACTOR-006 — GPU factors with the REST API
+
+Feature:: GPU load factors
+Interface:: REST API
+Objective:: GPU factors can be read and set with the REST API.
+Prerequisites::
+* `TOKEN` holds a token of `{admin_user}`.
+Steps::
+. Run:
++
+[source,console,subs=attributes+]
+----
+$ curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d '{"factor": 0.8}' {api_url}factors/gpu/{gpu_type_2}
+$ curl -s -H "Authorization: Bearer $TOKEN" {api_url}factors/gpu
+$ curl -s -o /dev/null -w '%\{http_code}\n' -X PUT -H "Authorization: Bearer $TOKEN" \
+    -H 'Content-Type: application/json' -d '{"factor": -1}' {api_url}factors/gpu/{gpu_type_2}
+----
+. Restore the factor with `slurm-quota set-gpu-factor {gpu_type_2} 1`.
+Expected results::
+* The `GET` request returns `{"default_factor": 1.0, "factors": {...}}` with `0.8` for `{gpu_type_2}`.
+* The `PUT` request with a negative factor returns HTTP status `400`.
+// end::FT-GPUFACTOR-006[]

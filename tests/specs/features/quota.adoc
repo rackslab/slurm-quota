@@ -1,0 +1,170 @@
+= Quotas management (QUOTA)
+
+Operators and admins set the CPU and GPU quotas of users and accounts, in minutes, `-1` meaning unlimited. An optional
+reason is recorded in the audit logs of the REST API service, and appended to the comment of the user or account unless
+asked otherwise.
+
+// tag::FT-QUOTA-001[]
+[[FT-QUOTA-001]]
+== FT-QUOTA-001 — Set CPU and GPU quotas of users and accounts
+
+Feature:: Quotas management
+Interface:: CLI
+Objective:: Operators and admins can set the CPU and GPU quotas of users and accounts, to a number of minutes or
+unlimited.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota user-quota {user_a} 1000
+$ slurm-quota user-gpu-quota {user_a} 100
+$ slurm-quota account-quota {account_a} 5000
+$ slurm-quota account-gpu-quota {account_a} 500
+$ slurm-quota stats --user {user_a} --no-breakdown
+$ slurm-quota stats --account {account_a} --no-breakdown
+----
+. Set the same quotas to `-1`, then run the same `stats` commands.
+Expected results::
+* The commands print `Successfully set quota for user {user_a}: 1000 CPU minutes`,
+`Successfully set GPU quota for user {user_a}: 100 GPU minutes`,
+`Successfully set quota for account {account_a}: 5000 CPU minutes` and
+`Successfully set GPU quota for account {account_a}: 500 GPU minutes`.
+* Statistics show these quotas for `{user_a}` and `{account_a}`, with status bars.
+* After setting `-1`, statistics show unlimited quotas (`∞`), without status bar.
+// end::FT-QUOTA-001[]
+
+// tag::FT-QUOTA-002[]
+[[FT-QUOTA-002]]
+== FT-QUOTA-002 — Quota change applies to the next submissions
+
+Feature:: Quotas management
+Interface:: Slurm
+Objective:: A quota change is taken into account immediately by the submission control.
+Prerequisites::
+* `{user_a}` CPU quota is 30 minutes, with no consumption nor preallocation.
+Steps::
+. As `{user_a}`, submit a held job requesting 40 CPU minutes on `{account_a}`.
+. As `{admin_user}`, run `slurm-quota user-quota {user_a} 50`.
+. As `{user_a}`, submit the same job again, then cancel it.
+Expected results::
+* The first submission is refused with the user quota message.
+* The second submission is accepted.
+// end::FT-QUOTA-002[]
+
+// tag::FT-QUOTA-003[]
+[[FT-QUOTA-003]]
+== FT-QUOTA-003 — Quota reason is saved in comments
+
+Feature:: Quotas management
+Interface:: CLI
+Objective:: The reason of a quota change is appended to the comment of the user or account, unless
+`--no-save-comment` is given.
+Prerequisites::
+* `{account_a}` has no comment.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota account-quota {account_a} 2000 --reason "initial allocation"
+$ slurm-quota account-gpu-quota {account_a} 200 --reason "GPU extension"
+$ slurm-quota account-quota {account_a} 3000 --reason "not in comment" --no-save-comment
+$ slurm-quota stats --account {account_a} --comments
+----
+. As root on `{controller}`, read the logs of the REST API service (`journalctl -u slurm-quota.service`).
+Expected results::
+* The comment of `{account_a}` is `initial allocation | GPU extension`.
+* The service logs record the 3 quota changes, with `{admin_user}` and their reasons, including `not in comment`.
+// end::FT-QUOTA-003[]
+
+// tag::FT-QUOTA-004[]
+[[FT-QUOTA-004]]
+== FT-QUOTA-004 — Invalid quotas are refused
+
+Feature:: Quotas management
+Interface:: CLI
+Objective:: Quotas must be positive integers or `-1`.
+Prerequisites::
+* `{user_a}` CPU quota is 1000 minutes.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota user-quota {user_a} -5
+$ slurm-quota user-quota {user_a} 12.5
+$ slurm-quota user-quota {user_a} abc
+$ slurm-quota stats --user {user_a} --no-breakdown
+----
+Expected results::
+* The 3 `user-quota` commands fail with a non-zero exit code and an error message.
+* The CPU quota of `{user_a}` is still 1000 minutes.
+// end::FT-QUOTA-004[]
+
+// tag::FT-QUOTA-005[]
+[[FT-QUOTA-005]]
+== FT-QUOTA-005 — Quota of a user or account unknown to Slurm-quota
+
+Feature:: Quotas management
+Interface:: CLI
+Objective:: A quota can be set before the first job of a user or account, which is then created with default quotas
+for the other resources.
+Prerequisites::
+* `{new_user}` is unknown to Slurm-quota (pruned if needed, see <<FT-PRUNE-003>>).
+* All default quotas are unlimited.
+Steps::
+. As `{admin_user}`, run `slurm-quota user-quota {new_user} 100`, then `slurm-quota stats --user {new_user}`.
+Expected results::
+* The quota is set.
+* `{new_user}` has a CPU quota of 100 minutes and an unlimited GPU quota.
+// end::FT-QUOTA-005[]
+
+// tag::FT-QUOTA-006[]
+[[FT-QUOTA-006]]
+== FT-QUOTA-006 — Edit quotas in the dashboard
+
+Feature:: Quotas management
+Interface:: Web dashboard
+Objective:: Operators and admins can edit the CPU and GPU quotas of users and accounts inline in the dashboard.
+Prerequisites::
+* `{user_a}` and `{account_a}` quotas are unlimited, `{account_a}` has no comment.
+Steps::
+. Sign in the dashboard as `{admin_user}`.
+. On the row of `{user_a}`, click *Edit* in the CPU quota cell, enter `1000` in *Quota (minutes)* and click *Set*.
+. On the row of `{account_a}`, click *Edit* in the GPU quota cell, enter `500`, enter reason `web change`, keep
+*Append reason to comment* checked and click *Set*.
+. On the row of `{account_a}`, click *Edit* in the CPU quota cell, check *Unlimited (∞)* and click *Set*.
+. Run `slurm-quota stats --account {account_a} --comments` as `{admin_user}`.
+Expected results::
+* After each change, the dashboard shows the new quota in the cell, and the usage bar matches it.
+* `{user_a}` has a CPU quota of 1000 minutes, `{account_a}` a GPU quota of 500 minutes and an unlimited CPU quota.
+* The comment of `{account_a}` is `web change`, in the dashboard and in the CLI.
+// end::FT-QUOTA-006[]
+
+// tag::FT-QUOTA-007[]
+[[FT-QUOTA-007]]
+== FT-QUOTA-007 — Set quotas with the REST API
+
+Feature:: Quotas management
+Interface:: REST API
+Objective:: Quotas can be set with the REST API, with an optional reason recorded in audit logs only.
+Prerequisites::
+* `TOKEN` holds a token of `{admin_user}`.
+Steps::
+. Run:
++
+[source,console,subs=attributes+]
+----
+$ curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d '{"quota_minutes": 750, "reason": "api", "append_reason": false}' \
+    {api_url}quotas/users/{user_a}/cpu
+$ curl -s -o /dev/null -w '%\{http_code}\n' -X PUT -H "Authorization: Bearer $TOKEN" \
+    -H 'Content-Type: application/json' -d '{"quota_minutes": -7}' {api_url}quotas/users/{user_a}/cpu
+----
+Expected results::
+* The first request succeeds, and `{user_a}` has a CPU quota of 750 minutes, without `api` in its comment.
+* The second request returns HTTP status `400`, and the quota is unchanged.
+// end::FT-QUOTA-007[]

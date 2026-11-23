@@ -1,0 +1,101 @@
+= Reallocation of unattributed consumption (REALLOCATE)
+
+Databases of version 3 record consumption separately for users and accounts. Their migration to version 4 stores this
+legacy consumption on temporary pairs with the special `(unattributed)` user and account. `slurm-quota-reallocate`
+distributes it on actual user/account pairs, using the jobs found in Slurm accounting, while preserving the totals of
+users and accounts.
+
+The tests of this chapter require a database migrated from version 3. Sites without such a database report them as
+SKIPPED.
+
+Common prerequisites of this chapter::
+* The Slurm-quota database was migrated from version 3 following the upgrade guide, and holds unattributed
+consumption: `slurm-quota stats --all` lists the user `(unattributed)` and the account `(unattributed)`.
+* Users with unattributed consumption ran jobs on their accounts since a date `<start>`, recorded in Slurm accounting.
+* The output of `slurm-quota stats --all --seconds --no-breakdown` before the tests is saved as the _reference
+statistics_.
+
+// tag::FT-REALLOCATE-001[]
+[[FT-REALLOCATE-001]]
+== FT-REALLOCATE-001 — Preview the reallocation
+
+Feature:: Reallocation of unattributed consumption
+Interface:: Admin command
+Objective:: The reallocation can be previewed without modifying the database, on the database or on a copy of it.
+Prerequisites::
+* Common prerequisites of this chapter.
+Steps::
+. As root on `{controller}`, run:
++
+[source,console,subs=attributes+]
+----
+# slurm-quota-reallocate --starttime <start> --dry-run
+# sqlite3 /var/lib/state/slurm-quota/slurm-quota.db ".backup /tmp/slurm-quota-copy.db"
+# chown {user_a} /tmp/slurm-quota-copy.db
+----
+. As `{user_a}` on `{controller}`, run
+`SLURM_QUOTA_DB=/tmp/slurm-quota-copy.db slurm-quota-reallocate --starttime <start>`.
+. As `{admin_user}`, run `slurm-quota stats --all --seconds --no-breakdown`.
+Expected results::
+* The dry run prints `Dry-run: would reallocate <cpu> CPU minutes and <gpu> GPU minutes of unattributed consumption to
+<n> user/account pair(s)`, followed by the sources of the pairs for CPU and GPU.
+* The run on the copy warns about the database in use, and prints `Reallocated ...` with the same figures as the dry run.
+* The statistics are identical to the reference statistics: the database in production is unchanged.
+// end::FT-REALLOCATE-001[]
+
+// tag::FT-REALLOCATE-002[]
+[[FT-REALLOCATE-002]]
+== FT-REALLOCATE-002 — Reallocate unattributed consumption
+
+Feature:: Reallocation of unattributed consumption
+Interface:: Admin command
+Objective:: Unattributed consumption is distributed on user/account pairs, the totals of users and accounts are
+preserved, and the `(unattributed)` user and account are removed.
+Prerequisites::
+* <<FT-REALLOCATE-001>> passed.
+Steps::
+. As root on `{controller}`, run `slurm-quota-reallocate --starttime <start>`.
+. As `{admin_user}`, run `slurm-quota stats --all --seconds --no-breakdown` and
+`slurm-quota stats --all --seconds --breakdown`.
+Expected results::
+* The command prints `Reallocated ...` with the figures of the dry run, and warnings for users and accounts whose
+reallocated consumption differs from their unattributed consumption, if any.
+* The consumption of each user is identical to the reference statistics.
+* The consumption of each account is identical to the reference statistics, except accounts reported in warnings.
+* The breakdown has user/account pairs matching the associations used by the jobs, and no `(unattributed)` pair for
+reallocated users and accounts.
+* When all consumption is reallocated, the `(unattributed)` user and account are no longer listed.
+// end::FT-REALLOCATE-002[]
+
+// tag::FT-REALLOCATE-003[]
+[[FT-REALLOCATE-003]]
+== FT-REALLOCATE-003 — Nothing left to reallocate
+
+Feature:: Reallocation of unattributed consumption
+Interface:: Admin command
+Objective:: Further runs only consider consumption left unattributed.
+Prerequisites::
+* <<FT-REALLOCATE-002>> passed, with all consumption reallocated.
+Steps::
+. As root on `{controller}`, run `slurm-quota-reallocate --starttime <start>` again.
+Expected results::
+* The command prints `Nothing to reallocate` and exits with code 0.
+// end::FT-REALLOCATE-003[]
+
+// tag::FT-REALLOCATE-004[]
+[[FT-REALLOCATE-004]]
+== FT-REALLOCATE-004 — Reallocation options are checked
+
+Feature:: Reallocation of unattributed consumption
+Interface:: Admin command
+Objective:: The reallocation requires root on the production database, and a start date.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. As root on `{controller}`, run `slurm-quota-reallocate --dry-run`.
+. As root, run `slurm-quota-reallocate --starttime 2025-13-45 --dry-run`.
+. On `{controller}`, run `slurm-quota-reallocate --starttime 2025-01-01 --dry-run` as the `slurm` user.
+Expected results::
+* The first 2 commands fail with exit code 2.
+* The third command fails with exit code 1, as it must run as root.
+// end::FT-REALLOCATE-004[]

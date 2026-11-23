@@ -1,0 +1,311 @@
+= Authentication and tokens (AUTH)
+
+The REST API requires a JWT for all routes except `GET /health` and `POST /login`. With LDAP authentication, users
+obtain a user token with their LDAP credentials. Users can also create application tokens for scripts, with a subset of
+the scopes of their role, a longer validity, and the ability to list and revoke them. With JWT authentication,
+administrators issue user tokens with `slurm-quota-token`.
+
+// tag::FT-AUTH-001[]
+[[FT-AUTH-001]]
+== FT-AUTH-001 — Login and save a token
+
+Feature:: Authentication
+Interface:: CLI
+Objective:: Users obtain a token with their LDAP credentials, printed or saved for the next commands.
+Prerequisites::
+* `{user_a}` has no saved token (`~/.config/slurm-quota/token` is missing) and `SLURM_QUOTA_TOKEN` is not set.
+Steps::
+. As `{user_a}`, run `slurm-quota stats`.
+. Run `slurm-quota login` and enter the password of `{user_a}`.
+. Run `slurm-quota login --save` and enter the password, then run `slurm-quota stats`.
+. Run `ls -l ~/.config/slurm-quota/token`.
+Expected results::
+* The first `stats` fails with exit code 1, reporting that no API token is available, and the guidance
+`Run 'slurm-quota login --save' to obtain a new token.`
+* `login` prints a JWT on standard output.
+* `login --save` prints `Authentication token saved to <path>`, and `stats` then succeeds.
+* The token file is readable by `{user_a}` only.
+// end::FT-AUTH-001[]
+
+// tag::FT-AUTH-002[]
+[[FT-AUTH-002]]
+== FT-AUTH-002 — Login with wrong credentials is refused
+
+Feature:: Authentication
+Interface:: CLI
+Objective:: Login fails with wrong credentials, without saving any token.
+Prerequisites::
+* <<FT-AUTH-001>> passed.
+Steps::
+. As `{user_a}`, run `slurm-quota login --save` and enter a wrong password.
+. Run `slurm-quota login no-such-user` and enter any password.
+. Run `slurm-quota stats`.
+Expected results::
+* Both logins fail with exit code 1 and the error `Invalid user or password`.
+* `stats` still succeeds with the token saved in <<FT-AUTH-001>>.
+// end::FT-AUTH-002[]
+
+// tag::FT-AUTH-003[]
+[[FT-AUTH-003]]
+== FT-AUTH-003 — Show and override the current token
+
+Feature:: Authentication
+Interface:: CLI
+Objective:: Users display information about their current token, and override the saved token with
+`SLURM_QUOTA_TOKEN`.
+Prerequisites::
+* `{user_a}` saved a token in <<FT-AUTH-001>>.
+* `TOKEN_B` holds a user token of `{user_b}`, obtained with `slurm-quota login {user_b}`.
+Steps::
+. As `{user_a}`, run `slurm-quota token`.
+. Run `SLURM_QUOTA_TOKEN=$TOKEN_B slurm-quota token`, `SLURM_QUOTA_TOKEN=$TOKEN_B slurm-quota stats` and
+`SLURM_QUOTA_TOKEN=$TOKEN_B slurm-quota stats {user_b}`.
+. Run `SLURM_QUOTA_TOKEN=invalid slurm-quota stats`.
+Expected results::
+* `token` prints the source (the token file), `Username: {user_a}`, `Type: user`,
+`Scopes: all scopes of user role` and the expiration date, 7 days after the login with the default configuration.
+* With `TOKEN_B`, `token` reports `Username: {user_b}` from the environment.
+* With `TOKEN_B`, `stats` without selector selects the current OS user `{user_a}`, and is refused with
+`Access denied: insufficient permissions to view stats`. `stats {user_b}` shows the statistics of `{user_b}`.
+* With an invalid token, `stats` fails with exit code 1 and an authentication error.
+// end::FT-AUTH-003[]
+
+// tag::FT-AUTH-004[]
+[[FT-AUTH-004]]
+== FT-AUTH-004 — Login with the REST API
+
+Feature:: Authentication
+Interface:: REST API
+Objective:: `POST /login` returns a token for valid LDAP credentials, and protected routes require a valid token.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. Run, with the password of `{user_a}` in `PASSWORD`:
++
+[source,console,subs=attributes+]
+----
+$ curl -s -X POST -H 'Content-Type: application/json' \
+    -d '{"username": "{user_a}", "password": "'"$PASSWORD"'"}' {api_url}login
+$ curl -s -o /dev/null -w '%\{http_code}\n' -X POST -H 'Content-Type: application/json' \
+    -d '{"username": "{user_a}", "password": "wrong"}' {api_url}login
+$ curl -s -o /dev/null -w '%\{http_code}\n' {api_url}stats
+$ curl -s -o /dev/null -w '%\{http_code}\n' -H "Authorization: Bearer invalid" {api_url}stats
+----
+. Query `GET /me` with the token returned by the first request.
+Expected results::
+* The first request returns a JSON object with a `token`.
+* The login with a wrong password returns HTTP status `401`.
+* `GET /stats` without token and with an invalid token return HTTP status `401`.
+* `GET /me` returns `{user_a}` with role `user`.
+// end::FT-AUTH-004[]
+
+// tag::FT-AUTH-005[]
+[[FT-AUTH-005]]
+== FT-AUTH-005 — Sign in and sign out of the dashboard
+
+Feature:: Authentication
+Interface:: Web dashboard
+Objective:: Users sign in the dashboard with their LDAP credentials, and sign out.
+Prerequisites::
+* No dashboard session is open in the browser.
+Steps::
+. Open `{web_url}`.
+. Sign in as `{user_a}` with a wrong password.
+. Sign in as `{user_a}` with the right password.
+. Click *Sign out*, then open `{web_url}` again.
+Expected results::
+* Opening the dashboard without session shows the login page.
+* The wrong password shows `Invalid username or password.` and stays on the login page.
+* With the right password, the dashboard shows `Signed in as {user_a}`, without role mention, and the statistics of
+`{user_a}`.
+* After *Sign out*, opening the dashboard shows the login page again.
+// end::FT-AUTH-005[]
+
+// tag::FT-AUTH-006[]
+[[FT-AUTH-006]]
+== FT-AUTH-006 — Create, use and list application tokens
+
+Feature:: Application tokens
+Interface:: CLI
+Objective:: Users create application tokens with a subset of their scopes, use them, and list them.
+Prerequisites::
+* `{user_a}` has a saved user token and no application token.
+Steps::
+. As `{user_a}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota token create monitoring --scope stats:read:own > monitoring.token
+$ SLURM_QUOTA_TOKEN=$(cat monitoring.token) slurm-quota token
+$ SLURM_QUOTA_TOKEN=$(cat monitoring.token) slurm-quota stats
+$ slurm-quota token list
+----
+Expected results::
+* `token create` prints the token on standard output, its identifier and expiration date on standard error. The
+expiration is 90 days later with the default configuration.
+* `token` with the application token reports `Type: application` and `Scopes: stats:read:own`.
+* `stats` with the application token shows the statistics of `{user_a}`.
+* `token list` lists the token with its identifier, name `monitoring`, scope `stats:read:own`, creation and expiration
+dates, and status `active`.
+// end::FT-AUTH-006[]
+
+// tag::FT-AUTH-007[]
+[[FT-AUTH-007]]
+== FT-AUTH-007 — Application token restrictions
+
+Feature:: Application tokens
+Interface:: CLI
+Objective:: Application tokens are restricted to the scopes of the role of their owner, to the maximum duration, to
+unique names, and cannot manage application tokens.
+Prerequisites::
+* <<FT-AUTH-006>> passed.
+Steps::
+. As `{user_a}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota token create monitoring --scope stats:read:own
+$ slurm-quota token create admin --scope quotas:write
+$ slurm-quota token create long --scope stats:read:own --duration 1000
+$ slurm-quota token create short --scope stats:read:own --duration 30
+$ SLURM_QUOTA_TOKEN=$(cat monitoring.token) slurm-quota token create other --scope stats:read:own
+$ SLURM_QUOTA_TOKEN=$(cat monitoring.token) slurm-quota token list
+----
+Expected results::
+* The token with the name `monitoring` already used by an active token is refused.
+* The token with scope `quotas:write`, not available for role user, is refused.
+* The token with a duration above the maximum duration (365 days by default) is refused.
+* The token `short` is created, expiring 30 days later.
+* Creating and listing tokens with the application token are refused.
+// end::FT-AUTH-007[]
+
+// tag::FT-AUTH-008[]
+[[FT-AUTH-008]]
+== FT-AUTH-008 — Revoke application tokens
+
+Feature:: Application tokens
+Interface:: CLI
+Objective:: Users revoke their application tokens, which can no longer be used.
+Prerequisites::
+* <<FT-AUTH-006>> passed.
+Steps::
+. As `{user_a}`, revoke the token `monitoring` with `slurm-quota token revoke <id>`, using the identifier reported by
+`slurm-quota token list`.
+. Run `SLURM_QUOTA_TOKEN=$(cat monitoring.token) slurm-quota stats`.
+. Run `slurm-quota token list`.
+. As `{user_b}`, run `slurm-quota token revoke <id>` with the identifier of the token `short` of `{user_a}`.
+Expected results::
+* The revocation prints `Revoked application token <id>`.
+* `stats` with the revoked token fails with an authentication error.
+* `token list` reports the token `monitoring` with status `revoked`.
+* `{user_b}` cannot revoke the token of `{user_a}`.
+// end::FT-AUTH-008[]
+
+// tag::FT-AUTH-009[]
+[[FT-AUTH-009]]
+== FT-AUTH-009 — Admins manage application tokens of all users
+
+Feature:: Application tokens
+Interface:: CLI
+Objective:: Admins list the application tokens of a user or of all users, and revoke them.
+Prerequisites::
+* <<FT-AUTH-007>> passed: `{user_a}` has an active application token `short`.
+Steps::
+. As `{admin_user}`, run `slurm-quota token list --user {user_a}` and `slurm-quota token list --all`.
+. As `{admin_user}`, revoke the token `short` of `{user_a}`.
+. As `{user_a}`, run `slurm-quota token list --all`.
+Expected results::
+* The lists of `{admin_user}` contain the tokens of `{user_a}`, with a `USER` column.
+* The token `short` is revoked.
+* `token list --all` as `{user_a}` is refused.
+// end::FT-AUTH-009[]
+
+// tag::FT-AUTH-010[]
+[[FT-AUTH-010]]
+== FT-AUTH-010 — Manage application tokens in the dashboard
+
+Feature:: Application tokens
+Interface:: Web dashboard
+Objective:: Users create, list and revoke their application tokens on the *API tokens* page.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. Sign in the dashboard as `{user_a}`, and open *API tokens*.
+. Create a token named `web-token` with scope `stats:read:own`.
+. Copy the displayed token, and use it in a shell: `SLURM_QUOTA_TOKEN=<token> slurm-quota stats`.
+. Reload the page, then revoke `web-token`.
+Expected results::
+* After the creation, the page shows *New application token web-token* with the token and a copy button.
+* The token works with the CLI.
+* After reload, the token value is no longer displayed, and `web-token` is listed as `active`.
+* After revocation, `web-token` is listed as `revoked`, and `slurm-quota token list` reports the same.
+// end::FT-AUTH-010[]
+
+// tag::FT-AUTH-011[]
+[[FT-AUTH-011]]
+== FT-AUTH-011 — Application tokens with the REST API
+
+Feature:: Application tokens
+Interface:: REST API
+Objective:: Application tokens can be created, listed and revoked with the REST API, with a user token only.
+Prerequisites::
+* `TOKEN` holds a user token of `{user_a}`.
+Steps::
+. Run:
++
+[source,console,subs=attributes+]
+----
+$ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d '{"name": "api-token", "scopes": ["stats:read:own"], "duration": 10}' {api_url}tokens
+$ curl -s -H "Authorization: Bearer $TOKEN" {api_url}tokens
+----
+. Run `GET /tokens` with the created application token, then `DELETE /tokens/<id>` with the user token.
+Expected results::
+* The creation returns the token description with `token`, `id`, `name`, `scopes`, `created_at`, `expires_at` (10 days
+after `created_at`) and `status` `active`.
+* `GET /tokens` with the user token returns `{"tokens": [...]}` with `api-token`.
+* `GET /tokens` with the application token is refused with HTTP status `403`.
+* The deletion succeeds, and the token status becomes `revoked`.
+// end::FT-AUTH-011[]
+
+// tag::FT-AUTH-012[]
+[[FT-AUTH-012]]
+== FT-AUTH-012 — Issue tokens with JWT authentication
+
+Feature:: Authentication
+Interface:: Admin command
+Objective:: With JWT authentication, root issues user tokens with `slurm-quota-token`, and users save them.
+Prerequisites::
+* The REST API is configured with `authentication.method=jwt` and restarted (`systemctl restart slurm-quota.socket`).
+Steps::
+. As `{user_a}`, run `slurm-quota login`.
+. As root on `{controller}`, run `slurm-quota-token {user_a}` and `slurm-quota-token --duration 2 {user_a}`.
+. As `{user_a}`, export the second token in `SLURM_QUOTA_TOKEN`, run `slurm-quota token --save`, unset
+`SLURM_QUOTA_TOKEN`, then run `slurm-quota token` and `slurm-quota stats`.
+. As `{user_a}` on `{controller}`, run `slurm-quota-token {user_a}`.
+. Restore `authentication.method=ldap` and restart the REST API.
+Expected results::
+* `slurm-quota login` fails, as LDAP login is not available.
+* `slurm-quota-token` prints a JWT. The second token expires 2 days later, as reported by `slurm-quota token`.
+* `token --save` prints `Authentication token saved to <path>`, and `stats` succeeds with the saved token.
+* `slurm-quota-token` run by `{user_a}` fails with exit code 1.
+// end::FT-AUTH-012[]
+
+// tag::FT-AUTH-013[]
+[[FT-AUTH-013]]
+== FT-AUTH-013 — Dashboard with a service token
+
+Feature:: Authentication
+Interface:: Web dashboard
+Objective:: With a service token configured in the dashboard environment, the dashboard shows statistics without
+login page.
+Prerequisites::
+* `SLURM_QUOTA_TOKEN` is set in the environment of the dashboard to a user token of `{admin_user}`, and the dashboard
+is restarted.
+Steps::
+. Open `{web_url}` in a browser without session.
+. Remove `SLURM_QUOTA_TOKEN` from the environment of the dashboard, and restart it.
+Expected results::
+* The dashboard shows the statistics of all users and accounts, without login page nor *Sign out* button.
+* After the removal of the service token, the dashboard shows the login page again.
+// end::FT-AUTH-013[]

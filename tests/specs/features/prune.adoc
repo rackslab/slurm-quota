@@ -1,0 +1,108 @@
+= Database pruning (PRUNE)
+
+`slurm-quota-prune` removes orphan preallocations, which are no longer tied to a job in the Slurm queue, for example
+after a failure of the job completion script. It also removes users and accounts without consumption.
+
+In this chapter, an _orphan preallocation_ is created this way: as root on `{controller}`, remove the execution
+permission of the job completion script set in `JobCompLoc`; as the user, cancel a held job; then restore the
+execution permission. The job leaves the queue without being processed by Slurm-quota, and its preallocation remains.
+
+// tag::FT-PRUNE-001[]
+[[FT-PRUNE-001]]
+== FT-PRUNE-001 — Prune orphan preallocations
+
+Feature:: Database pruning
+Interface:: Admin command
+Objective:: Orphan preallocations are removed, preallocations of jobs in the queue are kept.
+Prerequisites::
+* `{user_a}` has no preallocation.
+* `{user_a}` has an orphan preallocation of 20 CPU minutes on `{account_a}`, and a held job of 10 CPU minutes in the
+queue.
+Steps::
+. As `{user_a}`, run `slurm-quota stats`.
+. As root on `{controller}`, run `slurm-quota-prune --preallocs --dry-run`, then `slurm-quota-prune --preallocs`.
+. As `{user_a}`, run `slurm-quota stats`, then cancel the held job.
+. As root on `{controller}`, run `slurm-quota-prune --preallocs`.
+Expected results::
+* Before pruning, `{user_a}` shows 30 preallocated CPU minutes with 2 jobs.
+* The dry run prints `Dry-run: would remove 1 orphan preallocation(s), 0 user(s), 0 account(s)` and the preallocation is
+still recorded.
+* The prune prints `Removed 1 orphan preallocation(s), 0 user(s), 0 account(s)`.
+* After pruning, `{user_a}` shows 10 preallocated CPU minutes with 1 job.
+* The last prune prints `Nothing to prune`.
+// end::FT-PRUNE-001[]
+
+// tag::FT-PRUNE-002[]
+[[FT-PRUNE-002]]
+== FT-PRUNE-002 — Prune orphan preallocations of a user or an account
+
+Feature:: Database pruning
+Interface:: Admin command
+Objective:: Pruning of orphan preallocations can be limited to a user, an account, or both.
+Prerequisites::
+* Orphan preallocations exist for `{user_a}` on `{account_a}`, `{user_a}` on `{account_b}` and `{user_b}` on
+`{account_a}`.
+Steps::
+. As root on `{controller}`, run in order:
++
+[source,console,subs=attributes+]
+----
+# slurm-quota-prune --preallocs --user {user_a} --account {account_b}
+# slurm-quota-prune --preallocs --account {account_a} --dry-run
+# slurm-quota-prune --user {user_b}
+# slurm-quota-prune --preallocs --user {user_b}
+# slurm-quota-prune --preallocs --user {user_a}
+----
+Expected results::
+* The first command removes 1 orphan preallocation, of `{user_a}` on `{account_b}`.
+* The dry run reports 2 orphan preallocations.
+* The third command is refused with exit code 1, as `--user` requires the `--preallocs` or `--users` selector, and
+nothing is pruned.
+* The fourth command removes 1 orphan preallocation, of `{user_b}`, and no user nor account.
+* The last command removes 1 orphan preallocation, of `{user_a}` on `{account_a}`, and no preallocation remains.
+// end::FT-PRUNE-002[]
+
+// tag::FT-PRUNE-003[]
+[[FT-PRUNE-003]]
+== FT-PRUNE-003 — Prune users and accounts without consumption
+
+Feature:: Database pruning
+Interface:: Admin command
+Objective:: Users and accounts with no CPU nor GPU consumption are removed, possibly limited to one user or account.
+Prerequisites::
+* `{new_user}` and `{new_account}` are known to Slurm-quota without consumption (after <<FT-DEFAULT-004>>, adjust
+their consumption to zero if needed).
+* `{user_a}` and `{account_a}` have consumption.
+Steps::
+. As root on `{controller}`, run in order:
++
+[source,console,subs=attributes+]
+----
+# slurm-quota-prune --users --user {user_a}
+# slurm-quota-prune --users --user {new_user}
+# slurm-quota-prune --accounts --account {new_account}
+----
+. As `{admin_user}`, run `slurm-quota stats --all`.
+Expected results::
+* The first command prints `Nothing to prune`.
+* The second command removes 1 user, the third command removes 1 account.
+* `{new_user}` and `{new_account}` are no longer listed in statistics, `{user_a}` and `{account_a}` are still listed.
+// end::FT-PRUNE-003[]
+
+// tag::FT-PRUNE-004[]
+[[FT-PRUNE-004]]
+== FT-PRUNE-004 — Pruning is restricted to root
+
+Feature:: Database pruning
+Interface:: Admin command
+Objective:: `slurm-quota-prune` refuses to run as another user than root, and refuses conflicting selectors.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. On `{controller}`, run `slurm-quota-prune --dry-run` as the `slurm` user.
+. As root on `{controller}`, run `slurm-quota-prune --preallocs --all`.
+Expected results::
+* The first command fails with exit code 1 and the error
+`Prune command can only be executed by root user, not by slurm`.
+* The second command fails with exit code 2.
+// end::FT-PRUNE-004[]

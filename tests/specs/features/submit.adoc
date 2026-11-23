@@ -1,0 +1,394 @@
+= Job submission control (SUBMIT)
+
+At job submission and modification, the Slurm-quota submission plugin checks that the user is associated with the
+account of the job, then that the requested CPU and GPU minutes fit in the available share of the user and of the
+account, defined as `quota − (consumed + preallocated)`. Accepted jobs get a preallocation of their requested minutes,
+released when they complete.
+
+In this chapter, the Slurm commands print the messages of the submission plugin on their standard error, after an
+`error:` prefix, for example `sbatch: error: job submission rejected due to user quota (...)`.
+
+// tag::FT-SUBMIT-001[]
+[[FT-SUBMIT-001]]
+== FT-SUBMIT-001 — Job within quotas is accepted and preallocated
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: A job within the quotas is accepted, and its requested CPU minutes are preallocated to the user and the
+account.
+Prerequisites::
+* `{user_a}` CPU quota is 100 minutes, `{account_a}` CPU quota is 100 minutes.
+Steps::
+. As `{user_a}`, submit a job requesting 2 tasks for 10 minutes (20 CPU minutes):
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_a} -p {cpu_partition} -n 2 -t 10 --wrap "sleep 120"
+----
+. While the job is pending or running, run `slurm-quota stats` as `{user_a}`.
+Expected results::
+* The job is accepted.
+* The job has a UUID in its `AdminComment` field (`scontrol show job <jobid>`).
+* `{user_a}` and `{account_a}` both show `20` preallocated CPU minutes, with 1 job, and 0 preallocated GPU minutes.
+// end::FT-SUBMIT-001[]
+
+// tag::FT-SUBMIT-002[]
+[[FT-SUBMIT-002]]
+== FT-SUBMIT-002 — Job exceeding the user CPU quota is refused
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: A job is refused when its CPU minutes exceed the available share of the user.
+Prerequisites::
+* `{user_a}` CPU quota is 30 minutes, `{account_a}` CPU quota is unlimited.
+Steps::
+. As `{user_a}`, submit a job requesting 40 CPU minutes:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_a} -p {cpu_partition} -n 4 -t 10 --wrap "sleep 60"
+----
+. Run `slurm-quota stats` as `{user_a}`.
+Expected results::
+* The job is refused with message
+`job submission rejected due to user quota (requested: 40 CPU mins, available: 30 CPU mins)`.
+* No preallocation is recorded for `{user_a}` nor `{account_a}`.
+// end::FT-SUBMIT-002[]
+
+// tag::FT-SUBMIT-003[]
+[[FT-SUBMIT-003]]
+== FT-SUBMIT-003 — Job exceeding the account CPU quota is refused
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: A job is refused when its CPU minutes exceed the available share of the account, even when the user quota
+allows it.
+Prerequisites::
+* `{user_a}` CPU quota is unlimited, `{account_a}` CPU quota is 30 minutes.
+Steps::
+. As `{user_a}`, submit a job requesting 40 CPU minutes on `{account_a}`, as in <<FT-SUBMIT-002>>.
+. As `{user_a}`, submit the same job on `{account_b}`.
+Expected results::
+* The job on `{account_a}` is refused with message
+`job submission rejected due to account quota (requested: 40 CPU mins, available: 30 CPU mins)`.
+* The job on `{account_b}` is accepted.
+// end::FT-SUBMIT-003[]
+
+// tag::FT-SUBMIT-004[]
+[[FT-SUBMIT-004]]
+== FT-SUBMIT-004 — Job exceeding the user GPU quota is refused
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: A job is refused when its GPU minutes exceed the available GPU share of the user.
+Prerequisites::
+* `{user_a}` GPU quota is 15 minutes, `{account_a}` GPU quota is unlimited.
+Steps::
+. As `{user_a}`, submit a job requesting 2 GPUs for 10 minutes (20 GPU minutes):
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_a} -p {gpu_partition} -n 1 -t 10 --gpus={gpu_type_1}:2 --wrap "sleep 60"
+----
+. As `{user_a}`, submit a job requesting 1 GPU for 10 minutes (10 GPU minutes).
+Expected results::
+* The first job is refused with message
+`job submission rejected due to user GPU quota (requested: 20 GPU mins, available: 15 GPU mins)`.
+* The second job is accepted, and `slurm-quota stats` shows 10 preallocated GPU minutes for `{user_a}` and
+`{account_a}`.
+// end::FT-SUBMIT-004[]
+
+// tag::FT-SUBMIT-005[]
+[[FT-SUBMIT-005]]
+== FT-SUBMIT-005 — Job exceeding the account GPU quota is refused
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: A job is refused when its GPU minutes exceed the available GPU share of the account.
+Prerequisites::
+* `{user_a}` GPU quota is unlimited, `{account_a}` GPU quota is 15 minutes.
+Steps::
+. As `{user_a}`, submit a job requesting 20 GPU minutes on `{account_a}`, as in <<FT-SUBMIT-004>>.
+Expected results::
+* The job is refused with message
+`job submission rejected due to account GPU quota (requested: 20 GPU mins, available: 15 GPU mins)`.
+// end::FT-SUBMIT-005[]
+
+// tag::FT-SUBMIT-006[]
+[[FT-SUBMIT-006]]
+== FT-SUBMIT-006 — GPU requests in all forms are counted
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: GPUs requested per job, per node and per task are all converted into requested GPU minutes.
+Prerequisites::
+* `{user_a}` and `{account_a}` GPU quotas are unlimited.
+Steps::
+. As `{user_a}`, submit these jobs, each for 10 minutes, and keep them pending or running:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_a} -p {gpu_partition} -N 1 -n 1 -t 10 --gpus={gpu_type_1}:1 --wrap "sleep 120"
+$ sbatch -A {account_a} -p {gpu_partition} -N 1 -n 1 -t 10 --gpus-per-node={gpu_type_1}:2 --wrap "sleep 120"
+$ sbatch -A {account_a} -p {gpu_partition} -N 1 -n 2 -t 10 --gpus-per-task={gpu_type_2}:1 --wrap "sleep 120"
+----
+. Run `slurm-quota stats` as `{user_a}`.
+Expected results::
+* All jobs are accepted.
+* `{user_a}` shows 50 preallocated GPU minutes (10 + 20 + 20), with 3 jobs.
+// end::FT-SUBMIT-006[]
+
+// tag::FT-SUBMIT-007[]
+[[FT-SUBMIT-007]]
+== FT-SUBMIT-007 — GPU request without type is refused
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: GPU requests must specify the GPU type, so that GPU minutes can be weighted by type.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. As `{user_a}`, submit a job requesting a GPU without type:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_a} -p {gpu_partition} -n 1 -t 10 --gpus=1 --wrap "sleep 60"
+----
+Expected results::
+* The job is refused with message
+`job submission rejected: GPU type must be specified (found gres/gpu without type)`.
+// end::FT-SUBMIT-007[]
+
+// tag::FT-SUBMIT-008[]
+[[FT-SUBMIT-008]]
+== FT-SUBMIT-008 — Preallocations of pending jobs are counted
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: Jobs submitted in parallel cannot exceed the quota together: preallocated minutes of not completed jobs
+reduce the available share.
+Prerequisites::
+* `{user_a}` CPU quota is 50 minutes, `{account_a}` CPU quota is unlimited.
+Steps::
+. As `{user_a}`, submit 2 jobs requesting 20 CPU minutes each, and keep them pending or running:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_a} -p {cpu_partition} -n 2 -t 10 --wrap "sleep 300"
+$ sbatch -A {account_a} -p {cpu_partition} -n 2 -t 10 --wrap "sleep 300"
+----
+. Submit a third identical job.
+. Cancel all the jobs of `{user_a}` with `scancel`, then submit the third job again.
+Expected results::
+* The first 2 jobs are accepted.
+* The third job is refused with message
+`job submission rejected due to user quota (requested: 20 CPU mins, available: 10 CPU mins)`.
+* After the cancellation, the preallocations are released and the third job is accepted.
+// end::FT-SUBMIT-008[]
+
+// tag::FT-SUBMIT-009[]
+[[FT-SUBMIT-009]]
+== FT-SUBMIT-009 — Job arrays are counted for all their elements
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: The requested minutes of a job array are the requested minutes of one element multiplied by the number of
+elements.
+Prerequisites::
+* `{user_a}` CPU quota is 50 minutes, `{account_a}` CPU quota is unlimited.
+Steps::
+. As `{user_a}`, submit an array of 6 elements of 10 CPU minutes each:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_a} -p {cpu_partition} -n 1 -t 10 --array=1-6 --wrap "sleep 30"
+----
+. Submit an array of 4 elements, with indexes `1,3,5-6`, of 10 CPU minutes each, then run `slurm-quota stats`.
+. Wait for the completion of all the elements, then run `slurm-quota stats` again.
+Expected results::
+* The first array is refused with message
+`job submission rejected due to user quota (requested: 60 CPU mins, available: 50 CPU mins)`.
+* The second array is accepted, with 40 preallocated CPU minutes and 4 jobs for `{user_a}`.
+* After the completion of all the elements, `{user_a}` has no preallocation left.
+// end::FT-SUBMIT-009[]
+
+// tag::FT-SUBMIT-010[]
+[[FT-SUBMIT-010]]
+== FT-SUBMIT-010 — Job array with invalid index range is refused
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: Job arrays with a reversed index range are refused.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. As `{user_a}`, submit `sbatch -A {account_a} -p {cpu_partition} -n 1 -t 10 --array=5-1 --wrap "sleep 30"`.
+Expected results::
+* The job array is refused, with message
+`job submission rejected: invalid array index range (start must be <= end)` if the range reaches the submission
+plugin, or an error of `sbatch` otherwise.
+// end::FT-SUBMIT-010[]
+
+// tag::FT-SUBMIT-011[]
+[[FT-SUBMIT-011]]
+== FT-SUBMIT-011 — Job with an account the user is not associated with is refused
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: Jobs submitted with an account the user is not associated with in Slurm, for example a mistyped account,
+are refused before anything is recorded.
+Prerequisites::
+* `{user_b}` is not associated with `{account_b}`.
+Steps::
+. As `{user_b}`, submit a job on `{account_b}`:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_b} -p {cpu_partition} -n 1 -t 5 --wrap "sleep 30"
+----
+. As `{user_b}`, submit a job on a non-existing account `no-such-account`.
+. As `{admin_user}`, run `slurm-quota stats --all`.
+Expected results::
+* Both jobs are refused, with messages `job submission rejected: invalid account {account_b} for user {user_b}` and
+`job submission rejected: invalid account no-such-account for user {user_b}`.
+* `no-such-account` is not listed in statistics.
+// end::FT-SUBMIT-011[]
+
+// tag::FT-SUBMIT-012[]
+[[FT-SUBMIT-012]]
+== FT-SUBMIT-012 — Default account is used when no account is given
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: A job submitted without account is checked and preallocated on the default account of the user.
+Prerequisites::
+* The default account of `{user_b}` in Slurm is `{account_a}`.
+* `{account_a}` CPU quota is 30 minutes.
+Steps::
+. As `{user_b}`, submit a job requesting 40 CPU minutes without `-A`.
+. As `{user_b}`, submit a job requesting 20 CPU minutes without `-A`, then run `slurm-quota stats`.
+Expected results::
+* The first job is refused with the account quota message.
+* The second job is accepted, and its 20 CPU minutes are preallocated to `{account_a}`.
+// end::FT-SUBMIT-012[]
+
+// tag::FT-SUBMIT-013[]
+[[FT-SUBMIT-013]]
+== FT-SUBMIT-013 — Unlimited quotas do not block jobs
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: Jobs of users and accounts with unlimited quotas are accepted whatever their size, and still preallocated.
+Prerequisites::
+* `{user_a}` and `{account_a}` CPU quotas are unlimited.
+Steps::
+. As `{user_a}`, submit a job requesting a large amount of CPU minutes, held so that it does not run:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -H -A {account_a} -p {cpu_partition} -n 2 -t 1-00:00:00 --wrap "sleep 60"
+----
+. Run `slurm-quota stats`, then cancel the job.
+Expected results::
+* The job is accepted.
+* `{user_a}` shows 2880 preallocated CPU minutes.
+// end::FT-SUBMIT-013[]
+
+// tag::FT-SUBMIT-014[]
+[[FT-SUBMIT-014]]
+== FT-SUBMIT-014 — Job modification within quota updates the preallocation
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: Accepted modifications of a pending job update its preallocation.
+Prerequisites::
+* `{user_a}` CPU quota is 100 minutes, `{account_a}` CPU quota is unlimited.
+* `{user_a}` has a held job requesting 2 tasks for 10 minutes (20 CPU minutes) on `{account_a}`:
+`sbatch -H -A {account_a} -p {cpu_partition} -n 2 -t 10 --wrap "sleep 60"`.
+Steps::
+. As `{user_a}`, reduce the time limit of the job, then run `slurm-quota stats`:
++
+[source,console,subs=attributes+]
+----
+$ scontrol update jobid=<jobid> timelimit=5
+----
+. As root, increase the time limit of the job to 30 minutes, then run `slurm-quota stats`.
+Expected results::
+* Both modifications are accepted.
+* The preallocation of `{user_a}` is 10 CPU minutes after the first modification, and 60 CPU minutes after the
+second.
+// end::FT-SUBMIT-014[]
+
+// tag::FT-SUBMIT-015[]
+[[FT-SUBMIT-015]]
+== FT-SUBMIT-015 — Job modification exceeding quota is refused
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: A modification of a pending job is refused when the new requested minutes exceed the available share, the
+current preallocation of the job being excluded from the share.
+Prerequisites::
+* `{user_a}` CPU quota is 50 minutes, `{account_a}` CPU quota is unlimited.
+* `{user_a}` has a held job requesting 20 CPU minutes on `{account_a}`, as in <<FT-SUBMIT-014>>.
+Steps::
+. As root, increase the time limit of the job to 25 minutes (50 CPU minutes).
+. As root, increase the time limit of the job to 30 minutes (60 CPU minutes).
+. Run `slurm-quota stats` as `{user_a}`.
+Expected results::
+* The first modification is accepted.
+* The second modification is refused with message
+`job modification rejected due to user quota (requested: 60 CPU mins, available: 50 CPU mins)`, and the time limit
+of the job remains 25 minutes.
+* The preallocation of `{user_a}` is 50 CPU minutes.
+// end::FT-SUBMIT-015[]
+
+// tag::FT-SUBMIT-016[]
+[[FT-SUBMIT-016]]
+== FT-SUBMIT-016 — Job account modification is checked
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: Changing the account of a pending job is refused when the user is not associated with the new account, and
+the preallocation follows the job to its new account when accepted.
+Prerequisites::
+* `{user_b}` has a held job requesting 20 CPU minutes on `{account_a}`.
+* `{user_a}` has a held job requesting 20 CPU minutes on `{account_a}`.
+Steps::
+. As `{user_b}`, change the account of their job to `{account_b}`:
++
+[source,console,subs=attributes+]
+----
+$ scontrol update jobid=<jobid> account={account_b}
+----
+. As `{user_a}`, change the account of their job to `{account_b}`.
+. As `{admin_user}`, run `slurm-quota stats --account {account_a}` and `slurm-quota stats --account {account_b}`.
+Expected results::
+* The modification of `{user_b}` is refused with message
+`job modification rejected: invalid account {account_b} for user {user_b}`.
+* The modification of `{user_a}` is accepted.
+* The 20 preallocated CPU minutes of the job of `{user_a}` are counted on `{account_b}`, and no longer on
+`{account_a}`.
+// end::FT-SUBMIT-016[]
+
+// tag::FT-SUBMIT-017[]
+[[FT-SUBMIT-017]]
+== FT-SUBMIT-017 — Interactive jobs are controlled
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: Quotas are also enforced for interactive jobs and allocations.
+Prerequisites::
+* `{user_a}` CPU quota is 30 minutes, `{account_a}` CPU quota is unlimited.
+Steps::
+. As `{user_a}`, run:
++
+[source,console,subs=attributes+]
+----
+$ srun -A {account_a} -p {cpu_partition} -n 4 -t 10 hostname
+$ salloc -A {account_a} -p {cpu_partition} -n 4 -t 10
+$ srun -A {account_a} -p {cpu_partition} -n 1 -t 10 hostname
+----
+Expected results::
+* `srun` and `salloc` requesting 40 CPU minutes are refused with the user quota message.
+* `srun` requesting 10 CPU minutes runs and prints the node name.
+// end::FT-SUBMIT-017[]

@@ -1,0 +1,306 @@
+= Roles and permissions (ROLE)
+
+The REST API applies 4 roles: *user* (default, own statistics), *manager* (own statistics and statistics of assigned
+accounts and their users), *operator* (all statistics, management of quotas, consumption, comments, default quotas and
+GPU factors) and *admin* (operator permissions, plus management of roles). Admins are defined in the REST API
+configuration, operators and managers are granted by admins. Each route also requires a scope, and application tokens
+carry a subset of the scopes of the role of their owner.
+
+// tag::FT-ROLE-001[]
+[[FT-ROLE-001]]
+== FT-ROLE-001 — Show own role
+
+Feature:: Roles
+Interface:: CLI
+Objective:: Every user can display their username and role.
+Prerequisites::
+* `{operator_user}` and `{manager_user}` have no role.
+Steps::
+. Run `slurm-quota role show` as `{user_a}`, as `{operator_user}` and as `{admin_user}`.
+Expected results::
+* The command prints `Username: <user>` and `Role: user` for `{user_a}` and `{operator_user}`, and `Role: admin` for
+`{admin_user}`.
+// end::FT-ROLE-001[]
+
+// tag::FT-ROLE-002[]
+[[FT-ROLE-002]]
+== FT-ROLE-002 — Regular users cannot manage quotas
+
+Feature:: Roles
+Interface:: CLI
+Objective:: Users without role are refused all management commands and the statistics of other users, and only get
+their own statistics when they ask for all statistics.
+Prerequisites::
+* <<FT-ROLE-001>> passed.
+Steps::
+. As `{user_a}`, run each command:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota user-quota {user_a} -1
+$ slurm-quota account-gpu-quota {account_a} -1
+$ slurm-quota adjust --user {user_a} --account {account_a} --cpu --minutes=-10
+$ slurm-quota comments --user {user_a} "self comment"
+$ slurm-quota default-quotas
+$ slurm-quota set-default-quotas --user-cpu -1
+$ slurm-quota gpu-factors
+$ slurm-quota set-gpu-factor {gpu_type_1} 0.1
+$ slurm-quota role list
+$ slurm-quota role grant operator {user_a}
+$ slurm-quota stats {user_b}
+----
+. As `{user_a}`, run `slurm-quota stats --all`.
+Expected results::
+* All commands of the first step fail with exit code 1 and an `Access denied` error naming the required role, for
+example `Access denied: operator or admin role required to set quotas` or
+`Access denied: admin role required to grant operator`, and
+`Access denied: insufficient permissions to view stats` for `stats {user_b}`.
+* Nothing is modified.
+* `stats --all` succeeds and shows the statistics of `{user_a}` and its accounts only.
+// end::FT-ROLE-002[]
+
+// tag::FT-ROLE-003[]
+[[FT-ROLE-003]]
+== FT-ROLE-003 — Grant and revoke the operator role
+
+Feature:: Roles
+Interface:: CLI
+Objective:: Admins grant the operator role, which allows managing quotas, and revoke it.
+Prerequisites::
+* `{operator_user}` has no role, and a saved user token obtained before the grant.
+Steps::
+. As `{admin_user}`, run `slurm-quota role grant operator {operator_user}` and `slurm-quota role list`.
+. As `{operator_user}`, with the token saved before the grant, run `slurm-quota role show`,
+`slurm-quota stats --all` and `slurm-quota user-quota {user_a} 1000`.
+. As `{operator_user}`, run `slurm-quota role grant manager {user_b}`.
+. As `{admin_user}`, run `slurm-quota role revoke operator {operator_user}`.
+. As `{operator_user}`, run `slurm-quota user-quota {user_a} -1`.
+. As `{admin_user}`, run `slurm-quota role grant operator {operator_user}` again.
+Expected results::
+* The grant prints `Granted operator role to {operator_user}`, and `role list` lists `{operator_user}` as operator.
+* The role applies to the existing token of `{operator_user}`: `role show` reports `Role: operator`, `stats --all`
+and `user-quota` succeed.
+* `role grant` by the operator fails with `Access denied: admin role required to grant manager`.
+* The revocation prints `Revoked operator role from {operator_user}`, and the next `user-quota` of
+`{operator_user}` is refused.
+* `{operator_user}` is operator again at the end of the test.
+// end::FT-ROLE-003[]
+
+// tag::FT-ROLE-004[]
+[[FT-ROLE-004]]
+== FT-ROLE-004 — Grant the manager role and assign accounts
+
+Feature:: Roles
+Interface:: CLI
+Objective:: Admins grant the manager role and assign accounts to managers.
+Prerequisites::
+* `{manager_user}` has no role.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota role grant manager {manager_user}
+$ slurm-quota role managers add {manager_user} {account_a}
+$ slurm-quota role managers add {manager_user} {account_b}
+$ slurm-quota role managers list {manager_user}
+$ slurm-quota role managers remove {manager_user} {account_b}
+$ slurm-quota role managers list {manager_user}
+----
+. As `{manager_user}`, run `slurm-quota role show`.
+Expected results::
+* The commands print `Granted manager role to {manager_user}`,
+`Assigned account {account_a} to manager {manager_user}`, `Assigned account {account_b} to manager {manager_user}` and
+`Removed account {account_b} from manager {manager_user}`.
+* The first list contains `{account_a}` and `{account_b}`, the second list `{account_a}` only.
+* `role show` reports `Role: manager`.
+// end::FT-ROLE-004[]
+
+// tag::FT-ROLE-005[]
+[[FT-ROLE-005]]
+== FT-ROLE-005 — Statistics visible to managers
+
+Feature:: Roles
+Interface:: CLI
+Objective:: Managers see their own statistics, and the statistics of their assigned accounts and of the users of these
+accounts, but cannot manage quotas.
+Prerequisites::
+* <<FT-ROLE-004>> passed: `{manager_user}` manages `{account_a}` only, and is not associated with `{account_a}` nor
+`{account_b}`.
+* `{manager_user}` is known to Slurm-quota, for example after the submission of a job on one of its accounts.
+Steps::
+. As `{manager_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota stats --all --breakdown
+$ slurm-quota stats --account {account_a}
+$ slurm-quota stats {user_a}
+$ slurm-quota stats --account {account_b}
+$ slurm-quota user-quota {user_a} 10
+----
+Expected results::
+* `stats --all` lists `{manager_user}`, `{user_a}` and `{user_b}`, each once, and the accounts of `{manager_user}` and
+`{account_a}`, but not `{account_b}`.
+* The breakdown of `{account_a}` lists the consumption of its users.
+* `stats --account {account_a}` and `stats {user_a}` succeed.
+* `stats --account {account_b}` is refused with an `Access denied` error.
+* `user-quota` is refused with `Access denied: operator or admin role required to set quotas`.
+// end::FT-ROLE-005[]
+
+// tag::FT-ROLE-006[]
+[[FT-ROLE-006]]
+== FT-ROLE-006 — Operators cannot manage roles
+
+Feature:: Roles
+Interface:: CLI
+Objective:: Operators manage quotas but not roles.
+Prerequisites::
+* <<FT-ROLE-003>> passed: `{operator_user}` is operator.
+Steps::
+. As `{operator_user}`, run `slurm-quota role list`, `slurm-quota role managers list {manager_user}`,
+`slurm-quota role revoke manager {manager_user}`, `slurm-quota default-quotas` and `slurm-quota gpu-factors`.
+Expected results::
+* The 3 `role` commands are refused with `Access denied: admin role required to ...` errors.
+* `default-quotas` and `gpu-factors` succeed.
+// end::FT-ROLE-006[]
+
+// tag::FT-ROLE-007[]
+[[FT-ROLE-007]]
+== FT-ROLE-007 — Application tokens follow the role of their owner
+
+Feature:: Roles
+Interface:: CLI
+Objective:: Application tokens are limited to their scopes, and lose the access of a revoked role.
+Prerequisites::
+* <<FT-ROLE-003>> passed: `{operator_user}` is operator.
+Steps::
+. As `{operator_user}`, create application tokens:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota token create own --scope stats:read:own > own.token
+$ slurm-quota token create quotas --scope stats:read:all --scope quotas:write > quotas.token
+----
+. Run `SLURM_QUOTA_TOKEN=$(cat own.token) slurm-quota stats --all` and
+`SLURM_QUOTA_TOKEN=$(cat own.token) slurm-quota user-quota {user_a} -1`.
+. Run `SLURM_QUOTA_TOKEN=$(cat quotas.token) slurm-quota user-quota {user_a} -1` and
+`SLURM_QUOTA_TOKEN=$(cat quotas.token) slurm-quota comments --user {user_a} "test"`.
+. As `{admin_user}`, revoke the operator role of `{operator_user}`, then run the `user-quota` command with
+`quotas.token` again.
+. As `{admin_user}`, grant the operator role to `{operator_user}` again.
+Expected results::
+* With `own.token`, `stats --all` shows the statistics of `{operator_user}` only, and `user-quota` is refused.
+* With `quotas.token`, `user-quota` succeeds and `comments` is refused (no `comments:write` scope).
+* After the revocation of the role, `user-quota` with `quotas.token` is refused.
+// end::FT-ROLE-007[]
+
+// tag::FT-ROLE-008[]
+[[FT-ROLE-008]]
+== FT-ROLE-008 — Role and scope enforcement in the REST API
+
+Feature:: Roles
+Interface:: REST API
+Objective:: REST API routes are refused with HTTP status `403` when the role or the scopes of the token do not allow
+them.
+Prerequisites::
+* `USER_TOKEN`, `MANAGER_TOKEN`, `OPERATOR_TOKEN` and `ADMIN_TOKEN` hold user tokens of `{user_a}`, `{manager_user}`,
+`{operator_user}` and `{admin_user}`.
+Steps::
+. For each token, send these requests and record the HTTP status:
++
+[cols="3m,1,1,1,1"]
+|===
+|Request |user |manager |operator |admin
+
+|GET /me |200 |200 |200 |200
+|GET /stats?username={user_b} |403 |200 |200 |200
+|GET /stats?account={account_b} |200 |403 |200 |200
+|GET /quotas/defaults |403 |403 |200 |200
+|GET /factors/gpu |403 |403 |200 |200
+|PUT /quotas/users/{user_a}/cpu |403 |403 |204 |204
+|PATCH /consumption/{user_a}/{account_a}/cpu |403 |403 |200 |200
+|PUT /comments/users/{user_a} |403 |403 |204 |204
+|GET /roles |403 |403 |403 |200
+|PUT /roles/managers/{manager_user}/accounts/{account_a} |403 |403 |403 |204
+|===
++
+Write requests use valid bodies that do not change the state, for example the current quota.
+Expected results::
+* Each HTTP status matches the table.
+* `GET /health` returns `200` without token.
+// end::FT-ROLE-008[]
+
+// tag::FT-ROLE-009[]
+[[FT-ROLE-009]]
+== FT-ROLE-009 — Role shown and controls per role in the dashboard
+
+Feature:: Roles
+Interface:: Web dashboard
+Objective:: The dashboard shows the role of the signed-in user, and only the data and controls allowed for this role.
+Prerequisites::
+* `{manager_user}` is manager of `{account_a}`, `{operator_user}` is operator.
+Steps::
+. Sign in the dashboard successively as `{user_a}`, `{manager_user}`, `{operator_user}` and `{admin_user}`.
+Expected results::
+* The header shows `Signed in as {user_a}` without role, and `Signed in as <user> (manager)`, `(operator)` and
+`(admin)` for the others.
+* `{user_a}` sees their statistics and accounts only, without *Username* filter nor *Edit* buttons.
+* `{manager_user}` sees the same statistics as with `slurm-quota stats --all`, without *Edit* buttons.
+* `{operator_user}` and `{admin_user}` see all users and accounts, with *Edit* buttons for quotas, consumption and
+comments.
+* Only `{admin_user}` has the *Manage roles* link. All have the *API tokens* link.
+* Opening `{web_url}roles` directly as `{operator_user}` does not show the roles page.
+// end::FT-ROLE-009[]
+
+// tag::FT-ROLE-010[]
+[[FT-ROLE-010]]
+== FT-ROLE-010 — Manage roles in the dashboard
+
+Feature:: Roles
+Interface:: Web dashboard
+Objective:: Admins grant and revoke roles, and assign accounts to managers, on the *Manage roles* page.
+Prerequisites::
+* `{user_b}` has no role.
+Steps::
+. Sign in the dashboard as `{admin_user}` and open *Manage roles*.
+. Grant the manager role to `{user_b}` and confirm.
+. Assign `{account_b}` to `{user_b}`.
+. Revoke the manager role of `{user_b}` and confirm.
+Expected results::
+* The page lists all users with roles, including `{operator_user}`, `{manager_user}` with `{account_a}`, and
+`{admin_user}`.
+* After the grant, `{user_b}` is listed as manager, and `slurm-quota role list` reports the same.
+* After the assignment, `slurm-quota role managers list {user_b}` lists `{account_b}`.
+* After the revocation, `{user_b}` is no longer listed as manager.
+// end::FT-ROLE-010[]
+
+// tag::FT-ROLE-011[]
+[[FT-ROLE-011]]
+== FT-ROLE-011 — Application token scopes of managers and admins
+
+Feature:: Roles
+Interface:: CLI
+Objective:: The `stats:read:managed`, `quotas:read`, `roles:read` and `roles:write` scopes give access to their routes
+only.
+Prerequisites::
+* `{manager_user}` is manager of `{account_a}`, `{operator_user}` is operator.
+Steps::
+. As `{manager_user}`, create a token with scope `stats:read:managed` in `managed.token`, and run
+`SLURM_QUOTA_TOKEN=$(cat managed.token) slurm-quota stats --all`.
+. As `{manager_user}`, create a token with scope `stats:read:all`.
+. As `{admin_user}`, create tokens with scopes `quotas:read` in `quotas-read.token`, and `roles:read` in
+`roles-read.token`.
+. With `quotas-read.token`, run `slurm-quota default-quotas`, `slurm-quota gpu-factors` and
+`slurm-quota set-gpu-factor {gpu_type_1} 1`.
+. With `roles-read.token`, run `slurm-quota role list`, `slurm-quota role managers list {manager_user}` and
+`slurm-quota role grant operator {user_a}`.
+. As `{admin_user}`, create a token with scopes `roles:read` and `roles:write`, and run with it
+`slurm-quota role grant operator {user_a}` then `slurm-quota role revoke operator {user_a}`.
+Expected results::
+* With `managed.token`, `stats --all` shows the same statistics as `{manager_user}` with a user token.
+* The token with scope `stats:read:all` is refused for `{manager_user}`.
+* With `quotas-read.token`, `default-quotas` and `gpu-factors` succeed, `set-gpu-factor` is refused.
+* With `roles-read.token`, `role list` and `role managers` succeed, `role grant` is refused.
+* With the `roles:write` token, the grant and the revocation succeed.
+// end::FT-ROLE-011[]

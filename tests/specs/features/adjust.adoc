@@ -1,0 +1,159 @@
+= Consumption adjustment (ADJUST)
+
+Operators and admins adjust the CPU or GPU time consumed by a user on an account, for example to refund a job that
+failed because of the cluster. The adjustment changes both the user and the account totals. Consumption never becomes
+negative.
+
+// tag::FT-ADJUST-001[]
+[[FT-ADJUST-001]]
+== FT-ADJUST-001 — Adjust CPU and GPU consumption
+
+Feature:: Consumption adjustment
+Interface:: CLI
+Objective:: Operators and admins can add and remove consumed CPU and GPU time in minutes, hours and seconds.
+Prerequisites::
+* `{user_a}` has no consumption on `{account_a}`, and `{account_a}` has no consumption.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota adjust --user {user_a} --account {account_a} --cpu --minutes=+30
+$ slurm-quota adjust --user {user_a} --account {account_a} --cpu --hours=+2
+$ slurm-quota adjust --user {user_a} --account {account_a} --cpu --seconds=-45
+$ slurm-quota adjust --user {user_a} --account {account_a} --gpu --minutes=+10
+$ slurm-quota stats --user {user_a} --seconds
+----
+Expected results::
+* The commands print `Successfully adjusted CPU consumed time for user {user_a} on account {account_a}: +30 minutes
+(new total: 30 minutes)`, then new totals `150 minutes`, `8955 seconds`, and for GPU `10 minutes`.
+* `{user_a}` consumption is 8955 CPU seconds and 600 GPU seconds, and its breakdown shows the same values on
+`{account_a}`.
+* `{account_a}` consumption is 8955 CPU seconds and 600 GPU seconds.
+// end::FT-ADJUST-001[]
+
+// tag::FT-ADJUST-002[]
+[[FT-ADJUST-002]]
+== FT-ADJUST-002 — Consumption is clamped at zero
+
+Feature:: Consumption adjustment
+Interface:: CLI
+Objective:: Removing more time than consumed leaves a consumption of zero.
+Prerequisites::
+* <<FT-ADJUST-001>> passed.
+Steps::
+. As `{admin_user}`, run `slurm-quota adjust --user {user_a} --account {account_a} --cpu --hours=-100`.
+Expected results::
+* The command reports a new total of `0 minutes`.
+* `{user_a}` and `{account_a}` have no CPU consumption.
+// end::FT-ADJUST-002[]
+
+// tag::FT-ADJUST-003[]
+[[FT-ADJUST-003]]
+== FT-ADJUST-003 — Invalid adjustments are refused
+
+Feature:: Consumption adjustment
+Interface:: CLI
+Objective:: The delta must be signed, and the user and account must be given.
+Prerequisites::
+* Global prerequisites.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota adjust --user {user_a} --account {account_a} --cpu --minutes=30
+$ slurm-quota adjust --user {user_a} --cpu --minutes=+30
+$ slurm-quota adjust --user {user_a} --account {account_a} --minutes=+30
+$ slurm-quota adjust --user {user_a} --account {account_a} --cpu --minutes=+30 --hours=+1
+----
+Expected results::
+* All commands fail with a non-zero exit code and an error message, and no consumption changes.
+// end::FT-ADJUST-003[]
+
+// tag::FT-ADJUST-004[]
+[[FT-ADJUST-004]]
+== FT-ADJUST-004 — Adjustment applies to the next submissions
+
+Feature:: Consumption adjustment
+Interface:: Slurm
+Objective:: Adjusted consumption is taken into account by the submission control.
+Prerequisites::
+* `{user_a}` CPU quota is 100 minutes, with no consumption nor preallocation.
+Steps::
+. As `{admin_user}`, run `slurm-quota adjust --user {user_a} --account {account_a} --cpu --minutes=+90`.
+. As `{user_a}`, submit a held job requesting 20 CPU minutes on `{account_a}`.
+. As `{admin_user}`, run `slurm-quota adjust --user {user_a} --account {account_a} --cpu --minutes=-90`.
+. As `{user_a}`, submit the same job again, then cancel it.
+Expected results::
+* The first submission is refused with message
+`job submission rejected due to user quota (requested: 20 CPU mins, available: 10 CPU mins)`.
+* The second submission is accepted.
+// end::FT-ADJUST-004[]
+
+// tag::FT-ADJUST-005[]
+[[FT-ADJUST-005]]
+== FT-ADJUST-005 — Adjustment reason is saved in user and account comments
+
+Feature:: Consumption adjustment
+Interface:: CLI
+Objective:: The reason of an adjustment is appended to the comments of both the user and the account, unless
+`--no-save-comment` is given.
+Prerequisites::
+* `{user_a}` and `{account_a}` have no comment.
+Steps::
+. As `{admin_user}`, run:
++
+[source,console,subs=attributes+]
+----
+$ slurm-quota adjust --user {user_a} --account {account_a} --cpu --minutes=+5 --reason "refund node failure"
+$ slurm-quota adjust --user {user_a} --account {account_a} --cpu --minutes=-5 --reason "hidden" --no-save-comment
+$ slurm-quota stats --user {user_a} --comments
+----
+Expected results::
+* The comments of `{user_a}` and `{account_a}` are both `refund node failure`.
+* The service logs record both adjustments with their reasons.
+// end::FT-ADJUST-005[]
+
+// tag::FT-ADJUST-006[]
+[[FT-ADJUST-006]]
+== FT-ADJUST-006 — Adjust consumption in the dashboard
+
+Feature:: Consumption adjustment
+Interface:: Web dashboard
+Objective:: Operators and admins can adjust the consumption of a user on an account in the dashboard, in minutes or
+seconds.
+Prerequisites::
+* `{user_a}` has no consumption on `{account_a}`, `{user_a}` and `{account_a}` have no comment.
+Steps::
+. Sign in the dashboard as `{admin_user}`.
+. Expand the row of `{user_a}`, and on the breakdown row of `{account_a}`, click *Edit* in the CPU consumption cell.
+. Check that *User* and *Account* are filled with `{user_a}` and `{account_a}`, enter delta `30` in *Minutes*, reason
+`web refund`, keep *Append reason to user and account comments* checked, and click the submit button.
+. Adjust the GPU consumption of the same pair with delta `-10` in *Seconds*.
+Expected results::
+* The CPU consumption of `{user_a}`, of `{account_a}` and of the breakdown row is 30 minutes.
+* The GPU consumption stays 0.
+* The comments of `{user_a}` and `{account_a}` are `web refund`.
+// end::FT-ADJUST-006[]
+
+// tag::FT-ADJUST-007[]
+[[FT-ADJUST-007]]
+== FT-ADJUST-007 — Adjust consumption with the REST API
+
+Feature:: Consumption adjustment
+Interface:: REST API
+Objective:: Consumption can be adjusted with the REST API, which returns the new total.
+Prerequisites::
+* `TOKEN` holds a token of `{admin_user}`, `{user_a}` has no CPU consumption on `{account_a}`.
+Steps::
+. Run:
++
+[source,console,subs=attributes+]
+----
+$ curl -s -X PATCH -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d '{"delta_seconds": 120}' {api_url}consumption/{user_a}/{account_a}/cpu
+----
+Expected results::
+* The response is `{"total_consumed_seconds": 120}`.
+// end::FT-ADJUST-007[]

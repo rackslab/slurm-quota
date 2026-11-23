@@ -1,0 +1,164 @@
+= Job charging (CHARGE)
+
+When a job completes, is cancelled, fails or reaches its time limit, Slurm runs the Slurm-quota job completion script.
+It charges the CPU and GPU time actually consumed by the job to its user/account pair, and removes the preallocation
+of the job. The consumption of a user or an account is the sum of the consumption of its pairs.
+
+The charge operations are logged in `/var/log/slurm/charge/slurm-quota-charge.log` on `{controller}`, one line per job:
+`charge: user=<user> account=<account> job_id=<id> +<cpu> CPUsecs +<gpu> GPUsecs uuid=<uuid> prealloc_status=<status>`.
+
+// tag::FT-CHARGE-001[]
+[[FT-CHARGE-001]]
+== FT-CHARGE-001 — Completed job is charged and its preallocation released
+
+Feature:: Job charging
+Interface:: Slurm
+Objective:: The CPU time consumed by a completed job is charged to its user and account, and its preallocation is
+removed.
+Prerequisites::
+* `{user_a}` and `{account_a}` have no consumption and no preallocation.
+Steps::
+. As `{user_a}`, submit a job of 2 tasks running for about 2 minutes:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_a} -p {cpu_partition} -n 2 -t 10 --wrap "sleep 120"
+----
+. Wait for the job to complete, then get its allocated CPUs and elapsed time:
++
+[source,console,subs=attributes+]
+----
+$ sacct -j <jobid> -X --noheader --format=AllocCPUS,ElapsedRaw
+----
+. Run `slurm-quota stats --seconds` as `{user_a}`.
+. As root on `{controller}`, read the last lines of the charge log.
+Expected results::
+* `{user_a}` and `{account_a}` consumed CPU time is `AllocCPUS × ElapsedRaw` seconds.
+* `{user_a}` and `{account_a}` have no preallocation left.
+* The charge log has a line for the job with `user={user_a} account={account_a}`, the same CPU seconds,
+`+0 GPUsecs` and `prealloc_status=removed`.
+// end::FT-CHARGE-001[]
+
+// tag::FT-CHARGE-002[]
+[[FT-CHARGE-002]]
+== FT-CHARGE-002 — GPU consumption is charged
+
+Feature:: Job charging
+Interface:: Slurm
+Objective:: The GPU time consumed by a job is charged from the GPUs allocated to the job.
+Prerequisites::
+* `{user_a}` and `{account_a}` have no consumption and no preallocation.
+Steps::
+. As `{user_a}`, submit a job with 2 GPUs of type `{gpu_type_1}` running for about 2 minutes:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_a} -p {gpu_partition} -n 1 -t 10 --gpus={gpu_type_1}:2 --wrap "sleep 120"
+----
+. Wait for the job to complete, then get its allocated TRES and elapsed time:
++
+[source,console,subs=attributes+]
+----
+$ sacct -j <jobid> -X --noheader --format=AllocTRES%80,ElapsedRaw
+----
+. Run `slurm-quota stats --seconds` as `{user_a}`.
+Expected results::
+* `AllocTRES` contains `gres/gpu:{gpu_type_1}=2`.
+* `{user_a}` and `{account_a}` consumed GPU time is `2 × ElapsedRaw` seconds.
+* `{user_a}` and `{account_a}` have no GPU preallocation left.
+// end::FT-CHARGE-002[]
+
+// tag::FT-CHARGE-003[]
+[[FT-CHARGE-003]]
+== FT-CHARGE-003 — Cancelled pending job releases its preallocation
+
+Feature:: Job charging
+Interface:: Slurm
+Objective:: A job cancelled before it starts releases its preallocation and is not charged.
+Prerequisites::
+* `{user_a}` and `{account_a}` have no consumption and no preallocation.
+Steps::
+. As `{user_a}`, submit a held job, check its preallocation with `slurm-quota stats`, then cancel it:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -H -A {account_a} -p {cpu_partition} -n 2 -t 10 --wrap "sleep 60"
+$ slurm-quota stats
+$ scancel <jobid>
+----
+. Run `slurm-quota stats` as `{user_a}`.
+Expected results::
+* Before the cancellation, 20 CPU minutes are preallocated to `{user_a}`.
+* After the cancellation, `{user_a}` and `{account_a}` have no preallocation and no consumption.
+// end::FT-CHARGE-003[]
+
+// tag::FT-CHARGE-004[]
+[[FT-CHARGE-004]]
+== FT-CHARGE-004 — Cancelled running, failed and timed out jobs are charged
+
+Feature:: Job charging
+Interface:: Slurm
+Objective:: Jobs ending in other states than completed are charged with the time they actually consumed.
+Prerequisites::
+* `{user_a}` and `{account_a}` have no consumption and no preallocation.
+Steps::
+. As `{user_a}`, submit these jobs on `{account_a}` and `{cpu_partition}`, with 1 task each:
+.. a job running `sleep 300` with a time limit of 10 minutes, cancelled with `scancel` after about 1 minute of run;
+.. a job running `sleep 30; false` with a time limit of 10 minutes;
+.. a job running `sleep 600` with a time limit of 1 minute.
+. Wait for the end of the jobs, then get their state, allocated CPUs and elapsed time with `sacct`.
+. Run `slurm-quota stats --seconds` as `{user_a}`.
+Expected results::
+* The jobs end in states `CANCELLED`, `FAILED` and `TIMEOUT`.
+* The consumed CPU time of `{user_a}` and `{account_a}` is the sum of `AllocCPUS × ElapsedRaw` of the 3 jobs.
+* `{user_a}` and `{account_a}` have no preallocation left.
+// end::FT-CHARGE-004[]
+
+// tag::FT-CHARGE-005[]
+[[FT-CHARGE-005]]
+== FT-CHARGE-005 — Job array elements are charged individually
+
+Feature:: Job charging
+Interface:: Slurm
+Objective:: Each element of a job array is charged when it completes, and the preallocation of the array is reduced by
+one element each time.
+Prerequisites::
+* `{user_a}` and `{account_a}` have no consumption and no preallocation.
+* At most 1 job of `{user_a}` can run at the same time, for example with `--array=1-3%1`.
+Steps::
+. As `{user_a}`, submit an array of 3 elements running one at a time:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -A {account_a} -p {cpu_partition} -n 1 -t 10 --array=1-3%1 --wrap "sleep 60"
+----
+. After the completion of the first element, run `slurm-quota stats`.
+. After the completion of all elements, run `slurm-quota stats --seconds`, and read the charge log on `{controller}`.
+Expected results::
+* After the first element, the preallocation of `{user_a}` is 20 CPU minutes, with 2 jobs.
+* The charge log has a line for each element, with `prealloc_status=decremented` for the first 2 elements and
+`prealloc_status=removed` for the last one.
+* After all elements, the consumed CPU time is the sum of the consumption of the 3 elements, with no preallocation left.
+// end::FT-CHARGE-005[]
+
+// tag::FT-CHARGE-006[]
+[[FT-CHARGE-006]]
+== FT-CHARGE-006 — Consumption is charged to the user/account pair
+
+Feature:: Job charging
+Interface:: CLI
+Objective:: Consumption is recorded per user/account pair: a user with jobs on several accounts has the sum of their
+consumption, and each account the sum of the consumption of its users.
+Prerequisites::
+* `{user_a}`, `{user_b}`, `{account_a}` and `{account_b}` have no consumption and no preallocation.
+Steps::
+. Submit jobs of about 1 minute: one as `{user_a}` on `{account_a}`, one as `{user_a}` on `{account_b}`, one as
+`{user_b}` on `{account_a}`. Wait for their completion.
+. As `{admin_user}`, run `slurm-quota stats --all --breakdown --seconds`.
+Expected results::
+* The breakdown of `{user_a}` lists the consumption of `{user_a}` on `{account_a}` and on `{account_b}`, each equal to
+the consumption of the matching job, and `{user_a}` consumption is their sum.
+* The breakdown of `{account_a}` lists the consumption of `{user_a}` and `{user_b}`, and `{account_a}` consumption is
+their sum.
+* `{account_b}` consumption is the consumption of the job of `{user_a}` on it.
+// end::FT-CHARGE-006[]
