@@ -21,10 +21,12 @@ from slurm_quota.commands import (
     role_managers_remove_command,
     role_revoke_command,
     role_show_command,
+    set_account_comment_command,
     set_account_gpu_quota_command,
     set_account_quota_command,
     set_default_quotas_command,
     set_gpu_factor_command,
+    set_user_comment_command,
     set_user_gpu_quota_command,
     set_user_quota_command,
     show_default_quotas_command,
@@ -81,6 +83,16 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         action="version",
         version=f"%(prog)s {APP_VERSION}",
         help="Show program version and exit",
+    )
+
+
+def add_save_comment_argument(parser: argparse.ArgumentParser) -> None:
+    """Add --no-save-comment option to commands with a reason."""
+    parser.add_argument(
+        "--no-save-comment",
+        dest="save_comment",
+        action="store_false",
+        help="Do not append the reason to the user and account comments",
     )
 
 
@@ -232,6 +244,11 @@ def main():
         action="store_false",
         help="Do not break down consumption of a single user or account",
     )
+    stats_parser.add_argument(
+        "--comments",
+        action="store_true",
+        help="Display comments of users and accounts below their rows",
+    )
     stats_unit_group = stats_parser.add_mutually_exclusive_group()
     stats_unit_group.add_argument(
         "--hours",
@@ -342,6 +359,7 @@ def main():
         "--reason",
         help="Optional reason for the adjustment (recorded in audit logs)",
     )
+    add_save_comment_argument(adjust_parser)
 
     # User-quota command
     user_quota_parser = subparsers.add_parser(
@@ -356,6 +374,7 @@ def main():
         "--reason",
         help="Optional reason for the change (recorded in audit logs)",
     )
+    add_save_comment_argument(user_quota_parser)
 
     # Account-quota command
     account_quota_parser = subparsers.add_parser(
@@ -370,6 +389,7 @@ def main():
         "--reason",
         help="Optional reason for the change (recorded in audit logs)",
     )
+    add_save_comment_argument(account_quota_parser)
 
     # User-gpu-quota command
     user_gpu_quota_parser = subparsers.add_parser(
@@ -384,6 +404,7 @@ def main():
         "--reason",
         help="Optional reason for the change (recorded in audit logs)",
     )
+    add_save_comment_argument(user_gpu_quota_parser)
 
     # Account-gpu-quota command
     account_gpu_quota_parser = subparsers.add_parser(
@@ -399,6 +420,25 @@ def main():
     account_gpu_quota_parser.add_argument(
         "--reason",
         help="Optional reason for the change (recorded in audit logs)",
+    )
+    add_save_comment_argument(account_gpu_quota_parser)
+
+    # Comments command
+    comments_parser = subparsers.add_parser(
+        "comments",
+        help="Set or remove the comment of a user or an account (operator or admin)",
+    )
+    comments_target_group = comments_parser.add_mutually_exclusive_group(required=True)
+    comments_target_group.add_argument("--user", help="User to comment")
+    comments_target_group.add_argument("--account", help="Account to comment")
+    comments_text_group = comments_parser.add_mutually_exclusive_group(required=True)
+    comments_text_group.add_argument(
+        "comment", nargs="?", help="Comment of the user or account"
+    )
+    comments_text_group.add_argument(
+        "--clear",
+        action="store_true",
+        help="Remove the comment of the user or account",
     )
 
     # GPU factors command (show)
@@ -484,6 +524,7 @@ def main():
             args.all,
             display_unit,
             show_breakdown=args.breakdown,
+            show_comments=args.comments,
         )
     elif args.command == "role":
         if args.role_command == "show":
@@ -514,15 +555,30 @@ def main():
             args.hours,
             args.reason,
             seconds=args.seconds,
+            append_reason=args.save_comment,
         )
     elif args.command == "user-quota":
-        set_user_quota_command(args.username, args.quota, args.reason)
+        set_user_quota_command(
+            args.username, args.quota, args.reason, args.save_comment
+        )
     elif args.command == "account-quota":
-        set_account_quota_command(args.account, args.quota, args.reason)
+        set_account_quota_command(
+            args.account, args.quota, args.reason, args.save_comment
+        )
     elif args.command == "user-gpu-quota":
-        set_user_gpu_quota_command(args.username, args.quota, args.reason)
+        set_user_gpu_quota_command(
+            args.username, args.quota, args.reason, args.save_comment
+        )
     elif args.command == "account-gpu-quota":
-        set_account_gpu_quota_command(args.account, args.quota, args.reason)
+        set_account_gpu_quota_command(
+            args.account, args.quota, args.reason, args.save_comment
+        )
+    elif args.command == "comments":
+        comment = None if args.clear else args.comment
+        if args.user:
+            set_user_comment_command(args.user, comment)
+        else:
+            set_account_comment_command(args.account, comment)
     elif args.command == "gpu-factors":
         show_gpu_factors_command()
     elif args.command == "set-gpu-factor":

@@ -19,6 +19,8 @@ from slurm_quota.commands import (
     role_managers_remove_command,
     role_revoke_command,
     role_show_command,
+    set_account_comment_command,
+    set_user_comment_command,
     show_user_stats,
     token_command,
 )
@@ -194,6 +196,30 @@ class TestShowUserStats(SlurmQuotaTestCase):
         self.assertTrue(lines[5].startswith("  └ (unattributed) |          60 "))
         # Account rows are not broken down for a user query
         self.assertTrue(lines[-1].startswith("acct1              |"), lines[-1])
+
+    def test_comments_printed_below_rows(self):
+        self.env({"NO_COLOR": "1"})
+        users, accounts = _sample_users_and_accounts()
+        users[0]["comment"] = "PhD student"
+        accounts[0]["comment"] = "Project X"
+        self._mock_stats(return_value=(users, accounts, self._breakdown_entries()))
+        out = self._run_show(username="alice", show_all=False, show_comments=True)
+        lines = out.splitlines()
+        self.assertTrue(lines[3].startswith("alice              |"), lines[3])
+        # Comment is printed before the breakdown of the row
+        self.assertEqual(lines[4], f"{'':<18}   # PhD student")
+        self.assertTrue(lines[5].startswith("  └ acct1"), lines[5])
+        self.assertTrue(lines[-2].startswith("acct1              |"), lines[-2])
+        self.assertEqual(lines[-1], f"{'':<18}   # Project X")
+
+    def test_comments_hidden_by_default(self):
+        self.env({"NO_COLOR": "1"})
+        users, accounts = _sample_users_and_accounts()
+        users[0]["comment"] = "PhD student"
+        accounts[0]["comment"] = "Project X"
+        self._mock_stats(return_value=(users, accounts, self._breakdown_entries()))
+        out = self._run_show(username="alice", show_all=False)
+        self.assertNotIn("#", out)
 
     def test_account_consumption_broken_down_by_user(self):
         self.env({"NO_COLOR": "1"})
@@ -485,6 +511,46 @@ class TestShowUserStats(SlurmQuotaTestCase):
         with self.assertRaises(SystemExit) as cm:
             show_user_stats(username="x", show_all=False)
         self.assertEqual(cm.exception.code, 1)
+
+
+class TestCommentCommands(SlurmQuotaTestCase):
+    def _run(self, command, *args):
+        buf = io.StringIO()
+        with (
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+            redirect_stdout(buf),
+        ):
+            command(*args)
+        return buf.getvalue(), m_client.return_value
+
+    def test_set_user_comment(self):
+        out, api = self._run(set_user_comment_command, "bob", "PhD student")
+        self.assertEqual(out, "Successfully set comment for user bob\n")
+        api.set_user_comment.assert_called_once_with("bob", "PhD student")
+
+    def test_clear_account_comment(self):
+        out, api = self._run(set_account_comment_command, "hpc", None)
+        self.assertEqual(out, "Successfully removed comment of account hpc\n")
+        api.set_account_comment.assert_called_once_with("hpc", None)
+
+    def test_set_comment_reports_forbidden(self):
+        with (
+            patch("slurm_quota.commands.ClientToken.load_value", return_value="token"),
+            patch("slurm_quota.commands.APIClient") as m_client,
+            self.assertLogs("slurm_quota", level="ERROR") as log_cm,
+            self.assertRaises(SystemExit) as cm,
+        ):
+            m_client.return_value.set_user_comment.side_effect = ServiceHTTPError(403)
+            set_user_comment_command("bob", "hello")
+        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(
+            log_cm.output,
+            [
+                "ERROR:slurm_quota:Access denied: operator or admin role required "
+                "to set comments"
+            ],
+        )
 
 
 class TestRoleCommands(SlurmQuotaTestCase):

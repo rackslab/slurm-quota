@@ -126,11 +126,13 @@ def create_status_bar(used: int, total: int, width: int = 20) -> str:
 
 
 def set_user_quota_command(
-    username: str, quota: int, reason: Optional[str] = None
+    username: str, quota: int, reason: Optional[str] = None, append_reason: bool = True
 ) -> None:
     """Set user CPU quota via the REST API (operator or admin role required)."""
     try:
-        _api_client_from_token().set_user_cpu_quota(username, quota, reason=reason)
+        _api_client_from_token().set_user_cpu_quota(
+            username, quota, reason=reason, append_reason=append_reason
+        )
         print(f"Successfully set quota for user {username}: {quota} CPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
@@ -144,11 +146,13 @@ def set_user_quota_command(
 
 
 def set_account_quota_command(
-    account: str, quota: int, reason: Optional[str] = None
+    account: str, quota: int, reason: Optional[str] = None, append_reason: bool = True
 ) -> None:
     """Set account CPU quota via the REST API (operator or admin role required)."""
     try:
-        _api_client_from_token().set_account_cpu_quota(account, quota, reason=reason)
+        _api_client_from_token().set_account_cpu_quota(
+            account, quota, reason=reason, append_reason=append_reason
+        )
         print(f"Successfully set quota for account {account}: {quota} CPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
@@ -162,11 +166,13 @@ def set_account_quota_command(
 
 
 def set_user_gpu_quota_command(
-    username: str, quota: int, reason: Optional[str] = None
+    username: str, quota: int, reason: Optional[str] = None, append_reason: bool = True
 ) -> None:
     """Set user GPU quota via the REST API (operator or admin role required)."""
     try:
-        _api_client_from_token().set_user_gpu_quota(username, quota, reason=reason)
+        _api_client_from_token().set_user_gpu_quota(
+            username, quota, reason=reason, append_reason=append_reason
+        )
         print(f"Successfully set GPU quota for user {username}: {quota} GPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
@@ -180,11 +186,13 @@ def set_user_gpu_quota_command(
 
 
 def set_account_gpu_quota_command(
-    account: str, quota: int, reason: Optional[str] = None
+    account: str, quota: int, reason: Optional[str] = None, append_reason: bool = True
 ) -> None:
     """Set account GPU quota via the REST API (operator or admin role required)."""
     try:
-        _api_client_from_token().set_account_gpu_quota(account, quota, reason=reason)
+        _api_client_from_token().set_account_gpu_quota(
+            account, quota, reason=reason, append_reason=append_reason
+        )
         print(f"Successfully set GPU quota for account {account}: {quota} GPU minutes")
     except ServiceHTTPError as exc:
         _handle_api_error(
@@ -197,6 +205,40 @@ def set_account_gpu_quota_command(
         _handle_unreachable_error(exc)
 
 
+def _set_comment_command(entity: str, name: str, comment: Optional[str]) -> None:
+    """Set or clear the comment of a user or account via the REST API (operator
+    or admin role required)."""
+    try:
+        api = _api_client_from_token()
+        if entity == "user":
+            api.set_user_comment(name, comment)
+        else:
+            api.set_account_comment(name, comment)
+        if comment:
+            print(f"Successfully set comment for {entity} {name}")
+        else:
+            print(f"Successfully removed comment of {entity} {name}")
+    except ServiceHTTPError as exc:
+        _handle_api_error(
+            exc,
+            forbidden_message=(
+                "Access denied: operator or admin role required to set comments"
+            ),
+        )
+    except ServiceUnreachableError as exc:
+        _handle_unreachable_error(exc)
+
+
+def set_user_comment_command(username: str, comment: Optional[str]) -> None:
+    """Set the comment of a user, None to clear it."""
+    _set_comment_command("user", username, comment)
+
+
+def set_account_comment_command(account: str, comment: Optional[str]) -> None:
+    """Set the comment of an account, None to clear it."""
+    _set_comment_command("account", account, comment)
+
+
 def adjust_command(
     username: str,
     account: str,
@@ -206,6 +248,7 @@ def adjust_command(
     hours: Optional[int],
     reason: Optional[str] = None,
     seconds: Optional[int] = None,
+    append_reason: bool = True,
 ) -> None:
     """Adjust consumed CPU/GPU time of a user on an account via the REST API.
 
@@ -226,7 +269,12 @@ def adjust_command(
 
         api = _api_client_from_token()
         new_total = api.adjust_consumption(
-            username, account, resource, delta_seconds, reason=reason
+            username,
+            account,
+            resource,
+            delta_seconds,
+            reason=reason,
+            append_reason=append_reason,
         )
 
         # New total is reported in seconds when the delta is given in seconds,
@@ -610,9 +658,13 @@ def show_user_stats(
     show_all: bool = False,
     display_unit: str = MINUTES,
     show_breakdown: Optional[bool] = None,
+    show_comments: bool = False,
 ) -> None:
     """
     Display resource statistics for users in table format.
+
+    With show_comments, the comment of users and accounts, when defined, is
+    printed below their row.
 
     When enabled, the consumption of users is broken down by account below user
     rows, and the consumption of accounts is broken down by user below account
@@ -627,6 +679,7 @@ def show_user_stats(
         display_unit: Unit of displayed times.
         show_breakdown: True or False to enable or disable the consumption
             breakdown, None for the default.
+        show_comments: If True, print comments of users and accounts.
     """
     selected_username = username
     if not show_all and not selected_username and not account:
@@ -726,6 +779,11 @@ def show_user_stats(
             )
             return f"{format_first_column(label)} | {cpu} | {gpu}"
 
+        def print_comment(item: dict[str, Any]) -> None:
+            comment = item.get("comment")
+            if show_comments and comment:
+                print(f"{'':<{first_column_width}}   # {comment}")
+
         def print_breakdown(key: str, name: str, other_key: str) -> None:
             for entry in breakdown_data:
                 if entry.get(key) != name:
@@ -805,6 +863,7 @@ def show_user_stats(
                         last_updated_str,
                     )
                 )
+                print_comment(item)
                 if breakdown_under_users:
                     print_breakdown("username", uname, "account")
             print()
@@ -864,6 +923,7 @@ def show_user_stats(
                     last_updated_str,
                 )
             )
+            print_comment(item)
             if breakdown_under_accounts:
                 print_breakdown("account", account_name, "username")
     except ServiceHTTPError as e:

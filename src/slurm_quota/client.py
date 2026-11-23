@@ -78,6 +78,16 @@ def _quote_name(value: str) -> str:
     return quote(value, safe="")
 
 
+def _add_reason(body: dict[str, Any], reason: str | None, append_reason: bool) -> None:
+    """Add reason to request body, with append_reason disabled when the reason
+    must not be appended to comments (appended by default by the service)."""
+    if reason is None:
+        return
+    body["reason"] = reason
+    if not append_reason:
+        body["append_reason"] = False
+
+
 def _ssl_context(base_url: str) -> ssl.SSLContext | None:
     ca_cert = os.environ.get("SLURM_QUOTA_CA_CERT")
     if ca_cert:
@@ -303,11 +313,15 @@ class APIClient:
         )
 
     def set_user_cpu_quota(
-        self, username: str, quota_minutes: int, *, reason: str | None = None
+        self,
+        username: str,
+        quota_minutes: int,
+        *,
+        reason: str | None = None,
+        append_reason: bool = True,
     ) -> None:
         body: dict[str, Any] = {"quota_minutes": quota_minutes}
-        if reason is not None:
-            body["reason"] = reason
+        _add_reason(body, reason, append_reason)
         self._api_request(
             "PUT",
             f"quotas/users/{_quote_name(username)}/cpu",
@@ -317,11 +331,15 @@ class APIClient:
         )
 
     def set_user_gpu_quota(
-        self, username: str, quota_minutes: int, *, reason: str | None = None
+        self,
+        username: str,
+        quota_minutes: int,
+        *,
+        reason: str | None = None,
+        append_reason: bool = True,
     ) -> None:
         body: dict[str, Any] = {"quota_minutes": quota_minutes}
-        if reason is not None:
-            body["reason"] = reason
+        _add_reason(body, reason, append_reason)
         self._api_request(
             "PUT",
             f"quotas/users/{_quote_name(username)}/gpu",
@@ -331,11 +349,15 @@ class APIClient:
         )
 
     def set_account_cpu_quota(
-        self, account: str, quota_minutes: int, *, reason: str | None = None
+        self,
+        account: str,
+        quota_minutes: int,
+        *,
+        reason: str | None = None,
+        append_reason: bool = True,
     ) -> None:
         body: dict[str, Any] = {"quota_minutes": quota_minutes}
-        if reason is not None:
-            body["reason"] = reason
+        _add_reason(body, reason, append_reason)
         self._api_request(
             "PUT",
             f"quotas/accounts/{_quote_name(account)}/cpu",
@@ -345,15 +367,39 @@ class APIClient:
         )
 
     def set_account_gpu_quota(
-        self, account: str, quota_minutes: int, *, reason: str | None = None
+        self,
+        account: str,
+        quota_minutes: int,
+        *,
+        reason: str | None = None,
+        append_reason: bool = True,
     ) -> None:
         body: dict[str, Any] = {"quota_minutes": quota_minutes}
-        if reason is not None:
-            body["reason"] = reason
+        _add_reason(body, reason, append_reason)
         self._api_request(
             "PUT",
             f"quotas/accounts/{_quote_name(account)}/gpu",
             body=body,
+            require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
+        )
+
+    def set_user_comment(self, username: str, comment: str | None) -> None:
+        """Set the comment of a user, None to clear it."""
+        self._api_request(
+            "PUT",
+            f"comments/users/{_quote_name(username)}",
+            body={"comment": comment},
+            require_token=True,
+            success_status=HTTPStatus.NO_CONTENT,
+        )
+
+    def set_account_comment(self, account: str, comment: str | None) -> None:
+        """Set the comment of an account, None to clear it."""
+        self._api_request(
+            "PUT",
+            f"comments/accounts/{_quote_name(account)}",
+            body={"comment": comment},
             require_token=True,
             success_status=HTTPStatus.NO_CONTENT,
         )
@@ -406,11 +452,11 @@ class APIClient:
         delta_seconds: int,
         *,
         reason: str | None = None,
+        append_reason: bool = True,
     ) -> int:
         path = f"consumption/{_quote_name(username)}/{_quote_name(account)}/{resource}"
         body: dict[str, Any] = {"delta_seconds": delta_seconds}
-        if reason is not None:
-            body["reason"] = reason
+        _add_reason(body, reason, append_reason)
         payload = self._api_request(
             "PATCH",
             path,

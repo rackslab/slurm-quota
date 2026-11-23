@@ -545,6 +545,45 @@ class TestAPIClientQuotas(SlurmQuotaTestCase):
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"quota_minutes": 500, "reason": "project extension"})
 
+    def test_set_user_cpu_quota_disables_append_reason(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({}, status=204),
+        ) as m_urlopen:
+            APIClient(token="jwt").set_user_cpu_quota(
+                "bob", 500, reason="project extension", append_reason=False
+            )
+        req = m_urlopen.call_args[0][0]
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(
+            body,
+            {
+                "quota_minutes": 500,
+                "reason": "project extension",
+                "append_reason": False,
+            },
+        )
+
+    def test_set_comments_send_put(self):
+        for method, path, name in (
+            ("set_user_comment", "/comments/users/bob%40lab", "bob@lab"),
+            ("set_account_comment", "/comments/accounts/hpc", "hpc"),
+        ):
+            for comment in ("Project X", None):
+                with (
+                    self.subTest(method=method, comment=comment),
+                    patch(
+                        "slurm_quota.client.urlopen",
+                        return_value=_FakeUrlopenResponse({}, status=204),
+                    ) as m_urlopen,
+                ):
+                    getattr(APIClient(token="jwt"), method)(name, comment)
+                req = m_urlopen.call_args[0][0]
+                self.assertEqual(req.method, "PUT")
+                self.assertTrue(req.full_url.endswith(path), req.full_url)
+                body = json.loads(req.data.decode("utf-8"))
+                self.assertEqual(body, {"comment": comment})
+
     def test_set_account_gpu_quota_sends_put(self):
         with patch(
             "slurm_quota.client.urlopen",
@@ -712,6 +751,20 @@ class TestAPIClientConsumption(SlurmQuotaTestCase):
         self.assertIn("/consumption/bob/hpc/cpu", req.full_url)
         body = json.loads(req.data.decode("utf-8"))
         self.assertEqual(body, {"delta_seconds": 1800})
+
+    def test_adjust_consumption_disables_append_reason(self):
+        with patch(
+            "slurm_quota.client.urlopen",
+            return_value=_FakeUrlopenResponse({"total_consumed_seconds": 7800}),
+        ) as m_urlopen:
+            APIClient(token="jwt").adjust_consumption(
+                "bob", "hpc", "cpu", 1800, reason="fix", append_reason=False
+            )
+        req = m_urlopen.call_args[0][0]
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(
+            body, {"delta_seconds": 1800, "reason": "fix", "append_reason": False}
+        )
 
     def test_adjust_consumption_sends_reason_when_provided(self):
         with patch(
