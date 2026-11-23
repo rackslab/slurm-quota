@@ -527,8 +527,10 @@ def prune_resources(
     Args:
         targets: Set of prune targets among {"preallocs", "users", "accounts"}.
         dry_run: If True, report counts without deleting rows.
-        user_filter: Optional username to limit user pruning candidates.
-        account_filter: Optional account to limit account pruning candidates.
+        user_filter: Optional username to limit preallocation and user pruning
+            candidates.
+        account_filter: Optional account to limit preallocation and account
+            pruning candidates.
 
     Returns:
         Mapping with deleted (or deletable in dry-run) rows per target.
@@ -542,14 +544,23 @@ def prune_resources(
     if "preallocs" in targets:
         with connect_database() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT job_uuid, username, account FROM jobs_preallocations"
-            )
-            prealloc_rows = cursor.fetchall()
+            prealloc_conditions: list[str] = []
+            prealloc_params: list[str] = []
+            if user_filter:
+                prealloc_conditions.append("username = ?")
+                prealloc_params.append(user_filter)
+            if account_filter:
+                prealloc_conditions.append("account = ?")
+                prealloc_params.append(account_filter)
+            prealloc_query = "SELECT job_uuid FROM jobs_preallocations"
+            if prealloc_conditions:
+                prealloc_query += " WHERE " + " AND ".join(prealloc_conditions)
+            cursor.execute(prealloc_query, prealloc_params)
+            prealloc_job_uuids = [job_uuid for (job_uuid,) in cursor.fetchall()]
         active_job_uuids = slurm_integration.collect_active_job_uuids()
         orphan_prealloc_uuids = [
             str(job_uuid)
-            for job_uuid, _username, _account in prealloc_rows
+            for job_uuid in prealloc_job_uuids
             if job_uuid and job_uuid not in active_job_uuids
         ]
         counts["preallocs"] = len(orphan_prealloc_uuids)

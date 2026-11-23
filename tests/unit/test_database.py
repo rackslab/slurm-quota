@@ -361,6 +361,78 @@ class TestPruneResources(SlurmQuotaTestCase):
             self.assertEqual(users, {"u_busy", "u_zero"})
             self.assertEqual(accounts, {"a_busy", "a_zero"})
 
+    def _insert_filtered_preallocs(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.executemany(
+                "INSERT INTO users (username) VALUES (?)",
+                [("u1",), ("u2",)],
+            )
+            conn.executemany(
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a1",), ("a2",)],
+            )
+            conn.executemany(
+                """
+                INSERT INTO jobs_preallocations (
+                    job_uuid, username, account, preallocated_cpu_seconds
+                ) VALUES (?, ?, ?, ?)
+                """,
+                [
+                    ("uuid-u1-a1", "u1", "a1", 300),
+                    ("uuid-u1-a2", "u1", "a2", 300),
+                    ("uuid-u2-a1", "u2", "a1", 300),
+                    ("uuid-u1-a1-active", "u1", "a1", 300),
+                ],
+            )
+            conn.commit()
+
+    def _remaining_prealloc_uuids(self):
+        with self.db_connection() as conn:
+            return {
+                row[0]
+                for row in conn.execute("SELECT job_uuid FROM jobs_preallocations")
+            }
+
+    def test_prune_resources_preallocs_filtered_by_user(self):
+        self._insert_filtered_preallocs()
+        with patch(
+            "slurm_quota.slurm.collect_active_job_uuids",
+            return_value={"uuid-u1-a1-active"},
+        ):
+            counts = prune_resources({"preallocs"}, user_filter="u1")
+        self.assertEqual(counts, {"preallocs": 2, "users": 0, "accounts": 0})
+        self.assertEqual(
+            self._remaining_prealloc_uuids(), {"uuid-u2-a1", "uuid-u1-a1-active"}
+        )
+
+    def test_prune_resources_preallocs_filtered_by_account(self):
+        self._insert_filtered_preallocs()
+        with patch(
+            "slurm_quota.slurm.collect_active_job_uuids",
+            return_value={"uuid-u1-a1-active"},
+        ):
+            counts = prune_resources({"preallocs"}, account_filter="a1")
+        self.assertEqual(counts, {"preallocs": 2, "users": 0, "accounts": 0})
+        self.assertEqual(
+            self._remaining_prealloc_uuids(), {"uuid-u1-a2", "uuid-u1-a1-active"}
+        )
+
+    def test_prune_resources_preallocs_filtered_by_user_and_account(self):
+        self._insert_filtered_preallocs()
+        with patch(
+            "slurm_quota.slurm.collect_active_job_uuids",
+            return_value={"uuid-u1-a1-active"},
+        ):
+            counts = prune_resources(
+                {"preallocs"}, user_filter="u1", account_filter="a1"
+            )
+        self.assertEqual(counts, {"preallocs": 1, "users": 0, "accounts": 0})
+        self.assertEqual(
+            self._remaining_prealloc_uuids(),
+            {"uuid-u1-a2", "uuid-u2-a1", "uuid-u1-a1-active"},
+        )
+
 
 class TestUpdateUserAndAccountResources(SlurmQuotaTestCase):
     def test_new_user_and_account_get_default_quotas_from_settings(self):

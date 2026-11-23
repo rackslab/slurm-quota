@@ -412,6 +412,94 @@ class TestPruneCommand(FunctionalCLIBase):
                 conn.execute("SELECT COUNT(*) FROM users").fetchone()[0], 2
             )
 
+    def _insert_orphan_preallocs(self):
+        init_database()
+        with self.db_connection() as conn:
+            conn.executemany(
+                "INSERT INTO users (username) VALUES (?)",
+                [("u1",), ("u2",)],
+            )
+            conn.executemany(
+                "INSERT INTO accounts (account) VALUES (?)",
+                [("a1",), ("a2",)],
+            )
+            conn.executemany(
+                """
+                INSERT INTO jobs_preallocations (
+                    job_uuid, username, account, preallocated_cpu_seconds
+                ) VALUES (?, ?, ?, ?)
+                """,
+                [("uuid-u1", "u1", "a1", 300), ("uuid-u2", "u2", "a2", 300)],
+            )
+            conn.commit()
+
+    def _prealloc_uuids(self):
+        with self.db_connection() as conn:
+            return {
+                row[0]
+                for row in conn.execute("SELECT job_uuid FROM jobs_preallocations")
+            }
+
+    def test_prune_preallocs_filtered_by_user(self):
+        self._insert_orphan_preallocs()
+        with (
+            patch("slurm_quota.auth.get_current_user", return_value="root"),
+            patch("slurm_quota.slurm.collect_active_job_uuids", return_value=set()),
+            self.capture_stdout() as out,
+        ):
+            self.run_prune_main(["slurm-quota-prune", "--preallocs", "--user", "u1"])
+        self.assertEqual(
+            out.getvalue(),
+            "Removed 1 orphan preallocation(s), 0 user(s), 0 account(s)\n",
+        )
+        self.assertEqual(self._prealloc_uuids(), {"uuid-u2"})
+
+    def test_prune_preallocs_filtered_by_account_dry_run(self):
+        self._insert_orphan_preallocs()
+        with (
+            patch("slurm_quota.auth.get_current_user", return_value="root"),
+            patch("slurm_quota.slurm.collect_active_job_uuids", return_value=set()),
+            self.capture_stdout() as out,
+        ):
+            self.run_prune_main(
+                [
+                    "slurm-quota-prune",
+                    "--preallocs",
+                    "--account",
+                    "a2",
+                    "--dry-run",
+                ]
+            )
+        self.assertEqual(
+            out.getvalue(),
+            "Dry-run: would remove 1 orphan preallocation(s), 0 user(s), "
+            "0 account(s)\n",
+        )
+        self.assertEqual(self._prealloc_uuids(), {"uuid-u1", "uuid-u2"})
+
+    def test_prune_all_filtered_by_user_and_account(self):
+        self._insert_orphan_preallocs()
+        with (
+            patch("slurm_quota.auth.get_current_user", return_value="root"),
+            patch("slurm_quota.slurm.collect_active_job_uuids", return_value=set()),
+            self.capture_stdout() as out,
+        ):
+            self.run_prune_main(
+                ["slurm-quota-prune", "--all", "--user", "u1", "--account", "a1"]
+            )
+        # u1/a1 orphan preallocation is removed in the same run, so u1 and a1
+        # can be pruned. u2/a2 orphan preallocation is kept.
+        self.assertEqual(
+            out.getvalue(),
+            "Removed 1 orphan preallocation(s), 1 user(s), 1 account(s)\n",
+        )
+        self.assertEqual(self._prealloc_uuids(), {"uuid-u2"})
+        with self.db_connection() as conn:
+            users = {row[0] for row in conn.execute("SELECT username FROM users")}
+            accounts = {row[0] for row in conn.execute("SELECT account FROM accounts")}
+        self.assertEqual(users, {"u2"})
+        self.assertEqual(accounts, {"a2"})
+
     def test_prune_accounts_filtered_by_account(self):
         init_database()
         with self.db_connection() as conn:

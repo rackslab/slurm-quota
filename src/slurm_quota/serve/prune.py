@@ -49,11 +49,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--user",
-        help="Limit users pruning to a specific username",
+        help="Limit preallocations and users pruning to a specific username",
     )
     parser.add_argument(
         "--account",
-        help="Limit accounts pruning to a specific account",
+        help="Limit preallocations and accounts pruning to a specific account",
     )
 
     args = parser.parse_args()
