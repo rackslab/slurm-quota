@@ -58,10 +58,14 @@ Selectors (mutually exclusive):
   Report what would be removed, without deleting anything.
 
 *--user* <username>::
-  Limit user pruning candidates to this username (applies when users are in selected targets).
+  Limit preallocation and user pruning candidates to this username (applies when preallocations and/or users are in
+  selected targets). Combined with *--all* or without selector, only the orphan preallocations of this user are
+  pruned.
 
 *--account* <account>::
-  Limit account pruning candidates to this account (applies when accounts are in selected targets).
+  Limit preallocation and account pruning candidates to this account (applies when preallocations and/or accounts are
+  in selected targets). Combined with *--all* or without selector, only the orphan preallocations of this account are
+  pruned. When both *--user* and *--account* are set, only the preallocations matching both are pruned.
 
 == Examples
 
@@ -69,6 +73,8 @@ Selectors (mutually exclusive):
 sudo slurm-quota-prune
 sudo slurm-quota-prune --dry-run
 sudo slurm-quota-prune --preallocs
+sudo slurm-quota-prune --preallocs --user alice
+sudo slurm-quota-prune --preallocs --account hpc
 sudo slurm-quota-prune --users
 sudo slurm-quota-prune --users --user alice
 sudo slurm-quota-prune --accounts

@@ -974,8 +974,9 @@ Cleans orphaned or unused data from the database (root only). Dedicated selector
 - `--users`: remove users with both consumed CPU and consumed GPU at 0
 - `--accounts`: remove accounts with both consumed CPU and consumed GPU at 0
 - `--all`: prune all categories above (default behavior when no selector is provided)
-- `--user <username>`: limit user pruning candidates to one username
-- `--account <account>`: limit account pruning candidates to one account
+- `--user <username>`: limit preallocation and user pruning candidates to one username
+- `--account <account>`: limit preallocation and account pruning candidates to one account (when combined with `--user`,
+  only preallocations matching both are pruned)
 - `--dry-run`: report how many preallocations/users/accounts would be removed, without deleting rows
 
 Examples:
@@ -983,6 +984,8 @@ Examples:
 ```bash
 sudo slurm-quota-prune                  # default: same as --all
 sudo slurm-quota-prune --preallocs      # prune only orphaned preallocations
+sudo slurm-quota-prune --preallocs --user alice  # prune only orphaned preallocations of this user
+sudo slurm-quota-prune --preallocs --account hpc # prune only orphaned preallocations of this account
 sudo slurm-quota-prune --users          # prune only users with 0 consumed CPU/GPU
 sudo slurm-quota-prune --users --user alice      # prune only this eligible user
 sudo slurm-quota-prune --accounts       # prune only accounts with 0 consumed CPU/GPU
