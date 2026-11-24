@@ -5,7 +5,7 @@ common_devs_derivatives:
 - main
 common_hpckit_derivatives:
 - main
-- slurm24.11
+- slurm25.05
 slurm_params:
   PriorityType: priority/multifactor
   PriorityWeightFairshare: 1000

@@ -6,7 +6,7 @@ This directory contains the settings to deploy `vortex`, an emulated HPC cluster
 - `firehpc/db/`: [RacksDB](https://github.com/rackslab/RacksDB) database describing the cluster nodes: compute nodes
   `cn[1-4]`, GPU nodes `ia[1-2]` (Nvidia H100 and H200), `login` and `admin`.
 - `firehpc/conf/vortex/`: FireHPC variables to customize the cluster: Rackslab `pkgs` and `devs` packages repositories,
-  Slurm 24.11 from HPCkit, partitions `standard` and `ia`, Slurm settings required by slurm-quota (`jobcomp/script` with
+  Slurm 25.05 from HPCkit, partitions `standard` and `ia`, Slurm settings required by slurm-quota (`jobcomp/script` with
   the charge wrapper, `job_submit.lua`, GPU TRES accounting) and slurm-quota deployment.
 
 ## Deployment
