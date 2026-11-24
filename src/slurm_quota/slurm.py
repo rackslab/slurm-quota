@@ -277,8 +277,11 @@ def collect_pair_usage_from_sacct(
     chunk_start = start
     while chunk_start < end:
         chunk_end = min(end, chunk_start + chunk_days * 86400)
+        # sacct output is streamed line by line rather than captured, so that
+        # memory usage does not depend on the number of jobs in the chunk. Its
+        # standard error is inherited, to avoid a deadlock on a full pipe.
         try:
-            result = subprocess.run(
+            with subprocess.Popen(
                 [
                     "sacct",
                     "--allusers",
@@ -292,53 +295,67 @@ def collect_pair_usage_from_sacct(
                     "--format",
                     "jobid,user,account,alloccpus,start,end,alloctres",
                 ],
-                capture_output=True,
+                stdout=subprocess.PIPE,
                 text=True,
-                check=True,
                 env=env,
-            )
+            ) as process:
+                assert process.stdout is not None
+                for line in process.stdout:
+                    _add_sacct_job(usage, line, chunk_start, chunk_end, factors)
+            if process.returncode:
+                raise subprocess.CalledProcessError(process.returncode, process.args)
         except (subprocess.CalledProcessError, FileNotFoundError) as err:
             raise SlurmQueryError(f"Failed to query jobs with sacct: {err}") from err
-
-        for line in result.stdout.splitlines():
-            fields = line.split("|")
-            if len(fields) < 7:
-                continue
-            job_id, user, account, cpus, job_start, job_end, alloc_tres = fields[:7]
-            if not user or not account:
-                continue
-            try:
-                started = int(job_start)
-                ended = int(job_end)
-                alloc_cpus = int(cpus)
-            except ValueError:
-                # Unknown/None times of pending or running jobs
-                continue
-            if not chunk_start <= ended < chunk_end or ended <= started:
-                continue
-            duration = ended - started
-            cpu_seconds = alloc_cpus * duration
-            gpu_seconds = 0
-            if alloc_tres and alloc_tres != "(null)":
-                gpu_counts = parse_alloc_tres(alloc_tres)
-                if gpu_counts:
-                    gpu_seconds = calculate_consumed_gpu_seconds(
-                        gpu_counts, duration, factors
-                    )
-            logger.debug(
-                "sacct job %s: user=%s account=%s cpu=%ds gpu=%ds",
-                job_id,
-                user,
-                account,
-                cpu_seconds,
-                gpu_seconds,
-            )
-            entry = usage.setdefault((user, account), [0, 0])
-            entry[0] += cpu_seconds
-            entry[1] += gpu_seconds
         chunk_start = chunk_end
 
     return {pair: (cpu, gpu) for pair, (cpu, gpu) in usage.items()}
+
+
+def _add_sacct_job(
+    usage: dict[tuple[str, str], list[int]],
+    line: str,
+    chunk_start: int,
+    chunk_end: int,
+    factors: dict[str, float],
+) -> None:
+    """Add consumption of the job on a sacct output line to its pair usage.
+
+    Jobs without user or account, without valid start and end times or not
+    ending in [chunk_start, chunk_end) are ignored.
+    """
+    fields = line.rstrip("\n").split("|")
+    if len(fields) < 7:
+        return
+    job_id, user, account, cpus, job_start, job_end, alloc_tres = fields[:7]
+    if not user or not account:
+        return
+    try:
+        started = int(job_start)
+        ended = int(job_end)
+        alloc_cpus = int(cpus)
+    except ValueError:
+        # Unknown/None times of pending or running jobs
+        return
+    if not chunk_start <= ended < chunk_end or ended <= started:
+        return
+    duration = ended - started
+    cpu_seconds = alloc_cpus * duration
+    gpu_seconds = 0
+    if alloc_tres and alloc_tres != "(null)":
+        gpu_counts = parse_alloc_tres(alloc_tres)
+        if gpu_counts:
+            gpu_seconds = calculate_consumed_gpu_seconds(gpu_counts, duration, factors)
+    logger.debug(
+        "sacct job %s: user=%s account=%s cpu=%ds gpu=%ds",
+        job_id,
+        user,
+        account,
+        cpu_seconds,
+        gpu_seconds,
+    )
+    entry = usage.setdefault((user, account), [0, 0])
+    entry[0] += cpu_seconds
+    entry[1] += gpu_seconds
 
 
 def get_associations() -> set[tuple[str, str]]:

@@ -10,6 +10,7 @@ from unittest.mock import patch
 from slurm_quota.database import init_database
 from slurm_quota.migrate import UNATTRIBUTED
 from tests.functional.functional_base import FunctionalCLIBase
+from tests.testing_utils import fake_popen
 
 # Current time when --endtime is omitted
 NOW = 1_700_000_000
@@ -35,18 +36,19 @@ class TestReallocateCommand(FunctionalCLIBase):
             self.insert_consumption(conn, UNATTRIBUTED, "dev", 30)
             conn.commit()
 
-    def _slurm_side_effect(self, args, **_kwargs):
-        if args[0] == "sacct":
-            end = NOW - 10
-            lines = [
-                f"1|alice|hpc|1|{end - 600}|{end}|cpu=1",
-                f"2|alice|dev|1|{end - 200}|{end}|cpu=1",
-                f"3|bob|hpc|1|{end - 100}|{end}|cpu=1",
-            ]
-            return subprocess.CompletedProcess(args, 0, "\n".join(lines) + "\n", "")
-        if args[0] == "sacctmgr":
-            return subprocess.CompletedProcess(args, 0, "alice|hpc\n", "")
-        raise AssertionError(f"unexpected command {args}")
+    def _sacct_popen(self, args, **_kwargs):
+        self.assertEqual(args[0], "sacct")
+        end = NOW - 10
+        lines = [
+            f"1|alice|hpc|1|{end - 600}|{end}|cpu=1",
+            f"2|alice|dev|1|{end - 200}|{end}|cpu=1",
+            f"3|bob|hpc|1|{end - 100}|{end}|cpu=1",
+        ]
+        return fake_popen(args, "\n".join(lines) + "\n")
+
+    def _sacctmgr_run(self, args, **_kwargs):
+        self.assertEqual(args[0], "sacctmgr")
+        return subprocess.CompletedProcess(args, 0, "alice|hpc\n", "")
 
     def _pairs(self):
         with self.db_connection() as conn:
@@ -81,8 +83,12 @@ class TestReallocateCommand(FunctionalCLIBase):
             patch("slurm_quota.DB_PATH", "/nonexistent/slurm-quota.db"),
             patch("slurm_quota.auth.get_current_user", return_value="alice"),
             patch(
+                "slurm_quota.slurm.subprocess.Popen",
+                side_effect=self._sacct_popen,
+            ),
+            patch(
                 "slurm_quota.slurm.subprocess.run",
-                side_effect=self._slurm_side_effect,
+                side_effect=self._sacctmgr_run,
             ),
             self.assertLogs("slurm_quota", level="WARNING") as log_cm,
             self.capture_stdout() as out,
@@ -139,6 +145,7 @@ class TestReallocateCommand(FunctionalCLIBase):
         init_database()
         with (
             patch("slurm_quota.auth.get_current_user", return_value="root"),
+            patch("slurm_quota.slurm.subprocess.Popen") as popen_mock,
             patch("slurm_quota.slurm.subprocess.run") as run_mock,
             self.capture_stdout() as out,
         ):
@@ -146,6 +153,7 @@ class TestReallocateCommand(FunctionalCLIBase):
                 ["slurm-quota-reallocate", "--starttime", "2023-01-01"]
             )
         self.assertEqual(out.getvalue(), "Nothing to reallocate\n")
+        popen_mock.assert_not_called()
         run_mock.assert_not_called()
 
     def test_reallocate_explicit_endtime(self):
@@ -153,9 +161,13 @@ class TestReallocateCommand(FunctionalCLIBase):
         with (
             patch("slurm_quota.auth.get_current_user", return_value="root"),
             patch(
+                "slurm_quota.slurm.subprocess.Popen",
+                side_effect=self._sacct_popen,
+            ) as popen_mock,
+            patch(
                 "slurm_quota.slurm.subprocess.run",
-                side_effect=self._slurm_side_effect,
-            ) as run_mock,
+                side_effect=self._sacctmgr_run,
+            ),
             self.capture_stdout(),
         ):
             self.run_reallocate_main(
@@ -168,7 +180,7 @@ class TestReallocateCommand(FunctionalCLIBase):
                     "--dry-run",
                 ]
             )
-        sacct_args = run_mock.call_args_list[0][0][0]
+        sacct_args = popen_mock.call_args_list[0][0][0]
         self.assertEqual(sacct_args[0], "sacct")
         self.assertEqual(
             sacct_args[sacct_args.index("--endtime") + 1], "2023-11-10T12:00:00"
@@ -180,8 +192,12 @@ class TestReallocateCommand(FunctionalCLIBase):
         with (
             patch("slurm_quota.auth.get_current_user", return_value="root"),
             patch(
+                "slurm_quota.slurm.subprocess.Popen",
+                side_effect=self._sacct_popen,
+            ),
+            patch(
                 "slurm_quota.slurm.subprocess.run",
-                side_effect=self._slurm_side_effect,
+                side_effect=self._sacctmgr_run,
             ),
             self.capture_stdout() as out,
         ):
@@ -211,9 +227,13 @@ class TestReallocateCommand(FunctionalCLIBase):
         with (
             patch("slurm_quota.auth.get_current_user", return_value="root"),
             patch(
+                "slurm_quota.slurm.subprocess.Popen",
+                side_effect=self._sacct_popen,
+            ) as popen_mock,
+            patch(
                 "slurm_quota.slurm.subprocess.run",
-                side_effect=self._slurm_side_effect,
-            ) as run_mock,
+                side_effect=self._sacctmgr_run,
+            ),
             self.capture_stdout() as out,
         ):
             self.run_reallocate_main(
@@ -253,7 +273,7 @@ class TestReallocateCommand(FunctionalCLIBase):
                 ).fetchone()
             )
         # sacct queried up to now by default
-        sacct_args = run_mock.call_args_list[0][0][0]
+        sacct_args = popen_mock.call_args_list[0][0][0]
         self.assertEqual(sacct_args[0], "sacct")
         self.assertEqual(
             sacct_args[sacct_args.index("--endtime") + 1], _sacct_time(NOW)
@@ -274,7 +294,7 @@ class TestReallocateCommand(FunctionalCLIBase):
         with (
             patch("slurm_quota.auth.get_current_user", return_value="root"),
             patch(
-                "slurm_quota.slurm.subprocess.run",
+                "slurm_quota.slurm.subprocess.Popen",
                 side_effect=FileNotFoundError("sacct"),
             ),
             self.assertLogs("slurm_quota", level="ERROR") as log_cm,

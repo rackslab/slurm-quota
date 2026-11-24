@@ -16,6 +16,7 @@ from slurm_quota.slurm import (
     parse_alloc_tres,
 )
 from tests.test_support import SlurmQuotaTestCase
+from tests.testing_utils import fake_popen
 
 
 class TestParseAllocTres(SlurmQuotaTestCase):
@@ -129,8 +130,8 @@ class TestGetJobInfoFromEnvironment(SlurmQuotaTestCase):
 class TestCollectPairUsageFromSacct(SlurmQuotaTestCase):
     DAY = 86400
 
-    @patch("slurm_quota.slurm.subprocess.run")
-    def test_collects_usage_per_pair_in_chunks(self, run_mock):
+    @patch("slurm_quota.slurm.subprocess.Popen")
+    def test_collects_usage_per_pair_in_chunks(self, popen_mock):
         start = 1_700_000_000
         outputs = [
             # Chunk 1: [start, start + 1 day)
@@ -153,9 +154,8 @@ class TestCollectPairUsageFromSacct(SlurmQuotaTestCase):
                 ]
             ),
         ]
-        run_mock.side_effect = [
-            subprocess.CompletedProcess(["sacct"], 0, output + "\n", "")
-            for output in outputs
+        popen_mock.side_effect = [
+            fake_popen(["sacct"], output + "\n") for output in outputs
         ]
         usage = collect_pair_usage_from_sacct(
             start, start + self.DAY + self.DAY // 2, 1, {"__default__": 1.0}
@@ -168,16 +168,16 @@ class TestCollectPairUsageFromSacct(SlurmQuotaTestCase):
                 ("alice", "dev"): (60, 0),
             },
         )
-        self.assertEqual(run_mock.call_count, 2)
-        args, kwargs = run_mock.call_args_list[0]
+        self.assertEqual(popen_mock.call_count, 2)
+        args, kwargs = popen_mock.call_args_list[0]
         self.assertEqual(kwargs["env"]["SLURM_TIME_FORMAT"], "%s")
         self.assertIn("--allusers", args[0])
         self.assertIn("--allocations", args[0])
 
-    @patch("slurm_quota.slurm.subprocess.run")
-    def test_applies_gpu_factors(self, run_mock):
-        run_mock.return_value = subprocess.CompletedProcess(
-            ["sacct"], 0, "1|alice|hpc|1|100|200|gres/gpu:h100=2\n", ""
+    @patch("slurm_quota.slurm.subprocess.Popen")
+    def test_applies_gpu_factors(self, popen_mock):
+        popen_mock.return_value = fake_popen(
+            ["sacct"], "1|alice|hpc|1|100|200|gres/gpu:h100=2\n"
         )
         usage = collect_pair_usage_from_sacct(
             0, 1000, 30, {"__default__": 1.0, "h100": 1.5}
@@ -185,11 +185,21 @@ class TestCollectPairUsageFromSacct(SlurmQuotaTestCase):
         self.assertEqual(usage, {("alice", "hpc"): (100, 300)})
 
     @patch(
-        "slurm_quota.slurm.subprocess.run",
+        "slurm_quota.slurm.subprocess.Popen",
         side_effect=FileNotFoundError("sacct"),
     )
-    def test_raises_on_sacct_failure(self, _run_mock):
+    def test_raises_on_sacct_not_found(self, _popen_mock):
         with self.assertRaisesRegex(SlurmQueryError, "Failed to query jobs"):
+            collect_pair_usage_from_sacct(0, 1000, 30, {"__default__": 1.0})
+
+    @patch("slurm_quota.slurm.subprocess.Popen")
+    def test_raises_on_sacct_failure(self, popen_mock):
+        popen_mock.return_value = fake_popen(
+            ["sacct"], "1|alice|hpc|1|100|200|\n", returncode=1
+        )
+        with self.assertRaisesRegex(
+            SlurmQueryError, "Failed to query jobs .* non-zero exit status 1"
+        ):
             collect_pair_usage_from_sacct(0, 1000, 30, {"__default__": 1.0})
 
 

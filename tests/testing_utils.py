@@ -7,6 +7,7 @@ import io
 import json
 from textwrap import dedent
 from typing import Any
+from unittest.mock import MagicMock
 from urllib.error import HTTPError
 
 _HTTP_STATUS_REASONS = {
@@ -30,6 +31,16 @@ def fake_http_error(
         body = json.dumps(payload or {}).encode("utf-8")
     reason = _HTTP_STATUS_REASONS.get(status, "Error")
     return HTTPError(url, status, reason, None, io.BytesIO(body))
+
+
+def fake_popen(args: list[str], stdout: str, returncode: int = 0) -> MagicMock:
+    """Build a mock of subprocess.Popen object streaming stdout text."""
+    process = MagicMock()
+    process.args = args
+    process.stdout = io.StringIO(stdout)
+    process.returncode = returncode
+    process.__enter__.return_value = process
+    return process
 
 
 def dedent_lines(*lines: str) -> str:
