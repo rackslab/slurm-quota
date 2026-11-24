@@ -19,7 +19,7 @@ _slurm_quota_reallocate() {
     esac
 
     local base_opts="-h --help --version --debug -q --quiet --log-flags --debug-flags"
-    COMPREPLY=($(compgen -W "$base_opts --starttime --endtime --chunk-days --dry-run" -- "$cur"))
+    COMPREPLY=($(compgen -W "$base_opts --starttime --endtime --chunk-days --dry-run --correct-users" -- "$cur"))
 
     return 0
 }

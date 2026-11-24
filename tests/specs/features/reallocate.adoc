@@ -100,3 +100,30 @@ Expected results::
 * The first 2 commands fail with exit code 2.
 * The third command fails with exit code 1, as it must run as root.
 // end::FT-REALLOCATE-004[]
+
+// tag::FT-REALLOCATE-005[]
+[[FT-REALLOCATE-005]]
+== FT-REALLOCATE-005 — Preview corrections of users
+
+Feature:: Reallocation of unattributed consumption
+Interface:: Admin command
+Objective:: Users only paired with an account, whose unattributed consumption exceeds the one of the account and their
+consumption in Slurm accounting, can be corrected with their consumption in Slurm accounting.
+Prerequisites::
+* <<FT-REALLOCATE-001>> passed, before <<FT-REALLOCATE-002>>.
+* A user `<user>` with unattributed consumption only ran jobs on an account `<account>` since `<start>`.
+Steps::
+. As `{admin_user}`, run `slurm-quota adjust --user <user> --account '(unattributed)' --cpu --minutes=+<n>`, with `<n>`
+higher than the unattributed consumption of `<account>`.
+. As root on `{controller}`, run `slurm-quota-reallocate --starttime <start> --dry-run`.
+. As root, run `slurm-quota-reallocate --starttime <start> --correct-users --dry-run`.
+. As root, run `slurm-quota-reallocate --starttime <start> --correct-users=<user> --dry-run`.
+. As `{admin_user}`, run `slurm-quota adjust --user <user> --account '(unattributed)' --cpu --minutes=-<n>`.
+Expected results::
+* The first dry run warns that `<account>` gets more than its unattributed consumption, lists `<user>` among the users
+only paired with this account, and prints `CPU users that --correct-users would correct: ...`.
+* The other dry runs warn that the CPU consumption of `<user>` is corrected to its consumption in Slurm accounting, and
+print `CPU users corrected from Slurm accounting: ...`. The dry run with `--correct-users=<user>` corrects no other
+user.
+* The database is unchanged by the dry runs.
+// end::FT-REALLOCATE-005[]

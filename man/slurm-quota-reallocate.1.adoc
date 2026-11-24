@@ -11,7 +11,7 @@ slurm-quota-reallocate - reallocate unattributed legacy consumption to user/acco
 
 == Synopsis
 
-*slurm-quota-reallocate* [*-h*] [*--debug* | *-q* | *--quiet*] [*--log-flags* <flag>]... [*--debug-flags* <flag>]... [*--version*] *--starttime* <date> [*--endtime* <date>] [*--chunk-days* <days>] [*--dry-run*]
+*slurm-quota-reallocate* [*-h*] [*--debug* | *-q* | *--quiet*] [*--log-flags* <flag>]... [*--debug-flags* <flag>]... [*--version*] *--starttime* <date> [*--endtime* <date>] [*--chunk-days* <days>] [*--dry-run*] [*--correct-users*[=<users>]]
 
 == Description
 
@@ -63,6 +63,19 @@ before, as jobs on this account are then refused. The number of users and
 accounts not matching their unattributed consumption, and the number of accounts
 exceeding their quota, are reported at the end.
 
+With *--correct-users*, unattributed consumption of users that cannot fit in
+their accounts is corrected before the distribution. The candidates are the users
+only paired with an account that gets more than its unattributed consumption,
+because these users have more unattributed consumption than the account. Their
+unattributed consumption is replaced by their consumption in Slurm accounting in
+the selected period, when it is lower, and the distribution is computed again.
+User totals of corrected users are then not preserved, and *--starttime* must be
+the date of the last reset of their consumption. Candidates without consumption
+of the resource in Slurm accounting in the period, or whose unattributed
+consumption does not exceed it, are not corrected, with a warning. Each corrected
+user is reported with a warning. Without the option, the number of users it would
+correct is reported at the end.
+
 Jobs are loaded from Slurm accounting in chunks of *--chunk-days* days. Progress
 is reported when each chunk starts and every 100,000 jobs loaded, unless
 *--quiet* is set.
@@ -112,6 +125,12 @@ The database path is `/var/lib/state/slurm-quota/slurm-quota.db`, unless
 *--dry-run*::
   Report the reallocation without modifying the database.
 
+*--correct-users*[=<users>]::
+  Correct the unattributed consumption of users that cannot fit in their accounts
+  with their consumption in Slurm accounting in the selected period, see
+  description. With a comma-separated list of users, only these users can be
+  corrected.
+
 == Environment
 
 *SLURM_QUOTA_DB*::
@@ -125,6 +144,7 @@ The database path is `/var/lib/state/slurm-quota/slurm-quota.db`, unless
 sudo slurm-quota-reallocate --starttime 2025-01-01 --dry-run
 sudo slurm-quota-reallocate --starttime 2025-01-01
 sudo slurm-quota-reallocate --starttime 2025-01-01 --endtime 2025-12-31 --chunk-days 7
+sudo slurm-quota-reallocate --starttime 2025-01-01 --correct-users=alice --dry-run
 SLURM_QUOTA_DB=/tmp/slurm-quota-copy.db slurm-quota-reallocate --starttime 2025-01-01
 ....
 

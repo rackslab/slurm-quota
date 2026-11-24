@@ -222,6 +222,83 @@ class TestReallocateCommand(FunctionalCLIBase):
         )
         self.assertEqual(self._pairs(), before)
 
+    def _run_correct_users(self, option):
+        self._seed_unattributed()
+        with self.db_connection() as conn:
+            # bob has 500 minutes of unattributed consumption, only on hpc which
+            # has 120 minutes, while bob consumed 100 seconds in Slurm accounting.
+            self.insert_consumption(conn, "bob", UNATTRIBUTED, 450)
+            conn.commit()
+        with (
+            patch("slurm_quota.auth.get_current_user", return_value="root"),
+            patch(
+                "slurm_quota.slurm.subprocess.Popen",
+                side_effect=self._sacct_popen,
+            ),
+            patch(
+                "slurm_quota.slurm.subprocess.run",
+                side_effect=self._sacctmgr_run,
+            ),
+            self.assertLogs("slurm_quota", level="WARNING") as log_cm,
+            self.capture_stdout() as out,
+        ):
+            self.run_reallocate_main(
+                [
+                    "slurm-quota-reallocate",
+                    "--starttime",
+                    "2023-11-01",
+                    option,
+                    "--dry-run",
+                ]
+            )
+        return log_cm.output, out.getvalue()
+
+    def _check_correct_users(self, option):
+        logs, out = self._run_correct_users(option)
+        self.assertIn(
+            "WARNING:slurm_quota:CPU consumption of user bob corrected to 2 "
+            "minutes instead of 500 minutes of unattributed consumption (-498), "
+            "its consumption in Slurm accounting in the selected period, as users "
+            "only paired with account hpc have more unattributed consumption than "
+            "this account",
+            logs,
+        )
+        self.assertIn(
+            "CPU users corrected from Slurm accounting: 1 (see warnings)\n", out
+        )
+
+    def test_reallocate_correct_users(self):
+        self._check_correct_users("--correct-users")
+
+    def test_reallocate_correct_selected_users(self):
+        self._check_correct_users("--correct-users=bob")
+
+    def test_reallocate_suggests_correct_users(self):
+        self._seed_unattributed()
+        with self.db_connection() as conn:
+            self.insert_consumption(conn, "bob", UNATTRIBUTED, 450)
+            conn.commit()
+        with (
+            patch("slurm_quota.auth.get_current_user", return_value="root"),
+            patch(
+                "slurm_quota.slurm.subprocess.Popen",
+                side_effect=self._sacct_popen,
+            ),
+            patch(
+                "slurm_quota.slurm.subprocess.run",
+                side_effect=self._sacctmgr_run,
+            ),
+            self.assertLogs("slurm_quota", level="WARNING"),
+            self.capture_stdout() as out,
+        ):
+            self.run_reallocate_main(
+                ["slurm-quota-reallocate", "--starttime", "2023-11-01", "--dry-run"]
+            )
+        self.assertIn(
+            "CPU users that --correct-users would correct: 1 (see warnings)\n",
+            out.getvalue(),
+        )
+
     def test_reallocate(self):
         self._seed_unattributed()
         with (

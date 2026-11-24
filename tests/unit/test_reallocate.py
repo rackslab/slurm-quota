@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import io
 from contextlib import redirect_stdout
 from unittest.mock import patch
@@ -24,6 +25,7 @@ from slurm_quota.reallocate import (
     _deviations,
     _log_deviations,
     _print_report,
+    _user_list,
     build_weights,
     fit_consumption,
     reallocate_unattributed,
@@ -489,7 +491,7 @@ class TestReallocateUnattributed(SlurmQuotaTestCase):
         self.assertEqual(
             report.deviations["cpu"],
             {
-                "account a1": Deviation(5400, 7200, [surplus]),
+                "account a1": Deviation(5400, 7200, [surplus], exclusive_users=["u1"]),
                 "account a2": Deviation(5400, 3600, [deficit]),
             },
         )
@@ -510,12 +512,13 @@ class TestReallocateUnattributed(SlurmQuotaTestCase):
             self.insert_consumption(conn, UNATTRIBUTED, "a2", 600)
             self.insert_consumption(conn, UNATTRIBUTED, "a3", 400)
             conn.commit()
+        # In Slurm accounting, u3 only consumed 20 minutes.
         return {
-            ("u1", "a2"): (3, 0),
-            ("u1", "a3"): (2, 0),
-            ("u2", "a2"): (3, 0),
-            ("u2", "a3"): (2, 0),
-            ("u3", "a1"): (1, 0),
+            ("u1", "a2"): (360 * 60, 0),
+            ("u1", "a3"): (240 * 60, 0),
+            ("u2", "a2"): (240 * 60, 0),
+            ("u2", "a3"): (160 * 60, 0),
+            ("u3", "a1"): (20 * 60, 0),
         }
 
     def test_gap_on_single_account_is_reported_with_its_users(self):
@@ -591,6 +594,7 @@ class TestDeviations(SlurmQuotaTestCase):
             {},
             -1,
             {},
+            {("u1", "a1"): 1.0, ("u1", "a2"): 1.0},
         )
         self.assertEqual(
             deviations,
@@ -602,14 +606,7 @@ class TestDeviations(SlurmQuotaTestCase):
         report = ReallocationReport(deviations={"cpu": deviations})
         self.assertEqual(report.notable("cpu"), [])
         with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
-            _log_deviations(
-                "cpu",
-                {"u1": 300000},
-                {"a1": 100000, "a2": 200000},
-                fit,
-                set(),
-                deviations,
-            )
+            _log_deviations("cpu", deviations)
         self.assertEqual(
             log_cm.output,
             [
@@ -625,7 +622,17 @@ class TestDeviations(SlurmQuotaTestCase):
             pairs={(name, "a1"): value for name, value in users.items()},
             account_targets={"a1": 60},
         )
-        deviations = _deviations("cpu", users, {"a1": 60}, fit, set(), {}, -1, {})
+        deviations = _deviations(
+            "cpu",
+            users,
+            {"a1": 60},
+            fit,
+            set(),
+            {},
+            -1,
+            {},
+            {(name, "a1"): 1.0 for name in users},
+        )
         self.assertEqual(
             deviations["account a1"].reasons,
             [
@@ -634,3 +641,179 @@ class TestDeviations(SlurmQuotaTestCase):
                 "u5 (5 minutes), u4 (4 minutes), u3 (3 minutes) and 2 more"
             ],
         )
+
+
+class TestCorrectUsers(SlurmQuotaTestCase):
+    """Corrections of unattributed consumption of users with Slurm accounting.
+
+    Legacy: u3 (1000 min) only consumed on a1 (10 min), u1 (600 min) and u2
+    (400 min) on a2 (600 min) and a3 (400 min).
+    """
+
+    CORRECTED = (
+        "WARNING:slurm_quota:CPU consumption of user u3 corrected to 20 minutes "
+        "instead of 1000 minutes of unattributed consumption (-980), its "
+        "consumption in Slurm accounting in the selected period, as users only "
+        "paired with account a1 have more unattributed consumption than this "
+        "account"
+    )
+
+    def setUp(self):
+        super().setUp()
+        init_database()
+        with self.db_connection() as conn:
+            self.insert_consumption(conn, "u1", UNATTRIBUTED, 600)
+            self.insert_consumption(conn, "u2", UNATTRIBUTED, 400)
+            self.insert_consumption(conn, "u3", UNATTRIBUTED, 1000)
+            self.insert_consumption(conn, UNATTRIBUTED, "a1", 10)
+            self.insert_consumption(conn, UNATTRIBUTED, "a2", 600)
+            self.insert_consumption(conn, UNATTRIBUTED, "a3", 400)
+            conn.commit()
+        self.usage = {
+            ("u1", "a2"): (360 * 60, 0),
+            ("u1", "a3"): (240 * 60, 0),
+            ("u2", "a2"): (240 * 60, 0),
+            ("u2", "a3"): (160 * 60, 0),
+            ("u3", "a1"): (20 * 60, 0),
+        }
+
+    def _pairs(self):
+        with self.db_connection() as conn:
+            return conn.execute(
+                "SELECT username, account, consumed_cpu_seconds "
+                "FROM user_account_consumption ORDER BY username, account"
+            ).fetchall()
+
+    def test_dry_run_reports_corrections(self):
+        before = self._pairs()
+        with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
+            report = reallocate_unattributed(
+                self.usage, set(), dry_run=True, correct_users=True
+            )
+        self.assertEqual(
+            log_cm.output,
+            [
+                "WARNING:slurm_quota:CPU overall unattributed consumption of users "
+                "(2000 minutes) differs from the one of accounts (1010 minutes) by "
+                "+990 minutes, account totals cannot all be preserved",
+                self.CORRECTED,
+                "WARNING:slurm_quota:CPU overall unattributed consumption of users "
+                "after correction (1020 minutes) differs from the one of accounts "
+                "(1010 minutes) by +10 minutes, account totals cannot all be "
+                "preserved",
+                "WARNING:slurm_quota:CPU consumption of account a1: 20 minutes "
+                "reallocated instead of 10 minutes of unattributed consumption "
+                "(+10), users only paired with this account have more unattributed "
+                "consumption than this account: u3 (20 minutes)",
+            ],
+        )
+        self.assertEqual(self._pairs(), before)
+        self.assertEqual(report.corrected("cpu"), ["u3"])
+        self.assertEqual(report.reallocated_cpu_seconds, 1020 * 60)
+        with redirect_stdout(io.StringIO()) as out:
+            _print_report(report, dry_run=True)
+        self.assertIn(
+            "CPU users corrected from Slurm accounting: 1 (see warnings)",
+            out.getvalue(),
+        )
+
+    def test_corrections_are_applied(self):
+        with patch("slurm_quota.reallocate.logger"):
+            reallocate_unattributed(self.usage, set(), correct_users=True)
+        pairs = self._pairs()
+        self.assertIn(("u3", "a1", 20 * 60), pairs)
+        self.assertNotIn(UNATTRIBUTED, {user for user, _, _ in pairs})
+        self.assertNotIn(UNATTRIBUTED, {account for _, account, _ in pairs})
+        with self.db_connection() as conn:
+            self.assertIsNone(
+                conn.execute(
+                    "SELECT comment FROM users WHERE username = 'u3'"
+                ).fetchone()[0]
+            )
+
+    def test_corrections_are_suggested_without_option(self):
+        with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
+            report = reallocate_unattributed(self.usage, set(), dry_run=True)
+        self.assertNotIn(self.CORRECTED, log_cm.output)
+        self.assertEqual(report.corrected("cpu"), ["u3"])
+        self.assertEqual(report.reallocated_cpu_seconds, 2000 * 60)
+        with redirect_stdout(io.StringIO()) as out:
+            _print_report(report, dry_run=True)
+        self.assertIn(
+            "CPU users that --correct-users would correct: 1 (see warnings)",
+            out.getvalue(),
+        )
+
+    def test_consumption_lower_than_accounting_is_not_corrected(self):
+        self.usage[("u3", "a1")] = (2000 * 60, 0)
+        with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
+            report = reallocate_unattributed(
+                self.usage, set(), dry_run=True, correct_users=True
+            )
+        self.assertIn(
+            "WARNING:slurm_quota:CPU consumption of user u3 not corrected, its "
+            "unattributed consumption (1000 minutes) does not exceed its "
+            "consumption in Slurm accounting in the selected period (2000 "
+            "minutes)",
+            log_cm.output,
+        )
+        self.assertEqual(report.corrected("cpu"), [])
+        self.assertEqual(report.reallocated_cpu_seconds, 2000 * 60)
+
+    def test_users_without_accounting_are_not_corrected(self):
+        # u3 is paired with a1 from Slurm associations only.
+        del self.usage[("u3", "a1")]
+        with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
+            report = reallocate_unattributed(
+                self.usage, {("u3", "a1")}, dry_run=True, correct_users=True
+            )
+        self.assertIn(
+            "WARNING:slurm_quota:CPU consumption of user u3 not corrected, no CPU "
+            "consumption in Slurm accounting in the selected period",
+            log_cm.output,
+        )
+        self.assertEqual(report.corrected("cpu"), [])
+
+    def test_corrections_restricted_to_selected_users(self):
+        with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
+            report = reallocate_unattributed(
+                self.usage,
+                set(),
+                dry_run=True,
+                correct_users=True,
+                only_users={"u1", "unknown"},
+            )
+        self.assertNotIn(self.CORRECTED, log_cm.output)
+        self.assertIn(
+            "WARNING:slurm_quota:CPU consumption of user u1 not corrected, it is "
+            "not among the users only paired with an account that gets more than "
+            "its unattributed consumption",
+            log_cm.output,
+        )
+        self.assertIn(
+            "WARNING:slurm_quota:User unknown selected for correction has no "
+            "unattributed consumption",
+            log_cm.output,
+        )
+        self.assertEqual(report.corrected("cpu"), [])
+        self.assertEqual(report.reallocated_cpu_seconds, 2000 * 60)
+
+    def test_selected_users_are_corrected(self):
+        with patch("slurm_quota.reallocate.logger"):
+            report = reallocate_unattributed(
+                self.usage,
+                set(),
+                dry_run=True,
+                correct_users=True,
+                only_users={"u3"},
+            )
+        self.assertEqual(report.corrected("cpu"), ["u3"])
+
+
+class TestUserList(SlurmQuotaTestCase):
+    def test_parse(self):
+        self.assertEqual(_user_list("u1, u2,,u3"), {"u1", "u2", "u3"})
+
+    def test_empty(self):
+        with self.assertRaises(argparse.ArgumentTypeError):
+            _user_list(" , ")

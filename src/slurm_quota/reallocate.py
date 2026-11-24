@@ -20,7 +20,7 @@ import sqlite3
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Union
 
 import slurm_quota
 from slurm_quota import auth, slurm as slurm_integration
@@ -474,6 +474,8 @@ class Deviation:
         negligible: Whether the difference is negligible, within
             NEGLIGIBLE_RATIO of the unattributed consumption.
         over_quota: Whether the reallocation makes the account exceed its quota.
+        exclusive_users: Users only paired with the account whose unattributed
+            consumption exceeds the one of the account.
     """
 
     unattributed: int
@@ -481,6 +483,32 @@ class Deviation:
     reasons: list[str]
     negligible: bool = False
     over_quota: bool = False
+    exclusive_users: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Correction:
+    """User whose unattributed consumption can be corrected with its
+    consumption in Slurm accounting.
+
+    Attributes:
+        unattributed: Unattributed consumption in seconds.
+        accounting: Consumption in Slurm accounting in the selected period, in
+            seconds.
+        account: Account the user is only paired with, which gets more than its
+            unattributed consumption, empty when the user is not in this case.
+        reason: Why the user is not corrected, empty when it is corrected.
+    """
+
+    unattributed: int
+    accounting: int
+    account: str
+    reason: str = ""
+
+    @property
+    def corrected(self) -> bool:
+        """Whether the unattributed consumption is corrected."""
+        return not self.reason
 
 
 @dataclass
@@ -496,6 +524,17 @@ class ReallocationReport:
     reallocated_gpu_seconds: int = 0
     sources: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     deviations: dict[str, dict[str, Deviation]] = field(default_factory=dict)
+    corrections: dict[str, dict[str, Correction]] = field(default_factory=dict)
+    correct_users: bool = False
+
+    def corrected(self, resource: str) -> list[str]:
+        """Users whose unattributed consumption is corrected, or would be with
+        --correct-users when the option is not set."""
+        return [
+            name
+            for name, correction in self.corrections.get(resource, {}).items()
+            if correction.corrected
+        ]
 
     def unpaired(self, resource: str) -> list[str]:
         """Users and accounts whose consumption is left unattributed."""
@@ -550,6 +589,7 @@ def _deviations(
     quotas: dict[str, int],
     default_quota: int,
     charged: dict[str, int],
+    weights: dict[Pair, float],
 ) -> dict[str, Deviation]:
     """Return users and accounts whose reallocated total differs from their
     unattributed consumption, or exceeding their quota after reallocation, with
@@ -571,14 +611,19 @@ def _deviations(
         default_quota: Quota of accounts created by the reallocation.
         charged: Consumption of the resource per account on actual pairs,
             charged since the migration, in seconds.
+        weights: Weights of user/account pairs given to fit_consumption(), the
+            pairs a user can get consumption on.
     """
     reallocated_users: dict[str, int] = {}
     reallocated_accounts: dict[str, int] = {}
-    accounts_of_users: dict[str, set[str]] = {}
     for (user, account), value in fit.pairs.items():
         reallocated_users[user] = reallocated_users.get(user, 0) + value
         reallocated_accounts[account] = reallocated_accounts.get(account, 0) + value
-        accounts_of_users.setdefault(user, set()).add(account)
+    # Accounts each user can get consumption on, whatever the distribution.
+    accounts_of_users: dict[str, set[str]] = {}
+    for (user, account), weight in weights.items():
+        if weight > 0:
+            accounts_of_users.setdefault(user, set()).add(account)
 
     deviations: dict[str, Deviation] = {}
     for name in sorted(set(user_totals) | set(reallocated_users)):
@@ -621,15 +666,19 @@ def _deviations(
                     "accounts differ"
                 )
             else:
-                # Users whose whole consumption is reallocated on this account.
+                # Users with unattributed consumption only paired with this
+                # account.
                 exclusive = [
-                    user for user, names in accounts_of_users.items() if names == {name}
+                    user
+                    for user, names in accounts_of_users.items()
+                    if names == {name} and user_totals.get(user, 0) > 0
                 ]
                 if (
                     reallocated > unattributed
                     and exclusive
                     and sum(user_totals[user] for user in exclusive) > unattributed
                 ):
+                    deviation.exclusive_users = sorted(exclusive)
                     deviation.reasons.append(
                         "users only paired with this account have more "
                         "unattributed consumption than this account: "
@@ -666,16 +715,16 @@ def _deviations(
     return deviations
 
 
-def _log_deviations(
+def _log_gap(
     resource: str,
     user_totals: dict[str, int],
     account_totals: dict[str, int],
     fit: FitResult,
     unpaired: set[str],
-    deviations: dict[str, Deviation],
+    corrected: bool = False,
 ) -> None:
-    """Log warnings for the overall difference between users and accounts and
-    for users and accounts in deviations."""
+    """Log a warning when overall unattributed consumption of paired users and
+    accounts differ."""
     total_users = sum(
         value for name, value in user_totals.items() if f"user {name}" not in unpaired
     )
@@ -686,14 +735,20 @@ def _log_deviations(
     )
     if fit.account_targets and total_users and total_users != total_accounts:
         logger.warning(
-            "%s overall unattributed consumption of users (%d minutes) differs "
+            "%s overall unattributed consumption of users%s (%d minutes) differs "
             "from the one of accounts (%d minutes) by %+d minutes, account "
             "totals cannot all be preserved",
             resource.upper(),
+            " after correction" if corrected else "",
             _minutes(total_users),
             _minutes(total_accounts),
             _minutes(total_users) - _minutes(total_accounts),
         )
+
+
+def _log_deviations(resource: str, deviations: dict[str, Deviation]) -> None:
+    """Log warnings for users and accounts in deviations, negligible
+    differences of accounts in a single warning."""
     negligible: list[Deviation] = []
     for name, deviation in deviations.items():
         if deviation.negligible:
@@ -753,6 +808,102 @@ def _account_quotas(
     return quotas, charged
 
 
+def _corrections(
+    resource: str,
+    user_totals: dict[str, int],
+    deviations: dict[str, Deviation],
+    accounting: dict[str, int],
+    only_users: Optional[set[str]] = None,
+) -> dict[str, Correction]:
+    """Return users whose unattributed consumption can be corrected with their
+    consumption in Slurm accounting.
+
+    Candidates are the users only paired with an account that gets more than
+    its unattributed consumption, because these users have more unattributed
+    consumption than the account. A candidate is corrected when it has
+    consumption of the resource in Slurm accounting in the selected period,
+    lower than its unattributed consumption. Users not corrected are returned
+    with the reason.
+
+    Args:
+        resource: "cpu" or "gpu".
+        user_totals: Unattributed consumption per user, in seconds.
+        deviations: Deviations of the reallocation, see _deviations().
+        accounting: Consumption per user in Slurm accounting in the selected
+            period, in seconds.
+        only_users: Restrict corrections to these users, all candidates when
+            None. Users of this set with unattributed consumption that are not
+            candidates are returned with the reason.
+    """
+    candidates: dict[str, str] = {}
+    for deviation_name, deviation in deviations.items():
+        for user in deviation.exclusive_users:
+            candidates[user] = deviation_name.removeprefix("account ")
+
+    corrections: dict[str, Correction] = {}
+    names = set(candidates) if only_users is None else only_users
+    for name in names:
+        unattributed = user_totals.get(name, 0)
+        if not unattributed:
+            continue
+        usage = accounting.get(name, 0)
+        correction = Correction(unattributed, usage, candidates.get(name, ""))
+        if not correction.account:
+            correction.reason = (
+                "it is not among the users only paired with an account that gets "
+                "more than its unattributed consumption"
+            )
+        elif not usage:
+            correction.reason = (
+                f"no {resource.upper()} consumption in Slurm accounting in the "
+                "selected period"
+            )
+        elif unattributed <= usage:
+            correction.reason = (
+                f"its unattributed consumption ({_minutes(unattributed)} minutes) "
+                "does not exceed its consumption in Slurm accounting in the "
+                f"selected period ({_minutes(usage)} minutes)"
+            )
+        corrections[name] = correction
+    # Corrected users first, by decreasing correction, then the others.
+    return dict(
+        sorted(
+            corrections.items(),
+            key=lambda item: (
+                not item[1].corrected,
+                -(item[1].unattributed - item[1].accounting),
+                item[0],
+            ),
+        )
+    )
+
+
+def _log_corrections(resource: str, corrections: dict[str, Correction]) -> None:
+    """Log a warning for each corrected user and each user not corrected."""
+    for name, correction in corrections.items():
+        if correction.corrected:
+            logger.warning(
+                "%s consumption of user %s corrected to %d minutes instead of %d "
+                "minutes of unattributed consumption (%+d), its consumption in "
+                "Slurm accounting in the selected period, as users only paired "
+                "with account %s have more unattributed consumption than this "
+                "account",
+                resource.upper(),
+                name,
+                _minutes(correction.accounting),
+                _minutes(correction.unattributed),
+                _minutes(correction.accounting) - _minutes(correction.unattributed),
+                correction.account,
+            )
+        else:
+            logger.warning(
+                "%s consumption of user %s not corrected, %s",
+                resource.upper(),
+                name,
+                correction.reason,
+            )
+
+
 def _unattributed_totals(
     cursor: sqlite3.Cursor, column: str
 ) -> tuple[dict[str, int], dict[str, int]]:
@@ -790,10 +941,61 @@ def has_unattributed_consumption() -> bool:
     return row is not None
 
 
+@dataclass
+class _DistributionContext:
+    """Data of a resource to distribute unattributed consumption of users."""
+
+    resource: str
+    account_totals: dict[str, int]
+    unpaired: set[str]
+    weights: dict[Pair, float]
+    quotas: dict[str, int]
+    default_quota: int
+    charged: dict[str, int]
+
+
+def _distribute(
+    context: _DistributionContext, user_totals: dict[str, int]
+) -> tuple[FitResult, dict[str, Deviation]]:
+    """Distribute unattributed consumption of users among pairs, and return the
+    fit with its deviations."""
+    try:
+        fit = fit_consumption(
+            {
+                name: value
+                for name, value in user_totals.items()
+                if f"user {name}" not in context.unpaired
+            },
+            {
+                name: value
+                for name, value in context.account_totals.items()
+                if f"account {name}" not in context.unpaired
+            },
+            context.weights,
+        )
+    except ReallocationError as err:
+        raise ReallocationError(
+            f"{context.resource.upper()} consumption: {err}"
+        ) from err
+    return fit, _deviations(
+        context.resource,
+        user_totals,
+        context.account_totals,
+        fit,
+        context.unpaired,
+        context.quotas,
+        context.default_quota,
+        context.charged,
+        context.weights,
+    )
+
+
 def reallocate_unattributed(
     usage: dict[Pair, tuple[int, int]],
     associations: set[Pair],
     dry_run: bool = False,
+    correct_users: bool = False,
+    only_users: Optional[set[str]] = None,
 ) -> ReallocationReport:
     """Reallocate unattributed consumption to user/account pairs.
 
@@ -806,16 +1008,23 @@ def reallocate_unattributed(
     account when no pair refers to them anymore. Everything runs in a single
     transaction, rolled back in dry-run mode.
 
+    With correct_users, the unattributed consumption of users returned by
+    _corrections() is first replaced by their consumption in Slurm accounting,
+    then the distribution is computed again.
+
     Args:
         usage: Consumed (CPU, GPU) seconds per (user, account) pair from Slurm
             accounting.
         associations: (user, account) associations defined in Slurm.
         dry_run: Compute and report without modifying the database.
+        correct_users: Correct the unattributed consumption of users with their
+            consumption in Slurm accounting, see _corrections().
+        only_users: Restrict corrections to these users.
 
     Returns:
         Reallocation report.
     """
-    report = ReallocationReport()
+    report = ReallocationReport(correct_users=correct_users)
     conn = connect_database()
     conn.isolation_level = None  # explicit transaction control
     cursor = conn.cursor()
@@ -823,11 +1032,15 @@ def reallocate_unattributed(
         cursor.execute("BEGIN IMMEDIATE")
         dq = get_default_quota_settings(conn)
         pairs: dict[Pair, list[int]] = {}
+        with_unattributed: set[str] = set()
         reallocated_users: dict[str, set[str]] = {}
         reallocated_accounts: dict[str, set[str]] = {}
         for index, resource in enumerate(("cpu", "gpu")):
             column = f"consumed_{resource}_seconds"
             user_totals, account_totals = _unattributed_totals(cursor, column)
+            with_unattributed.update(
+                name for name, value in user_totals.items() if value > 0
+            )
             weights, sources = build_weights(
                 user_totals,
                 account_totals,
@@ -836,24 +1049,47 @@ def reallocate_unattributed(
                 associations,
             )
             unpaired = set(sources[SOURCE_NONE])
-            try:
-                fit = fit_consumption(
-                    {
-                        name: value
-                        for name, value in user_totals.items()
-                        if f"user {name}" not in unpaired
-                    },
-                    {
-                        name: value
-                        for name, value in account_totals.items()
-                        if f"account {name}" not in unpaired
-                    },
-                    weights,
-                )
-            except ReallocationError as err:
-                raise ReallocationError(
-                    f"{resource.upper()} consumption: {err}"
-                ) from err
+            accounting: dict[str, int] = {}
+            for (user, _), values in usage.items():
+                accounting[user] = accounting.get(user, 0) + values[index]
+            quotas, charged = _account_quotas(cursor, resource)
+
+            context = _DistributionContext(
+                resource,
+                account_totals,
+                unpaired,
+                weights,
+                quotas,
+                dq[f"default_account_quota_{resource}_minutes"],
+                charged,
+            )
+            fit, deviations = _distribute(context, user_totals)
+            corrections = _corrections(
+                resource,
+                user_totals,
+                deviations,
+                accounting,
+                only_users if correct_users else None,
+            )
+            _log_gap(resource, user_totals, account_totals, fit, unpaired)
+            if correct_users:
+                _log_corrections(resource, corrections)
+                corrected = {
+                    name: correction.accounting
+                    for name, correction in corrections.items()
+                    if correction.corrected
+                }
+                if corrected:
+                    fit, deviations = _distribute(context, {**user_totals, **corrected})
+                    _log_gap(
+                        resource,
+                        {**user_totals, **corrected},
+                        account_totals,
+                        fit,
+                        unpaired,
+                        corrected=True,
+                    )
+            _log_deviations(resource, deviations)
             reallocated = sum(fit.pairs.values())
             if resource == "cpu":
                 report.reallocated_cpu_seconds = reallocated
@@ -865,24 +1101,18 @@ def reallocate_unattributed(
             reallocated_accounts[column] = {
                 name for name in account_totals if f"account {name}" not in unpaired
             }
-            quotas, charged = _account_quotas(cursor, resource)
-            deviations = _deviations(
-                resource,
-                user_totals,
-                account_totals,
-                fit,
-                unpaired,
-                quotas,
-                dq[f"default_account_quota_{resource}_minutes"],
-                charged,
-            )
             report.sources[resource] = sources
             report.deviations[resource] = deviations
-            _log_deviations(
-                resource, user_totals, account_totals, fit, unpaired, deviations
-            )
+            report.corrections[resource] = corrections
             for pair, value in fit.pairs.items():
                 pairs.setdefault(pair, [0, 0])[index] = value
+
+        if correct_users and only_users:
+            for name in sorted(only_users - with_unattributed):
+                logger.warning(
+                    "User %s selected for correction has no unattributed consumption",
+                    name,
+                )
 
         for (user, account), (cpu, gpu) in sorted(pairs.items()):
             logger.debug(
@@ -1004,6 +1234,16 @@ def _positive_int(value: str) -> int:
     return number
 
 
+def _user_list(value: str) -> set[str]:
+    """Parse a comma-separated list of user names."""
+    names = {name.strip() for name in value.split(",") if name.strip()}
+    if not names:
+        raise argparse.ArgumentTypeError(
+            f"invalid users {value!r}, expected comma-separated user names"
+        )
+    return names
+
+
 def _print_report(report: ReallocationReport, dry_run: bool) -> None:
     prefix = "Dry-run: would reallocate" if dry_run else "Reallocated"
     print(
@@ -1017,6 +1257,18 @@ def _print_report(report: ReallocationReport, dry_run: bool) -> None:
             f"{source} {len(sources.get(source, []))}" for source in SOURCES
         )
         print(f"{resource.upper()} users and accounts paired from: {counts}")
+        corrected = report.corrected(resource)
+        if corrected:
+            if report.correct_users:
+                print(
+                    f"{resource.upper()} users corrected from Slurm accounting: "
+                    f"{len(corrected)} (see warnings)"
+                )
+            else:
+                print(
+                    f"{resource.upper()} users that --correct-users would "
+                    f"correct: {len(corrected)} (see warnings)"
+                )
         unpaired = report.unpaired(resource)
         notable = report.notable(resource)
         if notable:
@@ -1043,8 +1295,13 @@ def reallocate_command(
     endtime: Optional[int],
     chunk_days: int,
     dry_run: bool,
+    correct_users: Union[bool, set[str], None] = None,
 ) -> None:
     """Execute the reallocation.
+
+    correct_users is None or False to keep unattributed consumption of users,
+    True to correct all users eligible to corrections, or a set of users to
+    restrict corrections to them.
 
     This command can only be executed by root, unless another database is
     selected with the DB_PATH_ENV environment variable, for example to test
@@ -1085,7 +1342,13 @@ def reallocate_command(
             len(usage),
         )
         associations = slurm_integration.get_associations()
-        report = reallocate_unattributed(usage, associations, dry_run=dry_run)
+        report = reallocate_unattributed(
+            usage,
+            associations,
+            dry_run=dry_run,
+            correct_users=bool(correct_users),
+            only_users=correct_users if isinstance(correct_users, set) else None,
+        )
     except (
         ReallocationError,
         slurm_integration.SlurmQueryError,
@@ -1133,6 +1396,25 @@ def main() -> None:
         action="store_true",
         help="Show the result of reallocation without modifying the database",
     )
+    parser.add_argument(
+        "--correct-users",
+        nargs="?",
+        const=True,
+        type=_user_list,
+        metavar="USERS",
+        help=(
+            "Replace the unattributed consumption of users only paired with an "
+            "account that gets more than its unattributed consumption by their "
+            "consumption in Slurm accounting in the selected period, when lower, "
+            "optionally only for the given comma-separated users"
+        ),
+    )
     args = parser.parse_args()
     setup_logging(args)
-    reallocate_command(args.starttime, args.endtime, args.chunk_days, args.dry_run)
+    reallocate_command(
+        args.starttime,
+        args.endtime,
+        args.chunk_days,
+        args.dry_run,
+        args.correct_users,
+    )

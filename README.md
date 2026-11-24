@@ -1028,12 +1028,14 @@ sudo -u slurm /usr/libexec/slurm-quota/slurm-quota-sync --debug
 ### `slurm-quota-reallocate` Command<a name="slurm-quota-reallocate-command"></a>
 
 Attributes legacy consumption held by the temporary `(unattributed)` user and account, after an upgrade from version 3,
-to actual user/account pairs based on Slurm accounting (root only). User and account consumptions are preserved. See
+to actual user/account pairs based on Slurm accounting (root only). User and account consumptions are preserved, unless
+users are corrected with `--correct-users`. See
 [upgrade from version 3 to 4](docs/upgrade-v3-to-v4.md#5-reallocate-unattributed-consumption) for details.
 
 ```bash
 sudo slurm-quota-reallocate --starttime 2025-01-01 --dry-run  # preview the reallocation
 sudo slurm-quota-reallocate --starttime 2025-01-01            # apply it
+sudo slurm-quota-reallocate --starttime 2025-01-01 --correct-users --dry-run  # preview corrections of users
 ```
 
 ## Upgrade<a name="upgrade"></a>

@@ -13,6 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   (#110).
 - `slurm-quota-reallocate` command to attribute the legacy consumption migrated from previous versions to users on
   accounts, based on Slurm accounting (#110).
+  - `--correct-users` option to replace inflated legacy consumption of users that cannot fit in their accounts by their
+    consumption in Slurm accounting.
 - Consumption breakdown by user and account:
   - `breakdown` query parameter of `GET /stats` REST API route.
   - `slurm-quota stats` breaks down the consumption of a single user by account and of a single account by user, with

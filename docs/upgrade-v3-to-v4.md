@@ -335,6 +335,28 @@ SLURM_QUOTA_DB=/tmp/slurm-quota-copy.db slurm-quota-reallocate --starttime 2025-
   The number of users and accounts whose reallocated consumption differs from their legacy consumption, and the number
   of accounts exceeding their quota, are reported at the end of the reallocation.
 
+- When the legacy consumption of users only paired with an account is higher than the one of the account, for example
+  because their version 3 consumption is inflated, these users can be corrected with `--correct-users`. Their legacy
+  consumption is replaced by their consumption in Slurm accounting in the selected period, when it is lower, before the
+  distribution. User totals of corrected users are then not preserved, select a period starting at the last reset of
+  their consumption. Review the corrections with `--dry-run` first:
+
+  ```bash
+  sudo slurm-quota-reallocate --starttime 2025-01-01 --correct-users --dry-run
+  ```
+
+  Each corrected user is reported with a warning, for example:
+
+  ```console
+  CPU consumption of user alice corrected to 20 minutes instead of 1000 minutes of unattributed consumption (-980), its consumption in Slurm accounting in the selected period, as users only paired with account hpc have more unattributed consumption than this account
+  ```
+
+  Users whose legacy consumption does not exceed their consumption in Slurm accounting, or without consumption in Slurm
+  accounting in the period, are not corrected, with a warning. Restrict corrections to some users with
+  `--correct-users=alice,bob`. Without the option, the number of users it would correct is reported at the end of the
+  dry-run. Legacy consumption can also be corrected manually before the reallocation, with `slurm-quota adjust` on the
+  `(unattributed)` pair of the user or of the account.
+
 - Users and accounts without jobs in the selected period get their pairs from Slurm associations (`sacctmgr`). Users and
   accounts without jobs nor association, for example users removed from Slurm, cannot be reallocated: their consumption
   is left unattributed, with a warning for each of them:
