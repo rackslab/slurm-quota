@@ -557,6 +557,7 @@ th {
 }
 
 .quota-edit-form,
+.comment-edit-form,
 .consumption-edit-form,
 .role-change-form,
 .manager-account-add-form {
@@ -571,6 +572,7 @@ th {
 }
 
 .quota-edit-form .quota-input,
+.comment-edit-form .comment-input,
 .consumption-edit-form .consumption-delta-input {
   width: 100%;
   max-width: 100%;
@@ -587,6 +589,7 @@ th {
 }
 
 .quota-edit-form button,
+.comment-edit-form button,
 .consumption-edit-form button,
 .role-change-form button,
 .manager-account-add-form button {
