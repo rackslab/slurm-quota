@@ -51,6 +51,13 @@ UNPAIRED_REASON = (
 IPF_MAX_ITERATIONS = 1000
 IPF_TOLERANCE = 1e-9
 
+# Differences between reallocated and unattributed consumption of accounts
+# within this ratio of their unattributed consumption are due to the rounding of
+# the distribution, they are reported together in a single warning.
+NEGLIGIBLE_RATIO = 0.001
+# Maximum number of users listed in warnings.
+MAX_LISTED_USERS = 5
+
 # Environment variable to select another database than the production one.
 DB_PATH_ENV = "SLURM_QUOTA_DB"
 
@@ -458,11 +465,22 @@ def build_weights(
 @dataclass
 class Deviation:
     """User or account whose reallocated total differs from its unattributed
-    consumption."""
+    consumption, or exceeds its quota after reallocation.
+
+    Attributes:
+        unattributed: Unattributed consumption in seconds.
+        reallocated: Reallocated consumption in seconds.
+        reasons: Reasons of the difference.
+        negligible: Whether the difference is negligible, within
+            NEGLIGIBLE_RATIO of the unattributed consumption.
+        over_quota: Whether the reallocation makes the account exceed its quota.
+    """
 
     unattributed: int
     reallocated: int
     reasons: list[str]
+    negligible: bool = False
+    over_quota: bool = False
 
 
 @dataclass
@@ -483,34 +501,84 @@ class ReallocationReport:
         """Users and accounts whose consumption is left unattributed."""
         return self.sources.get(resource, {}).get(SOURCE_NONE, [])
 
+    def notable(self, resource: str) -> list[str]:
+        """Paired users and accounts with a difference that is not negligible."""
+        unpaired = self.unpaired(resource)
+        return [
+            name
+            for name, deviation in self.deviations.get(resource, {}).items()
+            if name not in unpaired and not deviation.negligible
+        ]
+
+    def over_quota(self, resource: str) -> list[str]:
+        """Accounts exceeding their quota after reallocation."""
+        return [
+            name
+            for name, deviation in self.deviations.get(resource, {}).items()
+            if deviation.over_quota
+        ]
+
+
+def _minutes(seconds: int) -> int:
+    """Round seconds to the nearest minute."""
+    return (seconds + 30) // 60
+
+
+def _is_negligible(difference: int, reference: int) -> bool:
+    """Whether a difference is negligible compared to a reference value."""
+    return abs(difference) <= reference * NEGLIGIBLE_RATIO
+
+
+def _format_users(names: list[str], totals: dict[str, int]) -> str:
+    """Format users with their consumption in minutes, the largest first."""
+    ordered = sorted(names, key=lambda name: (-totals[name], name))
+    result = ", ".join(
+        f"{name} ({_minutes(totals[name])} minutes)"
+        for name in ordered[:MAX_LISTED_USERS]
+    )
+    if len(ordered) > MAX_LISTED_USERS:
+        result += f" and {len(ordered) - MAX_LISTED_USERS} more"
+    return result
+
 
 def _deviations(
+    resource: str,
     user_totals: dict[str, int],
     account_totals: dict[str, int],
     fit: FitResult,
     unpaired: set[str],
+    quotas: dict[str, int],
+    default_quota: int,
+    charged: dict[str, int],
 ) -> dict[str, Deviation]:
     """Return users and accounts whose reallocated total differs from their
-    unattributed consumption, with the reasons.
+    unattributed consumption, or exceeding their quota after reallocation, with
+    the reasons.
 
     Unpaired users and accounts, identified as "user <name>" or
     "account <name>", are excluded from the fit and get nothing, their
-    consumption is left unattributed.
+    consumption is left unattributed. Users are listed first, then accounts by
+    decreasing difference.
+
+    Args:
+        resource: "cpu" or "gpu".
+        user_totals: Unattributed consumption per user, in seconds.
+        account_totals: Unattributed consumption per account, in seconds.
+        fit: Result of fit_consumption().
+        unpaired: Unpaired users and accounts.
+        quotas: Quota of the resource per account, in minutes, negative when
+            unlimited.
+        default_quota: Quota of accounts created by the reallocation.
+        charged: Consumption of the resource per account on actual pairs,
+            charged since the migration, in seconds.
     """
     reallocated_users: dict[str, int] = {}
     reallocated_accounts: dict[str, int] = {}
+    accounts_of_users: dict[str, set[str]] = {}
     for (user, account), value in fit.pairs.items():
         reallocated_users[user] = reallocated_users.get(user, 0) + value
         reallocated_accounts[account] = reallocated_accounts.get(account, 0) + value
-    # Overall totals actually fitted, without unpaired users and accounts.
-    total_users = sum(
-        value for name, value in user_totals.items() if f"user {name}" not in unpaired
-    )
-    total_accounts = sum(
-        value
-        for name, value in account_totals.items()
-        if f"account {name}" not in unpaired
-    )
+        accounts_of_users.setdefault(user, set()).add(account)
 
     deviations: dict[str, Deviation] = {}
     for name in sorted(set(user_totals) | set(reallocated_users)):
@@ -528,32 +596,161 @@ def _deviations(
                     else "no user has unattributed consumption"
                 ],
             )
+
+    accounts: dict[str, Deviation] = {}
     for name in sorted(set(account_totals) | set(reallocated_accounts)):
+        if f"account {name}" in unpaired:
+            accounts[name] = Deviation(
+                account_totals.get(name, 0), 0, [UNPAIRED_REASON]
+            )
+            continue
         unattributed = account_totals.get(name, 0)
         reallocated = reallocated_accounts.get(name, 0)
-        if unattributed == reallocated:
-            continue
-        reasons: list[str] = []
-        if f"account {name}" in unpaired:
-            reasons.append(UNPAIRED_REASON)
-        elif not fit.account_targets:
-            reasons.append("no account has unattributed consumption")
-        else:
+        deviation = Deviation(unattributed, reallocated, [])
+        if unattributed != reallocated:
             target = fit.account_targets.get(name, 0)
-            if target != unattributed:
-                reasons.append(
-                    f"rescaled to {target} seconds as overall unattributed "
-                    f"consumption of users ({total_users} seconds) differs from "
-                    f"overall unattributed consumption of accounts "
-                    f"({total_accounts} seconds)"
+            if not fit.account_targets:
+                deviation.reasons.append("no account has unattributed consumption")
+            elif _is_negligible(reallocated - unattributed, unattributed):
+                deviation.negligible = True
+            elif target != unattributed and _is_negligible(
+                reallocated - target, target
+            ):
+                deviation.reasons.append(
+                    "rescaled as overall unattributed consumption of users and "
+                    "accounts differ"
                 )
-            if name in fit.unreachable:
-                reasons.append(
-                    "users paired with this account do not allow to reach "
-                    f"{'its rescaled' if target != unattributed else 'its'} total"
-                )
-        deviations[f"account {name}"] = Deviation(unattributed, reallocated, reasons)
+            else:
+                # Users whose whole consumption is reallocated on this account.
+                exclusive = [
+                    user for user, names in accounts_of_users.items() if names == {name}
+                ]
+                if (
+                    reallocated > unattributed
+                    and exclusive
+                    and sum(user_totals[user] for user in exclusive) > unattributed
+                ):
+                    deviation.reasons.append(
+                        "users only paired with this account have more "
+                        "unattributed consumption than this account: "
+                        + _format_users(exclusive, user_totals)
+                    )
+                else:
+                    deviation.reasons.append(
+                        "users paired with this account do not allow to reach its total"
+                    )
+        quota = quotas.get(name, default_quota)
+        before = charged.get(name, 0) + unattributed
+        after = charged.get(name, 0) + reallocated
+        if quota >= 0 and before <= quota * 60 < after:
+            deviation.over_quota = True
+            deviation.negligible = False
+            deviation.reasons.append(
+                f"exceeds its {resource.upper()} quota of {quota} minutes with "
+                f"{_minutes(after)} minutes, jobs on this account will be refused"
+            )
+        if deviation.reasons or deviation.negligible:
+            accounts[name] = deviation
+
+    for name in sorted(
+        accounts,
+        key=lambda name: (
+            -abs(
+                _minutes(accounts[name].reallocated)
+                - _minutes(accounts[name].unattributed)
+            ),
+            name,
+        ),
+    ):
+        deviations[f"account {name}"] = accounts[name]
     return deviations
+
+
+def _log_deviations(
+    resource: str,
+    user_totals: dict[str, int],
+    account_totals: dict[str, int],
+    fit: FitResult,
+    unpaired: set[str],
+    deviations: dict[str, Deviation],
+) -> None:
+    """Log warnings for the overall difference between users and accounts and
+    for users and accounts in deviations."""
+    total_users = sum(
+        value for name, value in user_totals.items() if f"user {name}" not in unpaired
+    )
+    total_accounts = sum(
+        value
+        for name, value in account_totals.items()
+        if f"account {name}" not in unpaired
+    )
+    if fit.account_targets and total_users and total_users != total_accounts:
+        logger.warning(
+            "%s overall unattributed consumption of users (%d minutes) differs "
+            "from the one of accounts (%d minutes) by %+d minutes, account "
+            "totals cannot all be preserved",
+            resource.upper(),
+            _minutes(total_users),
+            _minutes(total_accounts),
+            _minutes(total_users) - _minutes(total_accounts),
+        )
+    negligible: list[Deviation] = []
+    for name, deviation in deviations.items():
+        if deviation.negligible:
+            negligible.append(deviation)
+            continue
+        logger.warning(
+            "%s consumption of %s: %d minutes reallocated instead of %d minutes "
+            "of unattributed consumption (%+d), %s",
+            resource.upper(),
+            name,
+            _minutes(deviation.reallocated),
+            _minutes(deviation.unattributed),
+            _minutes(deviation.reallocated) - _minutes(deviation.unattributed),
+            "; ".join(deviation.reasons),
+        )
+    if negligible:
+        largest = max(
+            abs(_minutes(deviation.reallocated) - _minutes(deviation.unattributed))
+            for deviation in negligible
+        )
+        logger.warning(
+            "%s consumption of %d account(s) differs from their unattributed "
+            "consumption by less than %s%% (%s at most), due to the rounding of "
+            "the distribution",
+            resource.upper(),
+            len(negligible),
+            f"{NEGLIGIBLE_RATIO * 100:g}",
+            f"{largest} minutes" if largest else "less than a minute",
+        )
+
+
+def _account_quotas(
+    cursor: sqlite3.Cursor, resource: str
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Return the quota and the consumption charged on actual pairs per account.
+
+    Args:
+        cursor: Database cursor.
+        resource: "cpu" or "gpu".
+
+    Returns:
+        A tuple of the quota in minutes per account, negative when unlimited,
+        and of the consumption in seconds charged on actual pairs per account.
+    """
+    cursor.execute(f"SELECT account, quota_{resource}_minutes FROM accounts")
+    quotas: dict[str, int] = {
+        str(name): int(quota) for name, quota in cursor.fetchall()
+    }
+    cursor.execute(
+        f"SELECT account, SUM(consumed_{resource}_seconds) "
+        "FROM user_account_consumption "
+        "WHERE username != ? AND account != ? GROUP BY account",
+        (UNATTRIBUTED, UNATTRIBUTED),
+    )
+    charged = {str(name): int(value) for name, value in cursor.fetchall()}
+
+    return quotas, charged
 
 
 def _unattributed_totals(
@@ -668,20 +865,22 @@ def reallocate_unattributed(
             reallocated_accounts[column] = {
                 name for name in account_totals if f"account {name}" not in unpaired
             }
-            deviations = _deviations(user_totals, account_totals, fit, unpaired)
+            quotas, charged = _account_quotas(cursor, resource)
+            deviations = _deviations(
+                resource,
+                user_totals,
+                account_totals,
+                fit,
+                unpaired,
+                quotas,
+                dq[f"default_account_quota_{resource}_minutes"],
+                charged,
+            )
             report.sources[resource] = sources
             report.deviations[resource] = deviations
-            for name, deviation in deviations.items():
-                logger.warning(
-                    "%s consumption of %s: %d seconds reallocated instead of %d "
-                    "seconds of unattributed consumption (%+d), %s",
-                    resource.upper(),
-                    name,
-                    deviation.reallocated,
-                    deviation.unattributed,
-                    deviation.reallocated - deviation.unattributed,
-                    " and ".join(deviation.reasons),
-                )
+            _log_deviations(
+                resource, user_totals, account_totals, fit, unpaired, deviations
+            )
             for pair, value in fit.pairs.items():
                 pairs.setdefault(pair, [0, 0])[index] = value
 
@@ -819,13 +1018,17 @@ def _print_report(report: ReallocationReport, dry_run: bool) -> None:
         )
         print(f"{resource.upper()} users and accounts paired from: {counts}")
         unpaired = report.unpaired(resource)
-        deviations = [
-            name for name in report.deviations.get(resource, {}) if name not in unpaired
-        ]
-        if deviations:
+        notable = report.notable(resource)
+        if notable:
             print(
                 f"{resource.upper()} users and accounts not matching their "
-                f"unattributed consumption: {len(deviations)} (see warnings)"
+                f"unattributed consumption: {len(notable)} (see warnings)"
+            )
+        over_quota = report.over_quota(resource)
+        if over_quota:
+            print(
+                f"{resource.upper()} accounts exceeding their quota after "
+                f"reallocation: {len(over_quota)} (see warnings)"
             )
         if unpaired:
             print(

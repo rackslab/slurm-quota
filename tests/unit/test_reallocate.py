@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from slurm_quota.database import (
@@ -18,6 +20,10 @@ from slurm_quota.reallocate import (
     Deviation,
     FitResult,
     ReallocationError,
+    ReallocationReport,
+    _deviations,
+    _log_deviations,
+    _print_report,
     build_weights,
     fit_consumption,
     reallocate_unattributed,
@@ -345,29 +351,31 @@ class TestReallocateUnattributed(SlurmQuotaTestCase):
             "no job in Slurm accounting in the selected period nor Slurm "
             "association found, its consumption is left unattributed"
         )
+        # a1 is the only paired account, it gets the users total.
         rescaled = (
-            "rescaled to 7200 seconds as overall unattributed consumption of "
-            "users (7200 seconds) differs from overall unattributed consumption "
-            "of accounts (5400 seconds)"
+            "rescaled as overall unattributed consumption of users and accounts differ"
         )
         self.assertEqual(
             log_cm.output,
             [
-                "WARNING:slurm_quota:CPU consumption of user u2: 0 seconds "
-                "reallocated instead of 3600 seconds of unattributed consumption "
-                "(-3600), " + unpaired,
-                "WARNING:slurm_quota:CPU consumption of account a1: 7200 seconds "
-                "reallocated instead of 5400 seconds of unattributed consumption "
-                "(+1800), " + rescaled,
-                "WARNING:slurm_quota:CPU consumption of account a2: 0 seconds "
-                "reallocated instead of 5400 seconds of unattributed consumption "
-                "(-5400), " + unpaired,
-                "WARNING:slurm_quota:GPU consumption of user u2: 0 seconds "
-                "reallocated instead of 600 seconds of unattributed consumption "
-                "(-600), " + unpaired,
-                "WARNING:slurm_quota:GPU consumption of account a1: 0 seconds "
-                "reallocated instead of 600 seconds of unattributed consumption "
-                "(-600), " + unpaired,
+                "WARNING:slurm_quota:CPU overall unattributed consumption of users "
+                "(120 minutes) differs from the one of accounts (90 minutes) by +30 "
+                "minutes, account totals cannot all be preserved",
+                "WARNING:slurm_quota:CPU consumption of user u2: 0 minutes "
+                "reallocated instead of 60 minutes of unattributed consumption "
+                "(-60), " + unpaired,
+                "WARNING:slurm_quota:CPU consumption of account a2: 0 minutes "
+                "reallocated instead of 90 minutes of unattributed consumption "
+                "(-90), " + unpaired,
+                "WARNING:slurm_quota:CPU consumption of account a1: 120 minutes "
+                "reallocated instead of 90 minutes of unattributed consumption "
+                "(+30), " + rescaled,
+                "WARNING:slurm_quota:GPU consumption of user u2: 0 minutes "
+                "reallocated instead of 10 minutes of unattributed consumption "
+                "(-10), " + unpaired,
+                "WARNING:slurm_quota:GPU consumption of account a1: 0 minutes "
+                "reallocated instead of 10 minutes of unattributed consumption "
+                "(-10), " + unpaired,
             ],
         )
         self.assertEqual(report.reallocated_cpu_seconds, 7200)
@@ -432,26 +440,27 @@ class TestReallocateUnattributed(SlurmQuotaTestCase):
         with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
             report = reallocate_unattributed(usage, set())
         reason = (
-            "rescaled to {} seconds as overall unattributed consumption of users "
-            "(10800 seconds) differs from overall unattributed consumption of "
-            "accounts (12600 seconds)"
+            "rescaled as overall unattributed consumption of users and accounts differ"
         )
         self.assertEqual(
             log_cm.output,
             [
-                "WARNING:slurm_quota:CPU consumption of account a1: 4629 seconds "
-                "reallocated instead of 5400 seconds of unattributed consumption "
-                "(-771), " + reason.format(4629),
-                "WARNING:slurm_quota:CPU consumption of account a2: 6171 seconds "
-                "reallocated instead of 7200 seconds of unattributed consumption "
-                "(-1029), " + reason.format(6171),
+                "WARNING:slurm_quota:CPU overall unattributed consumption of users "
+                "(180 minutes) differs from the one of accounts (210 minutes) by "
+                "-30 minutes, account totals cannot all be preserved",
+                "WARNING:slurm_quota:CPU consumption of account a2: 103 minutes "
+                "reallocated instead of 120 minutes of unattributed consumption "
+                "(-17), " + reason,
+                "WARNING:slurm_quota:CPU consumption of account a1: 77 minutes "
+                "reallocated instead of 90 minutes of unattributed consumption "
+                "(-13), " + reason,
             ],
         )
         self.assertEqual(
             report.deviations["cpu"],
             {
-                "account a1": Deviation(5400, 4629, [reason.format(4629)]),
-                "account a2": Deviation(7200, 6171, [reason.format(6171)]),
+                "account a2": Deviation(7200, 6171, [reason]),
+                "account a1": Deviation(5400, 4629, [reason]),
             },
         )
         self.assertEqual(report.deviations["gpu"], {})
@@ -461,25 +470,167 @@ class TestReallocateUnattributed(SlurmQuotaTestCase):
         usage = {("u1", "a1"): (60, 0), ("u2", "a2"): (60, 0)}
         with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
             report = reallocate_unattributed(usage, set())
-        reason = "users paired with this account do not allow to reach its total"
-        self.assertIn(
-            "WARNING:slurm_quota:CPU consumption of account a1: 7200 seconds "
-            "reallocated instead of 5400 seconds of unattributed consumption "
-            "(+1800), " + reason,
-            log_cm.output,
+        surplus = (
+            "users only paired with this account have more unattributed "
+            "consumption than this account: u1 (120 minutes)"
         )
-        self.assertIn(
-            "WARNING:slurm_quota:CPU consumption of account a2: 3600 seconds "
-            "reallocated instead of 5400 seconds of unattributed consumption "
-            "(-1800), " + reason,
-            log_cm.output,
+        deficit = "users paired with this account do not allow to reach its total"
+        self.assertEqual(
+            log_cm.output[:2],
+            [
+                "WARNING:slurm_quota:CPU consumption of account a1: 120 minutes "
+                "reallocated instead of 90 minutes of unattributed consumption "
+                "(+30), " + surplus,
+                "WARNING:slurm_quota:CPU consumption of account a2: 60 minutes "
+                "reallocated instead of 90 minutes of unattributed consumption "
+                "(-30), " + deficit,
+            ],
         )
         self.assertEqual(
             report.deviations["cpu"],
             {
-                "account a1": Deviation(5400, 7200, [reason]),
-                "account a2": Deviation(5400, 3600, [reason]),
+                "account a1": Deviation(5400, 7200, [surplus]),
+                "account a2": Deviation(5400, 3600, [deficit]),
             },
         )
         # User totals are preserved
         self.assertNotIn("user u1", report.deviations["cpu"])
+        self.assertEqual(report.notable("cpu"), ["account a1", "account a2"])
+        self.assertEqual(report.over_quota("cpu"), [])
+
+    def _single_account_gap(self):
+        """Replace legacy consumption: u3 (1000 min) only consumed on a1 (10 min),
+        u1 (600 min) and u2 (400 min) on a2 (600 min) and a3 (400 min)."""
+        with self.db_connection() as conn:
+            conn.execute("DELETE FROM user_account_consumption")
+            self.insert_consumption(conn, "u1", UNATTRIBUTED, 600)
+            self.insert_consumption(conn, "u2", UNATTRIBUTED, 400)
+            self.insert_consumption(conn, "u3", UNATTRIBUTED, 1000)
+            self.insert_consumption(conn, UNATTRIBUTED, "a1", 10)
+            self.insert_consumption(conn, UNATTRIBUTED, "a2", 600)
+            self.insert_consumption(conn, UNATTRIBUTED, "a3", 400)
+            conn.commit()
+        return {
+            ("u1", "a2"): (3, 0),
+            ("u1", "a3"): (2, 0),
+            ("u2", "a2"): (3, 0),
+            ("u2", "a3"): (2, 0),
+            ("u3", "a1"): (1, 0),
+        }
+
+    def test_gap_on_single_account_is_reported_with_its_users(self):
+        usage = self._single_account_gap()
+        with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
+            report = reallocate_unattributed(usage, set(), dry_run=True)
+        # The difference between users and accounts goes to a1, through u3 only
+        # paired with it. Other accounts keep their unattributed consumption and
+        # are not reported, although they do not reach their rescaled totals.
+        self.assertEqual(
+            log_cm.output,
+            [
+                "WARNING:slurm_quota:CPU overall unattributed consumption of users "
+                "(2000 minutes) differs from the one of accounts (1010 minutes) by "
+                "+990 minutes, account totals cannot all be preserved",
+                "WARNING:slurm_quota:CPU consumption of account a1: 1000 minutes "
+                "reallocated instead of 10 minutes of unattributed consumption "
+                "(+990), users only paired with this account have more unattributed "
+                "consumption than this account: u3 (1000 minutes)",
+            ],
+        )
+        self.assertEqual(report.notable("cpu"), ["account a1"])
+
+    def test_accounts_exceeding_quota_are_reported(self):
+        usage = self._single_account_gap()
+        with self.db_connection() as conn:
+            conn.execute(
+                "UPDATE accounts SET quota_cpu_minutes = 500 WHERE account = 'a1'"
+            )
+            # a2 is already over quota before the reallocation, not reported.
+            conn.execute(
+                "UPDATE accounts SET quota_cpu_minutes = 100 WHERE account = 'a2'"
+            )
+            conn.commit()
+        with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
+            report = reallocate_unattributed(usage, set(), dry_run=True)
+        self.assertEqual(
+            log_cm.output[1],
+            "WARNING:slurm_quota:CPU consumption of account a1: 1000 minutes "
+            "reallocated instead of 10 minutes of unattributed consumption (+990), "
+            "users only paired with this account have more unattributed consumption "
+            "than this account: u3 (1000 minutes); exceeds its CPU quota of 500 "
+            "minutes with 1000 minutes, jobs on this account will be refused",
+        )
+        self.assertEqual(report.over_quota("cpu"), ["account a1"])
+        with redirect_stdout(io.StringIO()) as out:
+            _print_report(report, dry_run=True)
+        self.assertIn(
+            "CPU users and accounts not matching their unattributed consumption: 1 "
+            "(see warnings)",
+            out.getvalue(),
+        )
+        self.assertIn(
+            "CPU accounts exceeding their quota after reallocation: 1 (see warnings)",
+            out.getvalue(),
+        )
+
+
+class TestDeviations(SlurmQuotaTestCase):
+    def test_negligible_differences_are_reported_together(self):
+        # Rounding moved 50 seconds from a2 to a1, within 0.1% of their totals,
+        # while their rescaled totals are not reached.
+        fit = FitResult(
+            pairs={("u1", "a1"): 100050, ("u1", "a2"): 199950},
+            account_targets={"a1": 110000, "a2": 190000},
+        )
+        deviations = _deviations(
+            "cpu",
+            {"u1": 300000},
+            {"a1": 100000, "a2": 200000},
+            fit,
+            set(),
+            {},
+            -1,
+            {},
+        )
+        self.assertEqual(
+            deviations,
+            {
+                "account a1": Deviation(100000, 100050, [], negligible=True),
+                "account a2": Deviation(200000, 199950, [], negligible=True),
+            },
+        )
+        report = ReallocationReport(deviations={"cpu": deviations})
+        self.assertEqual(report.notable("cpu"), [])
+        with self.assertLogs("slurm_quota", level="WARNING") as log_cm:
+            _log_deviations(
+                "cpu",
+                {"u1": 300000},
+                {"a1": 100000, "a2": 200000},
+                fit,
+                set(),
+                deviations,
+            )
+        self.assertEqual(
+            log_cm.output,
+            [
+                "WARNING:slurm_quota:CPU consumption of 2 account(s) differs from "
+                "their unattributed consumption by less than 0.1% (1 minutes at "
+                "most), due to the rounding of the distribution",
+            ],
+        )
+
+    def test_users_list_is_truncated(self):
+        users = {f"u{index}": index * 60 for index in range(1, 8)}
+        fit = FitResult(
+            pairs={(name, "a1"): value for name, value in users.items()},
+            account_targets={"a1": 60},
+        )
+        deviations = _deviations("cpu", users, {"a1": 60}, fit, set(), {}, -1, {})
+        self.assertEqual(
+            deviations["account a1"].reasons,
+            [
+                "users only paired with this account have more unattributed "
+                "consumption than this account: u7 (7 minutes), u6 (6 minutes), "
+                "u5 (5 minutes), u4 (4 minutes), u3 (3 minutes) and 2 more"
+            ],
+        )

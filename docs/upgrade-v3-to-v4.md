@@ -306,22 +306,41 @@ SLURM_QUOTA_DB=/tmp/slurm-quota-copy.db slurm-quota-reallocate --starttime 2025-
     consumption, Alice 100 minutes are still all reallocated on hpc, which exceeds its legacy consumption by 40 minutes,
     and the other accounts get 40 minutes less in total.
 
-  Otherwise, some accounts get more or less than their legacy consumption. For each of them, a warning gives the
-  reallocated and legacy consumptions and the reason, for example:
+  Otherwise, some accounts get more or less than their legacy consumption. When overall user and account consumptions
+  differ, a warning gives both totals, for example:
 
   ```console
-  CPU consumption of account hpc: 7200 seconds reallocated instead of 5400 seconds of unattributed consumption (+1800), users paired with this account do not allow to reach its total
+  CPU overall unattributed consumption of users (2000 minutes) differs from the one of accounts (1010 minutes) by +990 minutes, account totals cannot all be preserved
   ```
 
-  The number of users and accounts whose reallocated consumption differs from their legacy consumption is reported at
-  the end of the reallocation.
+  For each account whose reallocated consumption differs from its legacy consumption, from the largest difference to the
+  smallest, a warning gives the reallocated and legacy consumptions and the reason. When users only paired with the
+  account have more legacy consumption than the account, they are listed, for example:
+
+  ```console
+  CPU consumption of account hpc: 1000 minutes reallocated instead of 10 minutes of unattributed consumption (+990), users only paired with this account have more unattributed consumption than this account: alice (1000 minutes)
+  ```
+
+  In this example, the difference between users and accounts comes from the legacy consumption of Alice only, check it
+  before applying the reallocation. Differences within 0.1% of the legacy consumption of accounts, due to the rounding
+  of the distribution, are reported together in a single warning.
+
+  When an account exceeds its quota after the reallocation while it did not before, the warning says so, as jobs on this
+  account are then refused:
+
+  ```console
+  CPU consumption of account hpc: 1000 minutes reallocated instead of 10 minutes of unattributed consumption (+990), users only paired with this account have more unattributed consumption than this account: alice (1000 minutes); exceeds its CPU quota of 500 minutes with 1000 minutes, jobs on this account will be refused
+  ```
+
+  The number of users and accounts whose reallocated consumption differs from their legacy consumption, and the number
+  of accounts exceeding their quota, are reported at the end of the reallocation.
 
 - Users and accounts without jobs in the selected period get their pairs from Slurm associations (`sacctmgr`). Users and
   accounts without jobs nor association, for example users removed from Slurm, cannot be reallocated: their consumption
   is left unattributed, with a warning for each of them:
 
   ```console
-  CPU consumption of user dave: 0 seconds reallocated instead of 7200 seconds of unattributed consumption (-7200), no job in Slurm accounting in the selected period nor Slurm association found, its consumption is left unattributed
+  CPU consumption of user dave: 0 minutes reallocated instead of 120 minutes of unattributed consumption (-120), no job in Slurm accounting in the selected period nor Slurm association found, its consumption is left unattributed
   ```
 
   Their number is reported at the end of the reallocation. Their consumption stays visible on the `(unattributed)` user

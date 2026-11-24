@@ -59,9 +59,10 @@ Steps::
 `slurm-quota stats --all --seconds --breakdown`.
 Expected results::
 * The command prints `Reallocated ...` with the figures of the dry run, and warnings for users and accounts whose
-reallocated consumption differs from their unattributed consumption, if any.
+reallocated consumption differs from their unattributed consumption, if any, in minutes.
 * The consumption of each user is identical to the reference statistics.
-* The consumption of each account is identical to the reference statistics, except accounts reported in warnings.
+* The consumption of each account is identical to the reference statistics, except accounts reported in warnings,
+individually or within the 0.1% rounding warning.
 * The breakdown has user/account pairs matching the associations used by the jobs, and no `(unattributed)` pair for
 reallocated users and accounts.
 * When all consumption is reallocated, the `(unattributed)` user and account are no longer listed.

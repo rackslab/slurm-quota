@@ -46,11 +46,22 @@ Unattributed consumption is then distributed among these pairs with iterative
 proportional fitting, so that each user total and each account total is
 preserved. When the overall unattributed consumption of users differs from the
 one of accounts (after version 3 adjustments of only users or only accounts),
-user totals are preserved and account totals are rescaled. When pairs make exact
+user totals are preserved and account totals are rescaled, as far as pairs
+allow it, with a warning giving both overall totals. When pairs make exact
 account totals impossible, user totals are preserved and accounts get more or less
-than their total. For each user or account whose reallocated consumption differs
-from its unattributed consumption, a warning gives both values and the reason,
-and the number of such users and accounts is reported at the end.
+than their total.
+
+For each user or account whose reallocated consumption differs from its
+unattributed consumption, a warning gives both values in minutes and the reason,
+from the largest difference to the smallest. When an account gets more because
+users only paired with this account have more unattributed consumption, these
+users are listed with their consumption. Differences within 0.1% of the
+unattributed consumption of accounts, due to the rounding of the distribution, are
+reported together in a single warning. A warning is also given for each account
+whose consumption exceeds its quota after the reallocation, while it did not
+before, as jobs on this account are then refused. The number of users and
+accounts not matching their unattributed consumption, and the number of accounts
+exceeding their quota, are reported at the end.
 
 Jobs are loaded from Slurm accounting in chunks of *--chunk-days* days. Progress
 is reported when each chunk starts and every 100,000 jobs loaded, unless
