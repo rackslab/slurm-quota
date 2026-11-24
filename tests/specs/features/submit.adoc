@@ -392,3 +392,62 @@ Expected results::
 * `srun` and `salloc` requesting 40 CPU minutes are refused with the user quota message.
 * `srun` requesting 10 CPU minutes runs and prints the node name.
 // end::FT-SUBMIT-017[]
+
+// tag::FT-SUBMIT-018[]
+[[FT-SUBMIT-018]]
+== FT-SUBMIT-018 — Job without time limit is preallocated with the partition time limit
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: The time limit of a job submitted without time limit is the `DefaultTime` of its partition, or its `MaxTime`
+when `DefaultTime` is not set, like in Slurm.
+Prerequisites::
+* `{user_a}` CPU quota is 1000 minutes, `{account_a}` CPU quota is unlimited.
+* As root on `{controller}`, set the time limits of `{cpu_partition}`:
+`scontrol update partitionname={cpu_partition} defaulttime=15 maxtime=60`.
+Steps::
+. As `{user_a}`, submit a held job requesting 2 tasks without time limit:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -H -A {account_a} -p {cpu_partition} -n 2 --wrap "sleep 60"
+----
+. Run `slurm-quota stats`, then cancel the job.
+. As root on `{controller}`, unset the default time of `{cpu_partition}`:
+`scontrol update partitionname={cpu_partition} defaulttime=none`.
+. Repeat the first two steps.
+. As root on `{controller}`, restore the original time limits of `{cpu_partition}`.
+Expected results::
+* Both jobs are accepted.
+* `{user_a}` shows 30 preallocated CPU minutes (2 tasks × 15 minutes of `DefaultTime`) for the first job, and 120
+preallocated CPU minutes (2 tasks × 60 minutes of `MaxTime`) for the second job.
+// end::FT-SUBMIT-018[]
+
+// tag::FT-SUBMIT-019[]
+[[FT-SUBMIT-019]]
+== FT-SUBMIT-019 — Job with unlimited time limit is refused with limited quotas
+
+Feature:: Submission blocking
+Interface:: Slurm
+Objective:: A job whose time limit is unlimited, because it is submitted without time limit in a partition without
+`DefaultTime` nor `MaxTime`, is refused when a quota applies to it, and accepted without preallocation when all its
+quotas are unlimited.
+Prerequisites::
+* `{user_a}` CPU quota is 1000 minutes, `{account_a}` CPU quota is unlimited.
+* As root on `{controller}`, remove the time limits of `{cpu_partition}`:
+`scontrol update partitionname={cpu_partition} defaulttime=none maxtime=unlimited`.
+Steps::
+. As `{user_a}`, submit a held job without time limit:
++
+[source,console,subs=attributes+]
+----
+$ sbatch -H -A {account_a} -p {cpu_partition} -n 1 --wrap "sleep 60"
+----
+. Set the CPU quota of `{user_a}` to unlimited, then repeat the submission.
+. Run `slurm-quota stats` as `{user_a}`, then cancel the job.
+. As root on `{controller}`, restore the original time limits of `{cpu_partition}`.
+Expected results::
+* The first job is refused with message
+`job submission rejected due to user quota: time limit is unlimited, set a time limit with --time`.
+* The second job is accepted, and `{user_a}` shows 0 preallocated CPU minutes, with 1 job.
+// end::FT-SUBMIT-019[]

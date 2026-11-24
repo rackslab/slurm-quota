@@ -140,6 +140,13 @@ share, defined as the quota minus the sum of "already consumed" and "already pre
 both the user and the account, for both CPU and GPU. If the request exceeds any of the available shares (CPU or GPU),
 the submission or modification is refused, with an explicit message to the user.
 
+When a job is submitted without time limit, the Lua script uses the time limit Slurm sets to the job: the `DefaultTime`
+of its partition, or its `MaxTime` when `DefaultTime` is not set. An unlimited time limit is bounded by the `MaxTime` of
+the partition. When the job is submitted to several partitions, the highest time limit is retained. When the time limit
+of the job remains unlimited, because its partition has neither `DefaultTime` nor `MaxTime`, the job is refused if any
+of its user and account quotas is limited (GPU quotas being considered only when GPUs are requested), and accepted
+without preallocation otherwise.
+
 Before checking quotas, the Lua script checks that the user is associated with the account of the job in Slurm, based on
 the Slurm associations cached in the database by [`slurm-quota-sync`](#slurm-quota-sync-command). Jobs submitted or
 modified with an account the user is not associated with, for example a mistyped account, are refused before anything is

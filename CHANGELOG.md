@@ -67,6 +67,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Preallocation of jobs submitted without time limit computed from the `DefaultTime` or `MaxTime` of their partition, as
+  set by Slurm, instead of Slurm internal unset value of 4294967294 minutes. Jobs with unlimited time limit are refused
+  when a quota applies to them.
 - Preallocation of jobs modified with `scontrol update` computed from the current number of tasks, time limit and GPUs
   of the job instead of default values of unmodified fields, and moved to the new account when the account of the job is
   modified (#131).

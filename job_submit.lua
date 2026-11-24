@@ -33,7 +33,7 @@ local function generate_uuid()
 end
 
 -- Slurm value of numeric fields not provided in job descriptions (NO_VAL)
-local NO_VAL = 4294967294
+local NO_VAL = slurm.NO_VAL
 
 -- Check whether a job description numeric field is not provided
 local function is_unset(value)
@@ -42,8 +42,8 @@ end
 
 -- Normalize Slurm special values for task count
 local function normalize_num_tasks(num_tasks)
-    -- Slurm uses 4294967294 for special/unspecified; treat as 1 task for quota
-    if num_tasks == 4294967294 then
+    -- Slurm uses NO_VAL for special/unspecified; treat as 1 task for quota
+    if num_tasks == NO_VAL then
         return 1
     end
     if not num_tasks or num_tasks <= 0 then
@@ -54,14 +54,87 @@ end
 
 -- Get number of nodes from job description
 local function normalize_num_nodes(max_nodes)
-    -- Slurm uses 4294967294 for unspecified; treat as 1 node
-    if max_nodes == 4294967294 then
+    -- Slurm uses NO_VAL for unspecified; treat as 1 node
+    if max_nodes == NO_VAL then
         return 1
     end
     if not max_nodes or max_nodes <= 0 then
         return 1
     end
     return max_nodes
+end
+
+-- Slurm value of unlimited time limits (INFINITE)
+local INFINITE = slurm.INFINITE
+
+-- Get the records of the partitions of a job from the partitions list given by
+-- Slurm to the callbacks, indexed by partition name. The partition of the job
+-- is a comma-separated list of partition names, or the default partition when
+-- not provided.
+local function job_partitions(partition, part_list)
+    local parts = {}
+    if type(part_list) ~= "table" then
+        return parts
+    end
+    if partition and partition ~= "" then
+        for name in string.gmatch(partition, "[^,%s]+") do
+            if part_list[name] then
+                table.insert(parts, part_list[name])
+            end
+        end
+    else
+        for _, part in pairs(part_list) do
+            if part.flag_default == 1 then
+                table.insert(parts, part)
+            end
+        end
+    end
+    return parts
+end
+
+-- Resolve the time limit of a job (in minutes) for its preallocation. When the
+-- time limit is not provided, Slurm sets the DefaultTime of the partition, or
+-- its MaxTime when DefaultTime is not set. An unlimited time limit is bounded
+-- by the MaxTime of the partition, the job cannot run longer. When the job is
+-- submitted to several partitions, the highest limit is retained. Returns nil
+-- when the time limit is unlimited and cannot be bounded by any partition.
+local function resolve_time_limit(time_limit, partition, part_list)
+    if not is_unset(time_limit) and time_limit ~= INFINITE then
+        return time_limit
+    end
+    local resolved = nil
+    for _, part in ipairs(job_partitions(partition, part_list)) do
+        local limit = part.max_time
+        if is_unset(time_limit) and not is_unset(part.default_time) then
+            limit = part.default_time
+        end
+        if is_unset(limit) or limit == INFINITE then
+            return nil
+        end
+        if not resolved or limit > resolved then
+            resolved = limit
+        end
+    end
+    return resolved
+end
+
+-- Get the name of the first limited quota among the given user and account
+-- CPU and GPU quotas, GPU quotas being considered only when GPUs are
+-- requested. Returns nil when all these quotas are unlimited.
+local function limited_quota(user_data, account_data, gpu_requested)
+    if user_data.quota ~= -1 then
+        return "user"
+    end
+    if account_data.quota ~= -1 then
+        return "account"
+    end
+    if gpu_requested and user_data.quota_gpu ~= -1 then
+        return "user GPU"
+    end
+    if gpu_requested and account_data.quota_gpu ~= -1 then
+        return "account GPU"
+    end
+    return nil
 end
 
 -- Parse Slurm array index string and count the number of jobs
@@ -761,7 +834,8 @@ function slurm_job_submit(job_desc, part_list, submit_uid)
     end
     local num_tasks = normalize_num_tasks(job_desc.num_tasks)
     local num_nodes = normalize_num_nodes(job_desc.max_nodes)
-    local time_limit = job_desc.time_limit or 0
+    -- Time limit (in minutes), nil when unlimited
+    local time_limit = resolve_time_limit(job_desc.time_limit, job_desc.partition, part_list)
     local array_job_count = count_array_jobs(job_desc.array_inx)
     if not array_job_count then
         slurm.log_user("job submission rejected: invalid array index range (start must be <= end)")
@@ -814,11 +888,6 @@ function slurm_job_submit(job_desc, part_list, submit_uid)
         return slurm.SUCCESS
     end
 
-    -- Calculate requested CPU seconds: tasks * time_limit (in minutes)
-    local requested_cpu_seconds = num_tasks * time_limit * 60
-    local available_user = -1
-    local available_account = -1
-
     -- Parse GPU requirements and calculate GPU preallocation
     local gpu_factors = load_gpu_factors(conn)
     if not gpu_factors then
@@ -833,7 +902,27 @@ function slurm_job_submit(job_desc, part_list, submit_uid)
         slurm.log_user("job submission rejected: %s", gpu_parse_error or "failed to parse GPU requirements")
         return slurm.ESLURM_INVALID_GRES
     end
-    local requested_gpu_seconds = calculate_gpu_seconds(gpu_counts, time_limit, gpu_factors)
+
+    -- Jobs with unlimited time limit cannot fit in limited quotas. They are
+    -- accepted without preallocation when all their quotas are unlimited.
+    if not time_limit then
+        local quota = limited_quota(user_data, account_data, next(gpu_counts) ~= nil)
+        if quota then
+            conn:close()
+            slurm.log_info(
+                "slurm_job_submit: reject user %s (account=%s) job submission due to %s quota: unlimited time limit",
+                username, tostring(account), quota
+            )
+            slurm.log_user("job submission rejected due to %s quota: time limit is unlimited, set a time limit with --time", quota)
+            return slurm.ESLURM_ACCESS_DENIED
+        end
+    end
+
+    -- Calculate requested CPU seconds: tasks * time_limit (in minutes)
+    local requested_cpu_seconds = num_tasks * (time_limit or 0) * 60
+    local available_user = -1
+    local available_account = -1
+    local requested_gpu_seconds = calculate_gpu_seconds(gpu_counts, time_limit or 0, gpu_factors)
     local available_user_gpu = -1
     local available_account_gpu = -1
 
@@ -910,8 +999,8 @@ function slurm_job_submit(job_desc, part_list, submit_uid)
 
     -- Single informative allow log (tasks, time, requested, remaining quota considering preallocations)
     slurm.log_info(
-        "slurm_job_submit: allow user %s (account=%s) job submission: tasks=%d time_limit=%d array_jobs=%d requested_cpu_minutes=%d user_avail=%d account_avail=%d requested_gpu_minutes=%d user_gpu_avail=%d account_gpu_avail=%d",
-        username, tostring(account or ""), num_tasks, time_limit, array_job_count, ceil_minutes(requested_cpu_seconds), available_user, available_account, ceil_minutes(requested_gpu_seconds), available_user_gpu, available_account_gpu
+        "slurm_job_submit: allow user %s (account=%s) job submission: tasks=%d time_limit=%s array_jobs=%d requested_cpu_minutes=%d user_avail=%d account_avail=%d requested_gpu_minutes=%d user_gpu_avail=%d account_gpu_avail=%d",
+        username, tostring(account or ""), num_tasks, tostring(time_limit or "unlimited"), array_job_count, ceil_minutes(requested_cpu_seconds), available_user, available_account, ceil_minutes(requested_gpu_seconds), available_user_gpu, available_account_gpu
     )
 
     return slurm.SUCCESS
@@ -1002,11 +1091,22 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
         return slurm.SUCCESS
     end
 
-    -- Time limit (in minutes), from job description if modified or job record
+    -- Partition, from job description if modified or job record
+    local partition = job_desc.partition
+    if not partition or partition == "" then
+        partition = job_record.partition
+    end
+
+    -- Current time limit (in minutes) of the job, nil when unlimited
+    local current_time_limit = resolve_time_limit(job_record.time_limit, job_record.partition, part_list)
+
+    -- Time limit (in minutes), from job description if modified or job record,
+    -- nil when unlimited
     local time_limit = job_desc.time_limit
     if is_unset(time_limit) then
-        time_limit = job_record.time_limit or 0
+        time_limit = job_record.time_limit
     end
+    time_limit = resolve_time_limit(time_limit, partition, part_list)
 
     -- Number of tasks, from job description if modified. Otherwise, the number
     -- of tasks is not available in job record, it is derived from the current
@@ -1014,13 +1114,14 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
     local num_tasks
     if not is_unset(job_desc.num_tasks) then
         num_tasks = normalize_num_tasks(job_desc.num_tasks)
+    elseif preallocation.cpu_seconds > 0 and preallocation.cpu_seconds % (NO_VAL * 60) == 0 then
+        -- Preallocation recorded by previous versions of this script for jobs
+        -- submitted without time limit, computed with NO_VAL time limit.
+        num_tasks = math.floor(preallocation.cpu_seconds / (NO_VAL * 60))
+    elseif not current_time_limit or current_time_limit <= 0 then
+        num_tasks = 1
     else
-        local current_time_limit = job_record.time_limit
-        if is_unset(current_time_limit) or current_time_limit <= 0 then
-            num_tasks = 1
-        else
-            num_tasks = math.max(1, math.floor(preallocation.cpu_seconds / (current_time_limit * 60) + 0.5))
-        end
+        num_tasks = math.max(1, math.floor(preallocation.cpu_seconds / (current_time_limit * 60) + 0.5))
     end
 
     -- Number of nodes, from job description if modified or job record
@@ -1047,11 +1148,6 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
         end
     end
 
-    -- Calculate requested CPU seconds: tasks * time_limit (in minutes)
-    local requested_cpu_seconds = num_tasks * time_limit * 60
-    local available_user = -1
-    local available_account = -1
-
     -- Parse GPU requirements and calculate GPU preallocation
     local gpu_factors = load_gpu_factors(conn)
     if not gpu_factors then
@@ -1066,7 +1162,27 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
         slurm.log_user("job modification rejected: %s", gpu_parse_error or "failed to parse GPU requirements")
         return slurm.ESLURM_INVALID_GRES
     end
-    local requested_gpu_seconds = calculate_gpu_seconds(gpu_counts, time_limit, gpu_factors)
+
+    -- Jobs with unlimited time limit cannot fit in limited quotas. They are
+    -- accepted without preallocation when all their quotas are unlimited.
+    if not time_limit then
+        local quota = limited_quota(user_data, account_data, next(gpu_counts) ~= nil)
+        if quota then
+            conn:close()
+            slurm.log_info(
+                "slurm_job_modify: reject user %s (account=%s) job modification due to %s quota: unlimited time limit",
+                username, tostring(account), quota
+            )
+            slurm.log_user("job modification rejected due to %s quota: time limit is unlimited, set a time limit", quota)
+            return slurm.ESLURM_ACCESS_DENIED
+        end
+    end
+
+    -- Calculate requested CPU seconds: tasks * time_limit (in minutes)
+    local requested_cpu_seconds = num_tasks * (time_limit or 0) * 60
+    local available_user = -1
+    local available_account = -1
+    local requested_gpu_seconds = calculate_gpu_seconds(gpu_counts, time_limit or 0, gpu_factors)
     local available_user_gpu = -1
     local available_account_gpu = -1
 
@@ -1139,8 +1255,8 @@ function slurm_job_modify(job_desc, job_record, part_list, modify_uid)
 
     -- Informative allow log for modification
     slurm.log_info(
-        "slurm_job_modify: allow user %s (account=%s) job modification: tasks=%d time_limit=%d array_jobs=%d requested_cpu_minutes=%d user_avail=%d account_avail=%d requested_gpu_minutes=%d user_gpu_avail=%d account_gpu_avail=%d",
-        username, tostring(account or ""), num_tasks, time_limit, array_job_count, ceil_minutes(requested_cpu_seconds), available_user, available_account, ceil_minutes(requested_gpu_seconds), available_user_gpu, available_account_gpu
+        "slurm_job_modify: allow user %s (account=%s) job modification: tasks=%d time_limit=%s array_jobs=%d requested_cpu_minutes=%d user_avail=%d account_avail=%d requested_gpu_minutes=%d user_gpu_avail=%d account_gpu_avail=%d",
+        username, tostring(account or ""), num_tasks, tostring(time_limit or "unlimited"), array_job_count, ceil_minutes(requested_cpu_seconds), available_user, available_account, ceil_minutes(requested_gpu_seconds), available_user_gpu, available_account_gpu
     )
 
     return slurm.SUCCESS
