@@ -680,6 +680,17 @@ th {
   gap: 1rem;
 }
 
+.admin-nav-footer {
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.admin-nav-footer a + a {
+  padding-left: 0.75rem;
+  border-left: 1px solid #cbd5e1;
+}
+
 .token-create-form {
   display: flex;
   flex-direction: column;

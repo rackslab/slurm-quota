@@ -19,16 +19,6 @@
   </div>
   {% endif %}
   <div class="page-header-actions">
-    {% if user_role == "admin" or (user_role and logged_in_username) %}
-    <nav class="admin-nav">
-      {% if user_role == "admin" %}
-      <a href="{{ url_for('roles') }}">Manage roles</a>
-      {% endif %}
-      {% if user_role and logged_in_username %}
-      <a href="{{ url_for('tokens') }}">API tokens</a>
-      {% endif %}
-    </nav>
-    {% endif %}
     <div class="refresh-standalone">
     <label class="refresh-enable">
       <input type="checkbox" id="refresh-enabled">
@@ -196,6 +186,17 @@
 <p>No stats returned by service.</p>
 {% endif %}
 </div>
+
+{% if user_role == "admin" or (user_role and logged_in_username) %}
+<nav class="admin-nav admin-nav-footer">
+  {% if user_role == "admin" %}
+  <a href="{{ url_for('roles') }}">Manage roles</a>
+  {% endif %}
+  {% if user_role and logged_in_username %}
+  <a href="{{ url_for('tokens') }}">API tokens</a>
+  {% endif %}
+</nav>
+{% endif %}
 
 {% if user_role in ("admin", "operator") %}
 <dialog id="quota-edit-dialog" class="edit-dialog">
