@@ -2,7 +2,7 @@
 {% from "quota.html" import quota_cell with context %}
 {% from "consumption.html" import consumption_cell with context %}
 {% from "breakdown.html" import breakdown_toggle, breakdown_rows with context %}
-{% from "comment.html" import comment_block with context %}
+{% from "comment.html" import comment_button with context %}
 
 {% block title %}slurm-quota{% endblock %}
 
@@ -108,7 +108,7 @@
     {% for row in users %}
     {% set group = "user-" ~ loop.index %}
     <tr>
-      <td class="col-name">{{ breakdown_toggle(row, group, "account") }}{{ row.name }}{{ comment_block("user", row.name, row.comment) }}</td>
+      <td class="col-name"><div class="name-cell">{{ breakdown_toggle(row, group, "account") }}<span class="row-name" title="{{ row.name }}">{{ row.name }}</span>{{ comment_button("user", row.name, row.comment) }}</div></td>
       <td class="num">{{ consumption_cell("user", row.name, "cpu", row.cpu) }}</td>
       <td class="num">{{ row.cpu.preallocated }} ({{ row.job_count }})</td>
       <td class="num">{{ quota_cell("user", row.name, "cpu", row.cpu) }}</td>
@@ -158,7 +158,7 @@
     {% for row in accounts %}
     {% set group = "account-" ~ loop.index %}
     <tr>
-      <td class="col-name">{{ breakdown_toggle(row, group, "user") }}{{ row.name }}{{ comment_block("account", row.name, row.comment) }}</td>
+      <td class="col-name"><div class="name-cell">{{ breakdown_toggle(row, group, "user") }}<span class="row-name" title="{{ row.name }}">{{ row.name }}</span>{{ comment_button("account", row.name, row.comment) }}</div></td>
       <td class="num">{{ consumption_cell("account", row.name, "cpu", row.cpu) }}</td>
       <td class="num">{{ row.cpu.preallocated }} ({{ row.job_count }})</td>
       <td class="num">{{ quota_cell("account", row.name, "cpu", row.cpu) }}</td>
@@ -197,6 +197,19 @@
   {% endif %}
 </nav>
 {% endif %}
+
+<dialog id="comment-view-dialog" class="edit-dialog">
+  <div class="comment-view">
+    <h3 id="comment-view-title" class="edit-dialog-title">Comment</h3>
+    <p id="comment-view-text" class="comment-view-text"></p>
+    <div class="edit-dialog-actions">
+      <button type="button" data-dialog-close>Close</button>
+      {% if user_role in ("admin", "operator") %}
+      <button type="button" class="comment-view-edit">Edit</button>
+      {% endif %}
+    </div>
+  </div>
+</dialog>
 
 {% if user_role in ("admin", "operator") %}
 <dialog id="quota-edit-dialog" class="edit-dialog">
@@ -409,7 +422,8 @@
     var quotaDialog = document.getElementById("quota-edit-dialog");
     var consumptionDialog = document.getElementById("consumption-edit-dialog");
     var commentDialog = document.getElementById("comment-edit-dialog");
-    if (!quotaDialog && !consumptionDialog && !commentDialog) {
+    var commentViewDialog = document.getElementById("comment-view-dialog");
+    if (!quotaDialog && !consumptionDialog && !commentDialog && !commentViewDialog) {
       return;
     }
 
@@ -465,21 +479,51 @@
       });
     }
 
+    var openCommentEdit = null;
     if (commentDialog) {
       var commentForm = commentDialog.querySelector(".comment-edit-form");
       var commentTitle = document.getElementById("comment-dialog-title");
       var commentInput = commentForm.querySelector(".comment-input");
 
-      document.querySelectorAll('.stat-edit-btn[data-edit="comment"]').forEach(function (btn) {
+      openCommentEdit = function (target, name, comment) {
+        commentForm.querySelector('input[name="target"]').value = target;
+        commentForm.querySelector('input[name="name"]').value = name;
+        commentTitle.textContent =
+          (comment ? "Edit comment of " : "Add comment to ") + target + " " + name;
+        commentInput.value = comment;
+        commentDialog.showModal();
+        commentInput.focus();
+      };
+    }
+
+    if (commentViewDialog) {
+      var commentViewTitle = document.getElementById("comment-view-title");
+      var commentViewText = document.getElementById("comment-view-text");
+      var commentViewEdit = commentViewDialog.querySelector(".comment-view-edit");
+      var viewed = null;
+
+      if (commentViewEdit && openCommentEdit) {
+        commentViewEdit.addEventListener("click", function () {
+          closeDialog(commentViewDialog);
+          openCommentEdit(viewed.target, viewed.name, viewed.comment);
+        });
+      }
+
+      document.querySelectorAll(".comment-icon-btn").forEach(function (btn) {
         btn.addEventListener("click", function () {
           var target = btn.getAttribute("data-target");
           var name = btn.getAttribute("data-name");
-          commentForm.querySelector('input[name="target"]').value = target;
-          commentForm.querySelector('input[name="name"]').value = name;
-          commentTitle.textContent = "Set comment of " + target + " " + name;
-          commentInput.value = btn.getAttribute("data-comment") || "";
-          commentDialog.showModal();
-          commentInput.focus();
+          var comment = btn.getAttribute("data-comment") || "";
+          if (btn.getAttribute("data-comment-action") === "edit") {
+            if (openCommentEdit) {
+              openCommentEdit(target, name, comment);
+            }
+            return;
+          }
+          viewed = { target: target, name: name, comment: comment };
+          commentViewTitle.textContent = "Comment of " + target + " " + name;
+          commentViewText.textContent = comment;
+          commentViewDialog.showModal();
         });
       });
     }

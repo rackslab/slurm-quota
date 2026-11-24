@@ -957,24 +957,32 @@ class TestCommentsRoutes(SlurmQuotaTestCase):
 
     def test_dashboard_shows_comments_to_users(self):
         body = self._dashboard("user")
-        # Comments are escaped
-        self.assertIn('<span class="row-comment-text">PhD &lt;student&gt;</span>', body)
-        self.assertIn('<span class="row-comment-text">Project X</span>', body)
-        self.assertNotIn('aria-label="Edit comment of', body)
+        # Comments are escaped, and only shown in a dialog through the icon
+        self.assertIn('data-comment="PhD &lt;student&gt;"', body)
+        self.assertIn('data-comment="Project X"', body)
+        self.assertIn('class="comment-icon-btn has-comment"', body)
+        self.assertNotIn(">PhD &lt;student&gt;<", body)
+        self.assertIn('id="comment-view-dialog"', body)
+        # No light icon to add comments, no edit button, no edit form
+        self.assertNotIn('data-comment-action="edit"', body)
+        self.assertNotIn('class="comment-view-edit"', body)
         self.assertNotIn('action="/comments"', body)
         self.assertNotIn('name="append_reason"', body)
 
     def test_dashboard_shows_comment_edit_for_operator(self):
         body = self._dashboard("operator")
-        self.assertIn('data-edit="comment"', body)
+        self.assertIn('data-comment-action="view"', body)
         self.assertIn('data-comment="Project X"', body)
+        self.assertIn('class="comment-view-edit"', body)
         self.assertIn('action="/comments"', body)
         self.assertEqual(body.count('name="append_reason" checked'), 2)
 
     def test_dashboard_offers_add_comment_without_comment(self):
         body = self._dashboard("admin", comments=False)
-        self.assertNotIn('class="row-comment-text"', body)
-        self.assertIn(">Add comment</button>", body)
+        self.assertNotIn("has-comment", body)
+        self.assertNotIn('data-comment-action="view"', body)
+        self.assertIn('data-comment-action="edit"', body)
+        self.assertIn('aria-label="Add comment to user', body)
 
     def _post(self, role: str, data: dict):
         with (

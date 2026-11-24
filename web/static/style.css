@@ -462,19 +462,57 @@ th {
   margin: 0;
 }
 
-.row-comment {
+.name-cell {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  margin-top: 0.2rem;
-  font-size: 0.8rem;
-  font-weight: normal;
-  color: #64748b;
+  min-width: 0;
 }
 
-.row-comment-text {
-  white-space: normal;
+.row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comment-icon-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.4rem;
+  padding: 0.1rem;
+  color: #cbd5e1;
+  background: transparent;
+  border: 0;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.comment-icon-btn.has-comment {
+  color: #1d4ed8;
+}
+
+.comment-icon-btn:hover {
+  color: #1e40af;
+  background: #f1f5f9;
+}
+
+.comment-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+}
+
+.comment-view-text {
+  margin: 0;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.comment-view button {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
 }
 
 .edit-dialog-checkbox {
@@ -623,7 +661,8 @@ th {
   border: 1px solid #cbd5e1;
 }
 
-.edit-dialog-actions button[type="submit"] {
+.edit-dialog-actions button[type="submit"],
+.edit-dialog-actions button.comment-view-edit {
   color: #fff;
   background: #1d4ed8;
   border: 1px solid #1d4ed8;

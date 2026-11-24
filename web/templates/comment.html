@@ -1,22 +1,20 @@
 {#
-  Comment of a user or account row, below its name. For admins and operators,
-  an Edit button opens the comment dialog.
+  Comment icon of a user or account row, on the right of its name. The icon is
+  strong when the row has a comment and opens a dialog that shows it, very
+  light otherwise and opens the comment dialog directly. Users who cannot edit
+  comments only get the icon of rows with a comment.
 #}
-{% macro comment_block(target, name, comment) %}
+{% macro comment_button(target, name, comment) %}
 {% if comment or user_role in ("admin", "operator") %}
-<div class="row-comment">
-  {% if comment %}<span class="row-comment-text">{{ comment }}</span>{% endif %}
-  {% if user_role in ("admin", "operator") %}
-  <button
-    type="button"
-    class="stat-edit-btn"
-    data-edit="comment"
-    data-target="{{ target }}"
-    data-name="{{ name }}"
-    data-comment="{{ comment }}"
-    aria-label="Edit comment of {{ target }} {{ name }}"
-  >{% if comment %}Edit{% else %}Add comment{% endif %}</button>
-  {% endif %}
-</div>
+<button
+  type="button"
+  class="comment-icon-btn{% if comment %} has-comment{% endif %}"
+  data-comment-action="{% if comment %}view{% else %}edit{% endif %}"
+  data-target="{{ target }}"
+  data-name="{{ name }}"
+  data-comment="{{ comment or '' }}"
+  aria-label="{% if comment %}Show comment of {{ target }} {{ name }}{% else %}Add comment to {{ target }} {{ name }}{% endif %}"
+  title="{% if comment %}Show comment{% else %}Add comment{% endif %}"
+><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path fill="currentColor" d="M2.5 2A1.5 1.5 0 0 0 1 3.5v7A1.5 1.5 0 0 0 2.5 12H4v2.5a.5.5 0 0 0 .85.35L7.7 12h5.8a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 13.5 2h-11Z"/></svg></button>
 {% endif %}
 {% endmacro %}
