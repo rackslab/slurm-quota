@@ -346,9 +346,12 @@ th {
 }
 
 .stats-table .col-name {
-  width: 11rem;
-  min-width: 11rem;
-  max-width: 11rem;
+  /* Include padding in the width, so the indented breakdown names do not
+   * widen the column. */
+  box-sizing: border-box;
+  width: 12rem;
+  min-width: 12rem;
+  max-width: 12rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
