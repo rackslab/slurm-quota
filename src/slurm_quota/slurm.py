@@ -5,6 +5,7 @@
 """Slurm integration via subprocess and environment."""
 
 import logging
+import math
 import os
 import re
 import subprocess
@@ -14,6 +15,10 @@ from typing import Optional
 from slurm_quota import database as database_layer
 
 logger = logging.getLogger("slurm_quota")
+
+
+# Number of jobs between progress reports while loading Slurm accounting.
+JOBS_PROGRESS_STEP = 100_000
 
 
 class SlurmQueryError(Exception):
@@ -274,9 +279,19 @@ def collect_pair_usage_from_sacct(
     # sacct reports start and end times as epoch seconds, easy to parse and
     # without timezone ambiguity, whatever the format set by the administrator.
     env = dict(os.environ, SLURM_TIME_FORMAT="%s")
+    chunk_seconds = chunk_days * 86400
+    chunks = math.ceil((end - start) / chunk_seconds)
+    jobs = 0
     chunk_start = start
-    while chunk_start < end:
-        chunk_end = min(end, chunk_start + chunk_days * 86400)
+    for chunk in range(1, chunks + 1):
+        chunk_end = min(end, chunk_start + chunk_seconds)
+        logger.info(
+            "Loading jobs from Slurm accounting, chunk %d/%d: %s to %s",
+            chunk,
+            chunks,
+            _sacct_time(chunk_start),
+            _sacct_time(chunk_end),
+        )
         # sacct output is streamed line by line rather than captured, so that
         # memory usage does not depend on the number of jobs in the chunk. Its
         # standard error is inherited, to avoid a deadlock on a full pipe.
@@ -301,13 +316,17 @@ def collect_pair_usage_from_sacct(
             ) as process:
                 assert process.stdout is not None
                 for line in process.stdout:
-                    _add_sacct_job(usage, line, chunk_start, chunk_end, factors)
+                    if _add_sacct_job(usage, line, chunk_start, chunk_end, factors):
+                        jobs += 1
+                        if not jobs % JOBS_PROGRESS_STEP:
+                            logger.info("%d jobs loaded", jobs)
             if process.returncode:
                 raise subprocess.CalledProcessError(process.returncode, process.args)
         except (subprocess.CalledProcessError, FileNotFoundError) as err:
             raise SlurmQueryError(f"Failed to query jobs with sacct: {err}") from err
         chunk_start = chunk_end
 
+    logger.info("Loaded %d jobs from Slurm accounting", jobs)
     return {pair: (cpu, gpu) for pair, (cpu, gpu) in usage.items()}
 
 
@@ -317,27 +336,30 @@ def _add_sacct_job(
     chunk_start: int,
     chunk_end: int,
     factors: dict[str, float],
-) -> None:
+) -> bool:
     """Add consumption of the job on a sacct output line to its pair usage.
 
     Jobs without user or account, without valid start and end times or not
     ending in [chunk_start, chunk_end) are ignored.
+
+    Returns:
+        True if the job is counted, False if it is ignored.
     """
     fields = line.rstrip("\n").split("|")
     if len(fields) < 7:
-        return
+        return False
     job_id, user, account, cpus, job_start, job_end, alloc_tres = fields[:7]
     if not user or not account:
-        return
+        return False
     try:
         started = int(job_start)
         ended = int(job_end)
         alloc_cpus = int(cpus)
     except ValueError:
         # Unknown/None times of pending or running jobs
-        return
+        return False
     if not chunk_start <= ended < chunk_end or ended <= started:
-        return
+        return False
     duration = ended - started
     cpu_seconds = alloc_cpus * duration
     gpu_seconds = 0
@@ -356,6 +378,7 @@ def _add_sacct_job(
     entry = usage.setdefault((user, account), [0, 0])
     entry[0] += cpu_seconds
     entry[1] += gpu_seconds
+    return True
 
 
 def get_associations() -> set[tuple[str, str]]:

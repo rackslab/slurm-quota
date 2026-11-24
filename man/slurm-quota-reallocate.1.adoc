@@ -52,6 +52,10 @@ than their total. For each user or account whose reallocated consumption differs
 from its unattributed consumption, a warning gives both values and the reason,
 and the number of such users and accounts is reported at the end.
 
+Jobs are loaded from Slurm accounting in chunks of *--chunk-days* days. Progress
+is reported when each chunk starts and every 100,000 jobs loaded, unless
+*--quiet* is set.
+
 Job consumption is computed like `slurm-quota-charge` does, with the current GPU
 factors. Only shares matter, the period does not need to cover all legacy
 consumption: it must be representative of how users consumed on their accounts.

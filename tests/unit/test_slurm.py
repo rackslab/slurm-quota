@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from slurm_quota.slurm import (
     SlurmQueryError,
+    _sacct_time,
     calculate_consumed_gpu_seconds,
     collect_active_job_uuids,
     collect_pair_usage_from_sacct,
@@ -173,6 +174,46 @@ class TestCollectPairUsageFromSacct(SlurmQuotaTestCase):
         self.assertEqual(kwargs["env"]["SLURM_TIME_FORMAT"], "%s")
         self.assertIn("--allusers", args[0])
         self.assertIn("--allocations", args[0])
+
+    @patch("slurm_quota.slurm.JOBS_PROGRESS_STEP", 2)
+    @patch("slurm_quota.slurm.subprocess.Popen")
+    def test_reports_progress(self, popen_mock):
+        start = 1_700_000_000
+        end = start + self.DAY + self.DAY // 2
+        outputs = [
+            # Chunk 1: 3 jobs, the last one is ignored
+            "\n".join(
+                [
+                    f"1|alice|hpc|1|{start}|{start + 10}|",
+                    f"2|alice|hpc|1|{start}|{start + 20}|",
+                    "3|bob|dev|1|Unknown|Unknown|",
+                ]
+            ),
+            # Chunk 2: 2 jobs
+            "\n".join(
+                [
+                    f"4|bob|dev|1|{start + self.DAY}|{start + self.DAY + 10}|",
+                    f"5|bob|dev|1|{start + self.DAY}|{start + self.DAY + 20}|",
+                ]
+            ),
+        ]
+        popen_mock.side_effect = [
+            fake_popen(["sacct"], output + "\n") for output in outputs
+        ]
+        with self.assertLogs("slurm_quota", level="INFO") as log_cm:
+            collect_pair_usage_from_sacct(start, end, 1, {"__default__": 1.0})
+        self.assertEqual(
+            log_cm.output,
+            [
+                "INFO:slurm_quota:Loading jobs from Slurm accounting, chunk 1/2: "
+                f"{_sacct_time(start)} to {_sacct_time(start + self.DAY)}",
+                "INFO:slurm_quota:2 jobs loaded",
+                "INFO:slurm_quota:Loading jobs from Slurm accounting, chunk 2/2: "
+                f"{_sacct_time(start + self.DAY)} to {_sacct_time(end)}",
+                "INFO:slurm_quota:4 jobs loaded",
+                "INFO:slurm_quota:Loaded 4 jobs from Slurm accounting",
+            ],
+        )
 
     @patch("slurm_quota.slurm.subprocess.Popen")
     def test_applies_gpu_factors(self, popen_mock):
